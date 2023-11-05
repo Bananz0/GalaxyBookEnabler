@@ -60,3 +60,5 @@ if ($userInput -eq 'Yes' -or $userInput -eq 'Y') {
 } else {
     Write-Host "Invalid input. Current working directory has been left as is."
 }
+
+$userInput = Read-Host "Press any key to exit."
