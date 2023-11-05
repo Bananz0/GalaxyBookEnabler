@@ -6,11 +6,15 @@ To my knowledge, QuickShare only works if you have Intel or Killer Wi-Fi cards s
 Make sure to have these installed:
 
 [Samsung Account](https://apps.microsoft.com/detail/9P98T77876KZ?hl=en-us&gl=US)
+
 [Samsung Continuity Serivce](https://apps.microsoft.com/detail/samsung-continuity-service/9NGW9K44GQ5F?hl=en-GB&gl=US)
+
 [Samsung Cloud Assistant](https://apps.microsoft.com/detail/9NFWHCHM52HQ?hl=en-us&gl=US)
 
 [Quick Share (Optional)](https://apps.microsoft.com/detail/9PCTGDFXVZLJ?hl=en-us&gl=US)
+
 [Samsung Notes (Optional)](https://apps.microsoft.com/detail/9NBLGGH43VHV?query=samsung+note&hl=en-us&gl=US)
+
 [Multi Control (Optional)](https://apps.microsoft.com/detail/samsung-multi-control/9N3L4FZ03Q99?hl=en-us&gl=US)
 
 To download these apps, you could use the store or [this](https://store.rg-adguard.net/) which downloads the actual exectuable installer which could be used as a backup.
