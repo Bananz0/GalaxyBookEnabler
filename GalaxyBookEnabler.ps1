@@ -48,17 +48,24 @@ Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTri
 Start-ScheduledTask -TaskName $TaskName
 Start-ScheduledTask -TaskName $TaskName
 
-# Prompt the user for input
-$userInput = Read-Host "Do you want to delete the current working directory? (Type 'Yes' or 'No')"
 
-if ($userInput -eq 'Yes' -or $userInput -eq 'Y') {
-    # User wants to delete the directory
-    Remove-Item -Path $PSScriptRoot -Recurse -Force
-    Write-Host "Current working directory has been deleted."
-} elseif ($userInput -eq 'No' -or $userInput -eq 'N') {
-    Write-Host "Current working directory has been left as is."
-} else {
-    Write-Host "Invalid input. Current working directory has been left as is."
+
+$timeoutInSeconds = 2
+
+$taskCompleted = $false
+$endTime = (Get-Date).AddSeconds($timeoutInSeconds)
+
+while ((Get-Date) -lt $endTime) {
+    if (Get-ScheduledTask | Where-Object {$_.TaskName -like $taskName }) {
+        $taskCompleted = $true
+        break
+    } else {
+        Start-Sleep -Seconds 5  # Wait for 5 seconds before checking the status again
+    }
 }
-
-$userInput = Read-Host "Press any key to exit. "
+if ($taskCompleted) {
+    Write-Host "The scheduled task completed successfully."
+    Write-Host "Please manually delete the current working directory: $PSScriptRoot"
+} else {
+    Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
+}
