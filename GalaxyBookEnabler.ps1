@@ -60,12 +60,21 @@ while ((Get-Date) -lt $endTime) {
         $taskCompleted = $true
         break
     } else {
-        Start-Sleep -Seconds 5  # Wait for 5 seconds before checking the status again
+        Start-Sleep -Seconds 5 
     }
 }
 if ($taskCompleted) {
     Write-Host "The scheduled task completed successfully."
+    Write-Host ""
     Write-Host "Please manually delete the current working directory: $PSScriptRoot"
 } else {
     Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
 }
+
+
+
+
+
+Write-Host "Press any key to exit..."
+$null = Read-Host
+
