@@ -1,3 +1,29 @@
+# Inform the user about the purpose of the script and ask for consent
+
+Write-Host "This script is designed to automate the installation of certain software packages on your system."
+Write-Host "Please read and understand the actions it will perform before proceeding."
+
+# Provide a brief description of the script's actions
+Write-Host "Actions to be performed:"
+Write-Host "1. Creation of 'GalaxyBookEnabler' directory in your user folder."
+Write-Host "2. Scheduling a task to run a batch file at startup for software installation."
+Write-Host "3. Prompting you to select and install software packages."
+
+# Explain the importance of running the script with administrative privileges
+Write-Host "Please note that this script needs administrative privileges to perform these tasks."
+
+# Ask for user consent
+$confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes, or any other key to exit)"
+
+# Check if the user consents
+if ($confirmation -ne 'Y') {
+    Write-Host "You chose not to run the script. Exiting..."
+    exit
+}
+
+# If the user consents, the script continues to check for administrative privileges and perform the actions.
+
+
 # Check if the script is running with administrative privileges
 $isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544"
 
@@ -67,23 +93,121 @@ if ($taskCompleted) {
     Write-Host "The scheduled task completed successfully."
     Write-Host ""
     Write-Host "Please manually delete the current working directory: $PSScriptRoot"
-    Write-Host "To install Samsung Continuity Sevice, Samsung Account and Samsung Cloud Assistant, Press (Y) or type Yes: "
+
+
+
+    Write-Host "To install Samsung Continuity Service, Samsung Account, and Samsung Cloud Assistant, select the packages to install:"
+    Write-Host "1. Samsung Continuity Service"
+    Write-Host "2. Samsung Account"
+    Write-Host "3. Samsung Cloud Assistant"
+    Write-Host "4. Install all packages (Core installation)"
     Write-Host ""
+
     $UserPrompt = Read-Host
-    If ($UserPrompt = 'Y'){ 
 
-        winget install  --accept-source-agreements --accept-package-agreements --id  9P98T77876KZ 
-        winget install  --accept-source-agreements --accept-package-agreements --id  9NGW9K44GQ5F
-        winget install  --accept-source-agreements --accept-package-agreements --id  9NFWHCHM52HQ
-    } else {
 
-        Write-Host "You can install the apps from the Microsoft Store but it might not show up. If it doesn't, use an alternative method to get the excecutable app installer using the links in the github repo."
+    if ($taskCompleted) {
+        Write-Host "The scheduled task completed successfully."
         Write-Host ""
-    }
+        Write-Host "Please manually delete the current working directory: $PSScriptRoot"
+        Write-Host "To install Samsung Continuity Service, Samsung Account, and Samsung Cloud Assistant, select the packages to install:"
+        Write-Host "1. Samsung Continuity Service"
+        Write-Host "2. Samsung Account"
+        Write-Host "3. Samsung Cloud Assistant"
+        Write-Host "4. Install all packages (Core installation)"
+        Write-Host ""
+    
+        $UserPrompt = Read-Host
+    
+# Initialize variables
+$CoreInstall = $false
+$AltInstall = $false
 
-} else {
-    Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
+# Define software package options
+$packageOptions = @{
+    '1' = @{
+        Name = "Samsung Continuity Service"
+        Id = "9P98T77876KZ"
+    }
+    '2' = @{
+        Name = "Samsung Account"
+        Id = "9NGW9K44GQ5F"
+    }
+    '3' = @{
+        Name = "Samsung Cloud Assistant"
+        Id = "9NFWHCHM52HQ"
+    }
 }
+
+# Display package options
+Write-Host "Please select the packages to install:"
+foreach ($option in $packageOptions.Keys) {
+    Write-Host "$option. $($packageOptions[$option].Name)"
+}
+
+# Get user input
+$UserPrompt = Read-Host
+
+# Validate user input
+if ($packageOptions.ContainsKey($UserPrompt)) {
+    $selectedPackage = $packageOptions[$UserPrompt]
+    Write-Host "Installing $($selectedPackage.Name)..."
+    winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id
+
+    # Check if this is a core package installation
+    if ($UserPrompt -eq '4') {
+        $CoreInstall = $true
+    }
+} else {
+    Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
+}
+
+# If core packages were installed, offer the option to install additional packages
+if ($CoreInstall) {
+    Write-Host "Do you want to install additional packages? (Enter 1 for 'Samsung Multi Control', 2 for 'Quick Share', 3 for 'Samsung Notes', or 4 to skip)"
+    $UserPrompt = Read-Host
+
+    # Validate user input
+    if ($UserPrompt -in '1', '2', '3', '4') {
+        switch ($UserPrompt) {
+            '1' {
+                Write-Host "Installing Samsung Multi Control..."
+                winget install --accept-source-agreements --accept-package-agreements --id 9N3L4FZ03Q99
+            }
+            '2' {
+                Write-Host "Installing Quick Share..."
+                winget install --accept-source-agreements --accept-package-agreements --id 9PCTGDFXVZLJ
+            }
+            '3' {
+                Write-Host "Installing Samsung Notes..."
+                winget install --accept-source-agreements --accept-package-agreements --id 9NBLGGH43VHV
+            }
+            default {
+                Write-Host "Skipping additional package installation."
+            }
+        }
+
+        # If any packages were installed, indicate success
+        if ($UserPrompt -ne '4') {
+            $AltInstall = $true
+        }
+    } else {
+        Write-Host "No valid option selected for additional packages."
+    }
+}
+
+# Final message
+if ($AltInstall || $CoreInstall) {
+    Write-Host "You have successfully installed the selected packages."
+} else {
+    Write-Host "No packages were installed."
+}
+
+                
+
+    } else {
+        Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
+    }
 
 
 
