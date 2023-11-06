@@ -208,7 +208,7 @@ if ($AltInstall || $CoreInstall) {
     } else {
         Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
     }
-
+}
 
 
 

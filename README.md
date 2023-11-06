@@ -1,26 +1,54 @@
-# GalaxyBookEnabler
-This script enables some of the features limited to Galaxy Books such as Quick Share, Multi Control and Samsung Notes
+# GalaxyBookEnabler Script Readme
 
-To my knowledge, QuickShare only works if you have Intel or Killer Wi-Fi cards so your mileage may vary. This only works after running the script. I will look for a method to add it to the task scheduler and have it run as admin at startup.
+## Introduction
 
-Make sure to have these installed:
+The GalaxyBookEnabler script is designed to enable some features that are typically limited to Galaxy Books, including Quick Share, Multi Control, and Samsung Notes.
 
-[Samsung Account](https://apps.microsoft.com/detail/9P98T77876KZ?hl=en-us&gl=US)
+Please read this readme carefully to understand the script's purpose and usage. Note that Quick Share functionality may depend on your Wi-Fi card, and results may vary.
 
-[Samsung Continuity Serivce](https://apps.microsoft.com/detail/samsung-continuity-service/9NGW9K44GQ5F?hl=en-GB&gl=US)
+## Installation
 
-[Samsung Cloud Assistant](https://apps.microsoft.com/detail/9NFWHCHM52HQ?hl=en-us&gl=US)
+To install the script, follow these steps:
 
-[Quick Share (Optional)](https://apps.microsoft.com/detail/9PCTGDFXVZLJ?hl=en-us&gl=US)
+1. Run the GalaxyBookEnabler script as an administrator in PowerShell.
 
-[Samsung Notes (Optional)](https://apps.microsoft.com/detail/9NBLGGH43VHV?query=samsung+note&hl=en-us&gl=US)
+The script automates the installation process, making your laptop appear as a Galaxy Book, which is necessary as this spoof resets every boot.
 
-[Multi Control (Optional)](https://apps.microsoft.com/detail/samsung-multi-control/9N3L4FZ03Q99?hl=en-us&gl=US)
+## System Requirements
 
-To download these apps, you could use the store or [this](https://store.rg-adguard.net/) which downloads the actual exectuable installer which could be used as a backup.
+Before using the script, ensure you have the following software packages installed:
 
-I am not responsible for bricked devices, what you do with this information is your responsibility not mine.
+- [Samsung Account](https://apps.microsoft.com/detail/9P98T77876KZ?hl=en-us&gl=US)
+- [Samsung Continuity Service](https://apps.microsoft.com/detail/samsung-continuity-service/9NGW9K44GQ5F?hl=en-GB&gl=US)
+- [Samsung Cloud Assistant](https://apps.microsoft.com/detail/9NFWHCHM52HQ?hl=en-us&gl=US)
 
-This can be fixed by Samsung at any time and can stop working completely, keep that in mind.
+For optional features, you can install:
 
-Credits to @obrobrio2000 for the initial script as this is a slightly modified version of it.
+- [Quick Share (Optional)](https://apps.microsoft.com/detail/9PCTGDFXVZLJ?hl=en-us&gl=US)
+- [Samsung Notes (Optional)](https://apps.microsoft.com/detail/9NBLGGH43VHV?query=samsung+note&hl=en-us&gl=US)
+- [Multi Control (Optional)](https://apps.microsoft.com/detail/samsung-multi-control/9N3L4FZ03Q99?hl=en-us&gl=US)
+
+You can download these apps from the Microsoft Store or use [this alternative source](https://store.rg-adguard.net/) to get the executable installer as a backup.
+
+## Important Notes
+
+- The script installs a batch file into the User folder, which runs automatically on startup to enable the Galaxy Book features.
+- The script is necessary because the spoof resets every time the system reboots.
+
+## Disclaimer
+
+I am not responsible for any issues or consequences that may arise from using this script. Users should be aware of the potential risks and use the script at their own discretion.
+
+## Possible Changes
+
+Please note that Samsung may release updates or changes that could affect the script's functionality. Users should be aware of this potential.
+
+## Credits
+
+Credits to [@obrobrio2000](https://github.com/obrobrio2000) for the initial script. This is a slightly modified version of their work.
+
+## License
+
+This script is provided under the [MIT License](LICENSE).
+
+
