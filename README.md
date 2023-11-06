@@ -1,4 +1,4 @@
-# GalaxyBookEnabler Script Readme
+# GalaxyBookEnabler
 
 ## Introduction
 
