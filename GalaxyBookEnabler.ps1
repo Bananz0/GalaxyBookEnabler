@@ -67,6 +67,20 @@ if ($taskCompleted) {
     Write-Host "The scheduled task completed successfully."
     Write-Host ""
     Write-Host "Please manually delete the current working directory: $PSScriptRoot"
+    Write-Host "To install Samsung Continuity Sevice, Samsung Account and Samsung Cloud Assistant, Press (Y) or type Yes: "
+    Write-Host ""
+    $UserPrompt = Read-Host
+    If ($UserPrompt = 'Y'){ 
+
+        winget install  --accept-source-agreements --accept-package-agreements --id  9P98T77876KZ 
+        winget install  --accept-source-agreements --accept-package-agreements --id  9NGW9K44GQ5F
+        winget install  --accept-source-agreements --accept-package-agreements --id  9NFWHCHM52HQ
+    } else {
+
+        Write-Host "You can install the apps from the Microsoft Store but it might not show up. If it doesn't, use an alternative method to get the excecutable app installer using the links in the github repo."
+        Write-Host ""
+    }
+
 } else {
     Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
 }
