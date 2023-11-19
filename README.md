@@ -6,6 +6,10 @@ The GalaxyBookEnabler script is designed to enable some features that are typica
 
 Please read this readme carefully to understand the script's purpose and usage. Note that Quick Share functionality may depend on your Wi-Fi card, and results may vary.
 
+## Disclaimer
+
+The PowerShell script is designed to run on PowerShell 7. To ensure compatibility, consider installing it using either `winget install Microsoft.PowerShell` or obtaining it directly from the Microsoft Store.
+
 ## Installation
 
 To install the script, follow these steps:
