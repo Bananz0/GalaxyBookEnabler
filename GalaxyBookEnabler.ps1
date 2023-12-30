@@ -138,69 +138,64 @@ try {
     if ($taskCompleted) {
         Write-Host "The scheduled task completed successfully."
         Write-Host ""
-        Write-Host "To install Samsung Continuity Service, Samsung Account, and Samsung Cloud Assistant, select the packages to install:"
-        Write-Host "1. Samsung Continuity Service"
-        Write-Host "2. Samsung Account"
-        Write-Host "3. Samsung Cloud Assistant"
-        Write-Host "4. Install all packages (Core installation)"
-        Write-Host ""
+        Write-Host "For most of the Samsung Services to work, the following need to be installed."
+        # Initialize variables
+        $CoreInstall = $false
+        $AltInstall = $false
+
+        # Define software package options
+        $packageOptions = [ordered]@{
+            '1' = @{
+                Name = "Samsung Continuity Service"
+                Id = "9P98T77876KZ"
+            }
+            '2' = @{
+                Name = "Samsung Account"
+                Id = "9NGW9K44GQ5F"
+            }
+            '3' = @{
+                Name = "Samsung Cloud Assistant"
+                Id = "9NFWHCHM52HQ"
+            }
+        }
+
+        # Display package options
+        Write-Host "Please select the packages to install:"
+        foreach ($option in $packageOptions.Keys) {
+            Write-Host "$option. $($packageOptions[$option].Name)"
+        }
+
+        Write-Host "Do you want to proceed with the installation? (Y)es or (N)o"
+
+        # Get user input
         $UserPrompt = Read-Host
 
-    # Initialize variables
-    $CoreInstall = $false
-    $AltInstall = $false
-
-    # Define software package options
-    $packageOptions = @{
-        '1' = @{
-            Name = "Samsung Continuity Service"
-            Id = "9P98T77876KZ"
+         # Check if this is a core package installation
+        if ($UserPrompt -eq 'Y') {
+            $CoreInstall = $true
         }
-        '2' = @{
-            Name = "Samsung Account"
-            Id = "9NGW9K44GQ5F"
+
+        # Validate user input
+        if ($UserPrompt -eq 'Y') {
+                $selectedPackage = $packageOptions[$UserPrompt]
+                Write-Host "Installing $($selectedPackage.Name)..."                
+                try {
+                    # Install all the packages with for loop
+                    foreach ($packageKey in $packageOptions.Keys) {
+                        $selectedPackage = $packageOptions[$packageKey]
+                        winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
+                        Write-Host "Installation of $($selectedPackage.Name) completed successfully."
+                        Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
+                } catch {
+                    # Handle installation errors
+                    $ErrorMessage = "Error installing $($selectedPackage.Name): $_"
+                    Write-Host $ErrorMessage
+                    Write-Log $ErrorMessage
+                    Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
+                }
+        } else {
+            Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
         }
-        '3' = @{
-            Name = "Samsung Cloud Assistant"
-            Id = "9NFWHCHM52HQ"
-        }
-    }
-
-    # Display package options
-    Write-Host "Please select the packages to install:"
-    foreach ($option in $packageOptions.Keys) {
-        Write-Host "$option. $($packageOptions[$option].Name)"
-    }
-
-    # Get user input
-    $UserPrompt = Read-Host
-
-    # Validate user input
-    if ($packageOptions.ContainsKey($UserPrompt)) {
-        $selectedPackage = $packageOptions[$UserPrompt]
-        Write-Host "Installing $($selectedPackage.Name)..."
-        
-        try {
-            # Attempt to install the package
-            winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id -ErrorAction Stop
-
-            # Check if this is a core package installation
-            if ($UserPrompt -eq '4') {
-                $CoreInstall = $true
-            }
-
-            Write-Host "Installation of $($selectedPackage.Name) completed successfully."
-            Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
-        } catch {
-        # Handle installation errors
-        $ErrorMessage = "Error installing $($selectedPackage.Name): $_"
-        Write-Host $ErrorMessage
-        Write-Log $ErrorMessage
-        Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
-        }
-    } else {
-        Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
-    }
 
 
     # If core packages were installed, offer the option to install additional packages
@@ -223,8 +218,17 @@ try {
                     Write-Host "Installing Samsung Notes..."
                     winget install --accept-source-agreements --accept-package-agreements --id 9NBLGGH43VHV
                 }
-                default {
+                '4'{
+                    Write-Host "Installing All Apps"
+                    winget install --accept-source-agreements --accept-package-agreements --id 9N3L4FZ03Q99
+                    winget install --accept-source-agreements --accept-package-agreements --id 9PCTGDFXVZLJ
+                    winget install --accept-source-agreements --accept-package-agreements --id 9NBLGGH43VHV
+                }
+                '5' {
                     Write-Host "Skipping additional package installation."
+                }
+                default{
+
                 }
             }
 
@@ -232,9 +236,9 @@ try {
             if ($UserPrompt -ne '4') {
                 $AltInstall = $true
             }
-        } else {
-            Write-Host "No valid option selected for additional packages."
-        }
+            } else {
+               Write-Host "No valid option selected for additional packages."
+            }
     }
 
     # Final message
@@ -243,8 +247,8 @@ try {
         } else {
             Write-Host "No packages were installed."
         }       
-        } else {
-            Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
+    } else {
+        Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
     }
     Write-Log "Script execution completed."
 
