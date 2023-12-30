@@ -1,4 +1,22 @@
 Import-Module ScheduledTasks
+# Function to install a package
+function InstallPackage($packageName, $packageId) {
+    try {
+        Write-Host "Installing $packageName..."
+        winget install --accept-source-agreements --accept-package-agreements --id $packageId
+        Write-Host "Installation of $packageName completed successfully."
+    } catch {
+        Write-Host "Error installing $packageName $_"
+        Write-Log "Error installing $packageName $_"
+    }
+}
+
+# Function to install all packages
+function InstallAllPackages {
+    InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
+    InstallPackage 'Quick Share' '9PCTGDFXVZLJ'
+    InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
+}
 
 # Set up a log file path
 $LogFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'InstallScriptLog.txt'
@@ -236,25 +254,6 @@ try{
     } while ($UserPrompt -notmatch '[1-5]')
 } else {
     Write-Host "No core packages were installed, skipping additional package installation."
-}
-
-# Function to install a package
-function InstallPackage($packageName, $packageId) {
-    try {
-        Write-Host "Installing $packageName..."
-        winget install --accept-source-agreements --accept-package-agreements --id $packageId
-        Write-Host "Installation of $packageName completed successfully."
-    } catch {
-        Write-Host "Error installing $packageName $_"
-        Write-Log "Error installing $packageName $_"
-    }
-}
-
-# Function to install all packages
-function InstallAllPackages {
-    InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
-    InstallPackage 'Quick Share' '9PCTGDFXVZLJ'
-    InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
 }
 
     # Final message
