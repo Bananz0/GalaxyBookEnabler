@@ -54,7 +54,7 @@ Write-Host "Please note that this script needs administrative privileges to perf
 $confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes, or any other key to exit)"
 
 # Check if the user consents
-if ($confirmation -ne 'Y' -or $confirmation -eq 'y') {
+if ($confirmation -ne 'Y' -and $confirmation -ne 'y') {
     Write-Host "You chose not to run the script. Exiting..."
     exit 1
 }else{
@@ -67,11 +67,13 @@ $isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -m
 if (-not $isAdmin) {
     # Relaunch the script as an administrator
     try {
-        Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File $($MyInvocation.MyCommand.Path)" -Verb RunAs -ErrorAction Stop
+        Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs -ErrorAction Stop
     } catch {
         Write-Host "Error relaunching the script as an administrator: $_"
         exit 1
     }
+} else {
+    Write-Host "Script is already running with administrative privileges."
 }
 
 
@@ -81,7 +83,7 @@ $Username = [System.Environment]::UserName
 $UserFolder = "C:\Users\$Username"
 
 # Create a new directory 'GalaxyBookEnabler' in the user's folder
-$GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnabler'
+$GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnablerScript'
 # Create a new directory 'GalaxyBookEnabler' if it doesn't exist
 try {
     if (-not (Test-Path $GalaxyBookEnablerDirectory -PathType Container)) {
@@ -97,13 +99,35 @@ try {
 $SourceBatchFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'QS.bat'
 $BatchFilePath = Join-Path -Path $GalaxyBookEnablerDirectory -ChildPath 'QS.bat'
 
-
-# Copy the batch file to the 'GalaxyBookEnabler' directory
-
 # Check if the source and destination paths are the same if second time running
-if ((Test-Path $SourceBatchFilePath) -and (Test-Path $BatchFilePath) -and (Get-Item $SourceBatchFilePath).FullName -eq (Get-Item $BatchFilePath).FullName) {
-    Write-Host "Source and destination paths are the same. No need to copy."
+$sourceContentHash = Get-FileHash -Path $SourceBatchFilePath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+if (Test-Path $BatchFilePath) {
+    $destinationContentHash = Get-FileHash -Path $BatchFilePath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+
+    if ((Test-Path $SourceBatchFilePath) -and (Test-Path $BatchFilePath) -and ($sourceContentHash -eq $destinationContentHash)) {
+        Write-Host "Source and destination file contents are the same. No need to copy."
+    } else {
+        # Prompt user for confirmation to replace the file
+        $replaceConfirmation = Read-Host "Destination file already exists and has different contents. Do you want to replace it? (Y/N)"
+
+        if ($replaceConfirmation -eq 'Y') {
+            try {
+                # Copy the batch file to the 'GalaxyBookEnabler' directory
+                Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
+                Write-Host "Batch file copied successfully."
+                Write-Log "Batch file copied successfully."
+            } catch {
+                Write-Host "Error copying batch file: $_"
+                Write-Log "Error copying batch file: $_"
+                exit 1
+            }
+        } else {
+            Write-Host "User chose not to replace the file. Exiting..."
+            break
+        }
+    }
 } else {
+    # Destination file doesn't exist, proceed with copying
     try {
         Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
         Write-Host "Batch file copied successfully."
@@ -189,7 +213,7 @@ try{
         $UserPrompt = Read-Host
 
         # Validate user input
-        if ($UserPrompt -eq 'Y' -or $UserPrompt -eq 'y') {
+        if ($UserPrompt -eq 'Y' -and $UserPrompt -eq 'y') {
                 $CoreInstall = $true
                 $selectedPackage = $packageOptions[$UserPrompt]
                 Write-Host "Installing $($selectedPackage.Name)..."                
@@ -199,7 +223,6 @@ try{
                         $selectedPackage = $packageOptions[$packageKey]
                         #winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
                         InstallPackage $selectedPackage.Name $selectedPackage.Id
-                        Write-Host "Installation of $($selectedPackage.Name) completed successfully."
                         Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
                     }
                 } catch {
@@ -217,11 +240,24 @@ try{
     # If core packages were installed, offer the option to install additional packages
     if ($CoreInstall) {
         do{
-        Write-Host "Do you want to install additional packages? (Enter 1 for 'Samsung Multi Control', 2 for 'Quick Share', 3 for 'Samsung Notes', or 4 for All)"
+        Write-Host "Do you want to install additional packages? (or 5 to skip)"
+
+        $packageOptions = @{
+            '1' = 'Samsung Multi Control'
+            '2' = 'Quick Share'
+            '3' = 'Samsung Notes'
+            '4' = 'All'
+            '5' = 'Skip'
+        }
+
+        foreach ($key in $packageOptions.Keys) {
+            Write-Host "$key. $($packageOptions[$key])"
+        }
+
         $UserPrompt = Read-Host
 
         # Validate user input
-        if ($UserPrompt -in '1', '2', '3', '4', '5') {
+        if ($UserPrompt -in $packageOptions.Keys){
             switch ($UserPrompt) {
                 '1' {
                     InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
@@ -244,13 +280,14 @@ try{
             if ($UserPrompt -ne '5') {
                 $AltInstall = $true
             }
+
         } else {
             Write-Host "Invalid option. Please enter a number between 1 and 5."
         }
-    } while ($UserPrompt -notmatch '[1-5]')
-} else {
-    Write-Host "No core packages were installed, skipping additional package installation."
-}
+        } while  ($UserPrompt -ne '5')
+    } else {
+        Write-Host "No core packages were installed, skipping additional package installation."
+    }
 
     # Final message
     if ($AltInstall -or $CoreInstall) {
@@ -271,7 +308,7 @@ try{
         Write-Log "Error checking task completion: $_"
 }
 
-if ($deleteConfirmation -eq 'Y' -or $deleteConfirmation -eq 'y') {
+if ($deleteConfirmation -eq 'Y' -and $deleteConfirmation -eq 'y') {
     # Delete the directory 
     Write-Log "Deleting the GalaxyBookEnabler directory..."
     try {
