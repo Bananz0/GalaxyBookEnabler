@@ -9,7 +9,7 @@ function InstallPackage($packageName, $packageId) {
         Write-Host "Error installing $packageName $_"
         Write-Log "Error installing $packageName $_"
     }
-}
+} 
 
 # Function to install all packages
 function InstallAllPackages {
@@ -54,7 +54,7 @@ Write-Host "Please note that this script needs administrative privileges to perf
 $confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes, or any other key to exit)"
 
 # Check if the user consents
-if ($confirmation -ne 'Y') {
+if ($confirmation -ne 'Y' -or $confirmation -eq 'y') {
     Write-Host "You chose not to run the script. Exiting..."
     exit 1
 }else{
@@ -188,13 +188,9 @@ try{
         # Get user input
         $UserPrompt = Read-Host
 
-         # Check if this is a core package installation
-        if ($UserPrompt -eq 'Y') {
-            $CoreInstall = $true
-        }
-
         # Validate user input
-        if ($UserPrompt -eq 'Y') {
+        if ($UserPrompt -eq 'Y' -or $UserPrompt -eq 'y') {
+                $CoreInstall = $true
                 $selectedPackage = $packageOptions[$UserPrompt]
                 Write-Host "Installing $($selectedPackage.Name)..."                
                 try {
@@ -275,7 +271,7 @@ try{
         Write-Log "Error checking task completion: $_"
 }
 
-if ($deleteConfirmation -eq 'Y') {
+if ($deleteConfirmation -eq 'Y' -or $deleteConfirmation -eq 'y') {
     # Delete the directory 
     Write-Log "Deleting the GalaxyBookEnabler directory..."
     try {
