@@ -37,6 +37,34 @@ function Write-Log {
     Add-Content -Path $LogFilePath -Value $LogMessage
 }
 
+
+# Check if the script is running with administrative privileges
+$isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544" -or ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-18"
+
+if (-not $isAdmin) {
+    # Explain the importance of running the script with administrative privileges
+    Write-Host "Please note that this script needs administrative privileges to perform these tasks."
+    # Prompt user for consent
+    $confirmation = Read-Host "Do you want to run this script with administrative privileges? Press 'Y' to agree, or any other key to exit."
+    
+    if ($confirmation -eq 'Y' -or $confirmation -eq 'y') {
+        try {
+            Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs -ErrorAction Stop
+            # Exit the current instance of the script after triggering the relaunch
+            exit
+        } catch {
+            Write-Host "Error relaunching the script as an administrator: $_"
+            Write-Log "Error relaunching the script as an administrator: $_"
+            exit 1
+        }
+    } else {
+        exit 0
+    }
+} else {
+    Write-Host "Script is  running with administrative privileges."
+    Write-Host
+}
+
 # Inform the user about the purpose of the script and ask for consent
 Write-Host "This script is designed to automate the installation of certain software packages on your system."
 Write-Host "Please read and understand the actions it will perform before proceeding."
@@ -47,8 +75,7 @@ Write-Host "1. Creation of 'GalaxyBookEnabler' directory in your user folder."
 Write-Host "2. Scheduling a task to run a batch file at startup for software installation."
 Write-Host "3. Prompting you to select and install software packages."
 
-# Explain the importance of running the script with administrative privileges
-Write-Host "Please note that this script needs administrative privileges to perform these tasks."
+
 
 # Ask for user consent
 $confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes, or any other key to exit)"
@@ -59,23 +86,6 @@ if ($confirmation -ne 'Y' -and $confirmation -ne 'y') {
     exit 1
 }else{
     Write-Log "User consent obtained." }
-
-# If the user consents, the script continues to check for administrative privileges and perform the actions.
-# Check if the script is running with administrative privileges
-$isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544" -or ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-18"
-
-if (-not $isAdmin) {
-    # Relaunch the script as an administrator
-    try {
-        Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs -ErrorAction Stop
-    } catch {
-        Write-Host "Error relaunching the script as an administrator: $_"
-        exit 1
-    }
-} else {
-    Write-Host "Script is already running with administrative privileges."
-}
-
 
 $Username = [System.Environment]::UserName
 
