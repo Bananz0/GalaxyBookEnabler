@@ -183,7 +183,8 @@ try{
                     # Install all the packages with for loop
                     foreach ($packageKey in $packageOptions.Keys) {
                         $selectedPackage = $packageOptions[$packageKey]
-                        winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
+                        #winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
+                        InstallPackage $selectedPackage.Name $selectedPackage.Id
                         Write-Host "Installation of $($selectedPackage.Name) completed successfully."
                         Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
                     }
@@ -201,46 +202,60 @@ try{
 
     # If core packages were installed, offer the option to install additional packages
     if ($CoreInstall) {
-        Write-Host "Do you want to install additional packages? (Enter 1 for 'Samsung Multi Control', 2 for 'Quick Share', 3 for 'Samsung Notes', or 4 to skip)"
+        do{
+        Write-Host "Do you want to install additional packages? (Enter 1 for 'Samsung Multi Control', 2 for 'Quick Share', 3 for 'Samsung Notes', or 4 for All)"
         $UserPrompt = Read-Host
 
         # Validate user input
-        if ($UserPrompt -in '1', '2', '3', '4') {
+        if ($UserPrompt -in '1', '2', '3', '4', '5') {
             switch ($UserPrompt) {
                 '1' {
-                    Write-Host "Installing Samsung Multi Control..."
-                    winget install --accept-source-agreements --accept-package-agreements --id 9N3L4FZ03Q99
+                    InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
                 }
                 '2' {
-                    Write-Host "Installing Quick Share..."
-                    winget install --accept-source-agreements --accept-package-agreements --id 9PCTGDFXVZLJ
+                    InstallPackage 'Quick Share' '9PCTGDFXVZLJ'
                 }
                 '3' {
-                    Write-Host "Installing Samsung Notes..."
-                    winget install --accept-source-agreements --accept-package-agreements --id 9NBLGGH43VHV
+                    InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
                 }
-                '4'{
-                    Write-Host "Installing All Apps"
-                    winget install --accept-source-agreements --accept-package-agreements --id 9N3L4FZ03Q99
-                    winget install --accept-source-agreements --accept-package-agreements --id 9PCTGDFXVZLJ
-                    winget install --accept-source-agreements --accept-package-agreements --id 9NBLGGH43VHV
+                '4' {
+                    InstallAllPackages
                 }
                 '5' {
                     Write-Host "Skipping additional package installation."
                 }
-                default{
-
-                }
             }
 
             # If any packages were installed, indicate success
-            if ($UserPrompt -ne '4') {
+            if ($UserPrompt -ne '5') {
                 $AltInstall = $true
             }
-            } else {
-               Write-Host "No valid option selected for additional packages."
-            }
+        } else {
+            Write-Host "Invalid option. Please enter a number between 1 and 5."
+        }
+    } while ($UserPrompt -notmatch '[1-5]')
+} else {
+    Write-Host "No core packages were installed, skipping additional package installation."
+}
+
+# Function to install a package
+function InstallPackage($packageName, $packageId) {
+    try {
+        Write-Host "Installing $packageName..."
+        winget install --accept-source-agreements --accept-package-agreements --id $packageId
+        Write-Host "Installation of $packageName completed successfully."
+    } catch {
+        Write-Host "Error installing $packageName $_"
+        Write-Log "Error installing $packageName $_"
     }
+}
+
+# Function to install all packages
+function InstallAllPackages {
+    InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
+    InstallPackage 'Quick Share' '9PCTGDFXVZLJ'
+    InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
+}
 
     # Final message
     if ($AltInstall -or $CoreInstall) {
