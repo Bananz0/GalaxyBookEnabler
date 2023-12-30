@@ -121,7 +121,7 @@ try {
 }
 
 
-try {
+try{
     Start-ScheduledTask -TaskName $TaskName
 
     # Wait for the task to complete, checking its status directly
@@ -186,13 +186,14 @@ try {
                         winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
                         Write-Host "Installation of $($selectedPackage.Name) completed successfully."
                         Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
+                    }
                 } catch {
                     # Handle installation errors
                     $ErrorMessage = "Error installing $($selectedPackage.Name): $_"
                     Write-Host $ErrorMessage
                     Write-Log $ErrorMessage
-                    Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
                 }
+
         } else {
             Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
         }
