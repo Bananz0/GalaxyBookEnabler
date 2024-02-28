@@ -45,8 +45,9 @@ $isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -m
 if (-not $isAdmin) {
     # Explain the importance of running the script with administrative privileges
     Write-Host "Please note that this script needs administrative privileges to perform these tasks."
+    Write-Host
     # Prompt user for consent
-    $confirmation = Read-Host "Do you want to run this script with administrative privileges? Press 'Y' to agree, or any other key to exit."
+    $confirmation = Read-Host "Do you want to run this script with administrative privileges? Press 'Y' to agree, or any other key to exit"
     
     if ($confirmation -eq 'Y' -or $confirmation -eq 'y') {
         try {
@@ -56,6 +57,8 @@ if (-not $isAdmin) {
         } catch {
             Write-Host "Error relaunching the script as an administrator: $_"
             Write-Log "Error relaunching the script as an administrator: $_"
+            Write-Host "Exiting..."
+            Write-Host
             exit 1
         }
     } else {
@@ -68,14 +71,17 @@ if (-not $isAdmin) {
 
 # Inform the user about the purpose of the script and ask for consent
 Write-Host "This script is designed to automate the installation of certain software packages on your system."
+Write-Host "It will also create a scheduled task to run a batch file at startup for software installation."
+Write-Host 
 Write-Host "Please read and understand the actions it will perform before proceeding."
+Write-Host
 
 # Provide a brief description of the script's actions
 Write-Host "Actions to be performed:"
 Write-Host "1. Creation of 'GalaxyBookEnabler' directory in your user folder."
 Write-Host "2. Scheduling a task to run a batch file at startup for software installation."
 Write-Host "3. Prompting you to select and install software packages."
-
+Write-Host
 
 
 # Ask for user consent
@@ -84,9 +90,11 @@ $confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes,
 # Check if the user consents
 if ($confirmation -ne 'Y' -and $confirmation -ne 'y') {
     Write-Host "You chose not to run the script. Exiting..."
+    Write-Host
     exit 1
 }else{
     Write-Log "User consent obtained." }
+    
 
 $Username = [System.Environment]::UserName
 
@@ -103,6 +111,8 @@ try {
     }
 } catch {
     Write-Host "Error creating directory: $_"
+    Write-Host "Exiting..."
+    Write-Host
     Write-Log "Error creating directory: $_"
     exit 1
 }
@@ -127,14 +137,18 @@ if (Test-Path $BatchFilePath) {
                 # Copy the batch file to the 'GalaxyBookEnabler' directory
                 Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
                 Write-Host "Batch file copied successfully."
+                Write-Host
                 Write-Log "Batch file copied successfully."
             } catch {
                 Write-Host "Error copying batch file: $_"
                 Write-Log "Error copying batch file: $_"
+                Write-Host "Exiting..."
+                Write-Host
                 exit 1
             }
         } else {
             Write-Host "User chose not to replace the file. Exiting..."
+            Write-Host
             break
         }
     }
@@ -143,15 +157,18 @@ if (Test-Path $BatchFilePath) {
     try {
         Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
         Write-Host "Batch file copied successfully."
+        Write-Host
         Write-Log "Batch file copied successfully."
     } catch {
         Write-Host "Error copying batch file: $_"
         Write-Log "Error copying batch file: $_"
+        Write-Host "Exiting..."
+        Write-Host
         exit 1
     }
 }
 
-
+Clear-Host
 $TaskAction = New-ScheduledTaskAction -Execute $BatchFilePath
 $TaskTrigger = New-ScheduledTaskTrigger -AtStartup
 $TaskPrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount
@@ -168,9 +185,12 @@ try {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger -Principal $TaskPrincipal -Settings $TaskCondition -Description $TaskDescription -ErrorAction Stop
     Write-Host "Scheduled task registered successfully."
+    Write-Host
 } catch {
     Write-Host "Error registering scheduled task: $_"
     Write-Log "Error registering scheduled task: $_"
+    Write-Host "Exiting..."
+    Write-Host
     exit 1
 }
 
@@ -192,6 +212,7 @@ try{
     if ($taskCompleted) {
         Write-Host "The scheduled task completed successfully."
         Write-Host ""
+        Clear-Host
         Write-Host "For most of the Samsung Services to work, the following need to be installed."
         # Initialize variables
         $CoreInstall = $false
@@ -214,15 +235,17 @@ try{
         }
 
         # Display package options
+        Write-Host ""
         Write-Host "Please select the packages to install:"
         foreach ($option in $packageOptions.Keys) {
             Write-Host "$option. $($packageOptions[$option].Name)"
         }
 
-        Write-Host "Do you want to proceed with the installation? (Y)es or (N)o"
 
         # Get user input
-        $UserPrompt = Read-Host
+        $UserPrompt = Read-Host "Do you want to proceed with the installation? (Y)es or (N)o:"
+        Write-Host ""
+
 
         # Validate user input
         if ($UserPrompt -eq 'Y' -or $UserPrompt -eq 'y') {
@@ -236,9 +259,11 @@ try{
                         #winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
                         InstallPackage $selectedPackage.Name $selectedPackage.Id
                         Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
+                        Write-Host ""
                     }
                 } catch {
                     # Handle installation errors
+                    Write-Host ""
                     $ErrorMessage = "Error installing $($selectedPackage.Name): $_"
                     Write-Host $ErrorMessage
                     Write-Log $ErrorMessage
@@ -246,60 +271,105 @@ try{
 
         } else {
             Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
+            Write-Host ""
         }
 
 
-    # If core packages were installed, offer the option to install additional packages
-    if ($CoreInstall) {
-        do{
-        Write-Host "Do you want to install additional packages? (or 5 to skip)"
-
+# If core packages were installed, offer the option to install additional packages
+if ($CoreInstall) {
+    $selectedPackages = @()
+    do {
+        Clear-Host  # Clear the console screen
+        
+        # Print currently selected packages
+        Write-Host "Selected packages: $($selectedPackages -join ', ')"
+        Write-Host ""         
         $packageOptions = @{
             '1' = 'Samsung Multi Control'
             '2' = 'Quick Share'
             '3' = 'Samsung Notes'
             '4' = 'All'
-            '5' = 'Skip'
+            '5' = 'Finish selection'
         }
 
         foreach ($key in ($packageOptions.Keys | Sort-Object)) {
             Write-Host "$key. $($packageOptions[$key])"
         }
 
-        $UserPrompt = Read-Host
+  
+        $UserPrompt = Read-Host "Select a package to install (or 5 to finish selection)"
 
-        # Validate user input
-        if ($UserPrompt -in $packageOptions.Keys){
-            switch ($UserPrompt) {
-                '1' {
+
+        
+
+
+# Validate user input
+if ($UserPrompt -in $packageOptions.Keys){
+    switch ($UserPrompt) {
+        '1' {
+            if ('Samsung Multi Control' -in $selectedPackages) {
+                $selectedPackages = $selectedPackages -ne 'Samsung Multi Control'
+            } else {
+                $selectedPackages += 'Samsung Multi Control'
+            }
+        }
+        '2' {
+            if ('Quick Share' -in $selectedPackages) {
+                $selectedPackages = $selectedPackages -ne 'Quick Share'
+            } else {
+                $selectedPackages += 'Quick Share'
+            }
+        }
+        '3' {
+            if ('Samsung Notes' -in $selectedPackages) {
+                $selectedPackages = $selectedPackages -ne 'Samsung Notes'
+            } else {
+                $selectedPackages += 'Samsung Notes'
+            }
+        }
+        '4' {
+            # Define all packages
+            $allPackages = @('Samsung Multi Control', 'Quick Share', 'Samsung Notes')
+        
+            # Iterate over all packages
+            foreach ($package in $allPackages) {
+                # Check if package is not already in the selected packages
+                if ($selectedPackages -notcontains $package) {
+                    # Add package to the selected packages
+                    $selectedPackages += $package
+                }
+            }
+        }
+        '5' {
+            Write-Host "Finishing package selection."
+        }
+    }          
+}
+    } while  ($UserPrompt -ne '5')
+
+    # Install selected packages
+    if ($selectedPackages.Count -gt 0) {
+        Clear-Host 
+        Write-Host "Installing selected packages..."
+        foreach ($package in $selectedPackages) {
+            switch ($package) {
+                'Samsung Multi Control' {
                     InstallPackage 'Samsung Multi Control' '9N3L4FZ03Q99'
                 }
-                '2' {
+                'Quick Share' {
                     InstallPackage 'Quick Share' '9PCTGDFXVZLJ'
                 }
-                '3' {
+                'Samsung Notes' {
                     InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
                 }
-                '4' {
-                    InstallAllPackages
-                }
-                '5' {
-                    Write-Host "Skipping additional package installation."
-                }
             }
-
-            # If any packages were installed, indicate success
-            if ($UserPrompt -ne '5') {
-                $AltInstall = $true
-            }
-
-        } else {
-            Write-Host "Invalid option. Please enter a number between 1 and 5."
         }
-        } while  ($UserPrompt -ne '5')
     } else {
-        Write-Host "No core packages were installed, skipping additional package installation."
+        Write-Host "No additional packages were selected for installation."
     }
+} else {
+    Write-Host "No core packages were installed, skipping additional package installation."
+}
 
     # Final message
     if ($AltInstall -or $CoreInstall) {
