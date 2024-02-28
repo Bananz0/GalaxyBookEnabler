@@ -262,7 +262,7 @@ try{
             '5' = 'Skip'
         }
 
-        foreach ($key in $packageOptions.Keys) {
+        foreach ($key in ($packageOptions.Keys | Sort-Object)) {
             Write-Host "$key. $($packageOptions[$key])"
         }
 
