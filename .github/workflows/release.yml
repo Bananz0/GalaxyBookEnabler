@@ -17,7 +17,8 @@ jobs:
         run: sudo apt-get install zip
 
       - name: Zip repository
-        run: zip -r repo.zip .
+        run: zip -r repo.zip . -x LICENSE .gitignore README.md
+    
 
       - name: Create Release
         id: create_release
@@ -38,5 +39,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./repo.zip
-          asset_name: repo.zip
+          asset_name: GalaxyBookEnabler.zip
           asset_content_type: application/zip
