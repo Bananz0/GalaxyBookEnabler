@@ -17,7 +17,7 @@ jobs:
         run: sudo apt-get install zip
 
       - name: Zip repository
-        run: zip -r repo.zip . -x LICENSE .gitignore README.md
+        run: zip -r repo.zip . -x LICENSE .gitignore README.md .git .workflows .github
     
 
       - name: Create Release
