@@ -20,6 +20,7 @@ function InstallAllPackages {
 
 # Set up a log file path
 $LogFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'InstallScriptLog.txt'
+$ScriptDirectory = $PSScriptRoot
 
 # Function to log messages
 function Write-Log {
@@ -94,6 +95,7 @@ $UserFolder = "C:\Users\$Username"
 
 # Create a new directory 'GalaxyBookEnabler' in the user's folder
 $GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnablerScript'
+
 # Create a new directory 'GalaxyBookEnabler' if it doesn't exist
 try {
     if (-not (Test-Path $GalaxyBookEnablerDirectory -PathType Container)) {
@@ -223,7 +225,7 @@ try{
         $UserPrompt = Read-Host
 
         # Validate user input
-        if ($UserPrompt -eq 'Y' -and $UserPrompt -eq 'y') {
+        if ($UserPrompt -eq 'Y' -or $UserPrompt -eq 'y') {
                 $CoreInstall = $true
                 $selectedPackage = $packageOptions[$UserPrompt]
                 Write-Host "Installing $($selectedPackage.Name)..."                
@@ -310,61 +312,74 @@ try{
     }
     Write-Log "Script execution completed."
 
-    Write-Host "Do you want to delete the GalaxyBookEnabler directory? (Y/N)"
+    Write-Host "Please delete the Script directory after the installation is complete."
     $deleteConfirmation = Read-Host
-    Write-Log "User decision about directory deletion: $deleteConfirmation"
+    # Write-Log "User decision about directory deletion: $deleteConfirmation"
     } catch {
         Write-Host "Error checking task completion: $_"
         Write-Log "Error checking task completion: $_"
 }
 
-if ($deleteConfirmation -eq 'Y' -and $deleteConfirmation -eq 'y') {
-    # Delete the directory 
-    Write-Log "Deleting the GalaxyBookEnabler directory..."
-    try {
-        Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction SilentlyContinue
-    } catch {
-        Write-Host "Error deleting the directory: $_"
-        Write-Log "Error deleting the directory: $_"
+# if ($deleteConfirmation -eq 'Y' -or $deleteConfirmation -eq 'y') {
+#     # Delete the directory 
+#     Write-Log "Deleting the GalaxyBookEnabler directory..."
+#     try {
+#         Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction SilentlyContinue
+#     } catch {
+#         Write-Host "Error deleting the directory: $_"
+#         Write-Log "Error deleting the directory: $_"
 
-        while ($true) {
-            Write-Host "Would you like to:"
-            Write-Host "1. Retry deleting the directory (not recommended if files are locked)."
-            Write-Host "2. Manually delete the directory from File Explorer."
-            Write-Host "3. Skip directory deletion and continue."
+#         while ($true) {
+#             Write-Host "Would you like to:"
+#             Write-Host "1. Retry deleting the directory (not recommended if files are locked)."
+#             Write-Host "2. Manually delete the directory from File Explorer."
+#             Write-Host "3. Skip directory deletion and continue."
       
-            $retryChoice = Read-Host
+#             $retryChoice = Read-Host
       
-            # Handle user choice
-            switch ($retryChoice) {
-              '1' {
-                try {
-                  Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction Stop
-                  Write-Log "Directory successfully deleted after retry."
-                  break
-                } catch {
-                  Write-Host "Retry failed. Please manually delete the directory."
-                  Write-Log "Retry failed: $_"
-                  break 2
-                }
-              }
-              '2' {
-                break
-              }
-              '3' {
-                Write-Host "Directory left intact."
-                Write-Log "Directory deletion skipped."
-                break
-              }
-              default {
-                Write-Host "Invalid choice. Please enter 1, 2, or 3."
-              }
-            }
-          }
-    }
-} else {
-    Write-Host "The directory will not be deleted."
-}
+#             # Handle user choice
+#             switch ($retryChoice) {
+#               '1' {
+#                 try {
+#                   Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction Stop
+#                   Write-Log "Directory successfully deleted after retry."
+#                   break
+#                 } catch {
+#                   Write-Host "Retry failed. Please manually delete the directory."
+#                   Write-Log "Retry failed: $_"
+#                   break 2
+#                 }
+#               }
+#               '2' {
+#                 break
+#               }
+#               '3' {
+#                 Write-Host "Directory left intact."
+#                 Write-Log "Directory deletion skipped."
+#                 break
+#               }
+#               default {
+#                 Write-Host "Invalid choice. Please enter 1, 2, or 3."
+#               }
+#             }
+#           }
+#     }
+# } else {
+#     Write-Host "The directory will not be deleted."
+# }
+
+# if ($deleteConfirmation -eq 'Y' -or $deleteConfirmation -eq 'y') {
+#     # Create a new scheduled task to delete files with multiple names in the script's directory
+#     $ScriptDirectory = Split-Path -Path $MyInvocation.MyCommand.Path
+#     $FileNames = @("name1*", "name2*", "name3*")  # Replace with the names of the files you want to delete
+#     $DeleteCommands = $FileNames | ForEach-Object { "Get-ChildItem -Path '$ScriptDirectory' -File -Filter '$_' | Remove-Item;" }
+#     $TaskName = "DeleteScriptFilesTask"
+#     $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-Command `"$DeleteCommands Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:$false`""
+#     $TaskTrigger = New-ScheduledTaskTrigger -At ((Get-Date) + (New-TimeSpan -Minutes 1))
+#     Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger
+# } else {
+#     Write-Host "The files in the script's directory will not be deleted."
+# }
 
 Write-Host "Press any key to exit..."
 $null = Read-Host
