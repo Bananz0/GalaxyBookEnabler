@@ -6,7 +6,7 @@ $UserFolder = "C:\Users\$Username"
 $GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnablerScript'
 $BatchFilePath = Join-Path -Path $GalaxyBookEnablerDirectory -ChildPath 'QS.bat'
 $firstrun = $true
-$TaskName = "GalaxyBookEnabler2"
+$TaskName = "GalaxyBookEnabler"
 
 # Set up a log file path
 $LogFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'InstallScriptLog.txt'
