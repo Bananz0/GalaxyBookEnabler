@@ -1,4 +1,29 @@
 Import-Module ScheduledTasks
+
+# Define the script directory
+$Username = [System.Environment]::UserName
+$UserFolder = "C:\Users\$Username"
+$GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnablerScript'
+$BatchFilePath = Join-Path -Path $GalaxyBookEnablerDirectory -ChildPath 'QS.bat'
+$firstrun = $true
+$TaskName = "GalaxyBookEnabler2"
+
+# Set up a log file path
+$LogFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'InstallScriptLog.txt'
+$ScriptDirectory = $PSScriptRoot
+
+#Task details
+$TaskAction = New-ScheduledTaskAction -Execute $BatchFilePath
+$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
+$TaskPrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount
+$TaskTrigger.Repetition = $null  # Remove the repetition settings
+$TaskTrigger.ExecutionTimeLimit = 'PT1M'
+$TaskTrigger.Enabled = $true
+$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
+$TaskCondition = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries
+$TaskDescription = "This spoofs a working Samsung Galaxy Book for QuickShare and other Samsung features."
+$TaskPrincipal.RunLevel = "Highest"
+
 # Function to install a package
 function InstallPackage($packageName, $packageId) {
     try {
@@ -18,9 +43,7 @@ function InstallAllPackages {
     InstallPackage 'Samsung Notes' '9NBLGGH43VHV'
 }
 
-# Set up a log file path
-$LogFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'InstallScriptLog.txt'
-$ScriptDirectory = $PSScriptRoot
+
 
 # Function to log messages
 function Write-Log {
@@ -69,6 +92,60 @@ if (-not $isAdmin) {
     Write-Host
 }
 
+# Check if the QS.bat file already exists in the GalaxyBookEnabler directory
+if (Test-Path -Path $BatchFilePath) {
+    Write-Host "The QS.bat file is already present in the GalaxyBookEnabler directory."
+    Write-Log "The QS.bat file is already present in the GalaxyBookEnabler directory."
+    $firstrun = $false
+}
+
+# Check if the scheduled task with the name "GalaxyBookEnabler" already exists
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+
+if ($task) {
+    Write-Host "The scheduled task with the name 'GalaxyBookEnabler' is already present."
+    Write-Log "The scheduled task with the name 'GalaxyBookEnabler' is already present."
+    $firstrun = $false
+}
+
+if ($firstrun -ne $true) {
+    Write-Host
+    Write-Host "This script has already been run. Skipping the initial setup steps."
+    Write-Host
+    $userchoice = Read-Host "Press (C) to continue with the installation of software packages,
+(D) to delete the GalaxyBookEnabler directory and remove the scheduled task, or any other key to exit."
+    Write-Host
+    if ($userchoice -eq'D')
+    {
+        try {
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+            Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "Scheduled task and GalaxyBookEnabler directory have been removed."
+            Write-Log "Scheduled task and GalaxyBookEnabler directory have been removed."
+            #Ask to exit or continue with the script
+            $userchoice2 = Read-Host "Press (C) to continue with the installation of software packages, or any other key to exit."
+            if ($userchoice2 -eq 'C') {
+                Write-Host "Continuing with the installation of software packages..."
+                Write-Host
+            } else {
+                Write-Host "Exiting..."
+                Write-Host
+                exit 0
+            }
+
+        } catch {
+            Write-Host "Error removing scheduled task and GalaxyBookEnabler directory: $_"
+            Write-Log "Error removing scheduled task and GalaxyBookEnabler directory: $_"
+        }
+    } elseif ($userchoice -eq 'C') {
+        Write-Host "Continuing with the installation of software packages..."
+    } else {
+        Write-Host "Exiting..."
+        Write-Host
+        exit 0
+    }
+}
+
 # Inform the user about the purpose of the script and ask for consent
 Write-Host "This script is designed to automate the installation of certain software packages on your system."
 Write-Host "It will also create a scheduled task to run a batch file at startup for software installation."
@@ -95,14 +172,6 @@ if ($confirmation -ne 'Y' -and $confirmation -ne 'y') {
 }else{
     Write-Log "User consent obtained." }
     
-
-$Username = [System.Environment]::UserName
-
-# Define the user folder based on the current username
-$UserFolder = "C:\Users\$Username"
-
-# Create a new directory 'GalaxyBookEnabler' in the user's folder
-$GalaxyBookEnablerDirectory = Join-Path -Path $UserFolder -ChildPath 'GalaxyBookEnablerScript'
 
 # Create a new directory 'GalaxyBookEnabler' if it doesn't exist
 try {
@@ -148,6 +217,7 @@ if (Test-Path $BatchFilePath) {
             }
         } else {
             Write-Host "User chose not to replace the file. Exiting..."
+            Write-Log "User chose not to replace the file. Exiting..."
             Write-Host
             break
         }
@@ -169,17 +239,6 @@ if (Test-Path $BatchFilePath) {
 }
 
 Clear-Host
-$TaskAction = New-ScheduledTaskAction -Execute $BatchFilePath
-$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
-$TaskPrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount
-$TaskTrigger.Repetition = $null  # Remove the repetition settings
-$TaskTrigger.ExecutionTimeLimit = 'PT1M'
-$TaskTrigger.Enabled = $true
-$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
-$TaskCondition = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries
-$TaskName = "GalaxyBookEnabler"
-$TaskDescription = "This spoofs a working Samsung Galaxy Book for QuickShare and other Samsung features."
-$TaskPrincipal.RunLevel = "Highest"
 
 try {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
