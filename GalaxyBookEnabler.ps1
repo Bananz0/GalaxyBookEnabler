@@ -27,11 +27,11 @@ $TaskPrincipal.RunLevel = "Highest"
 # Function to install a package
 function InstallPackage($packageName, $packageId) {
     try {
-        Write-Host "Installing $packageName..."
+        Write-Output "Installing $packageName..."
         winget install --accept-source-agreements --accept-package-agreements --id $packageId
-        Write-Host "Installation of $packageName completed successfully."
+        Write-Output "Installation of $packageName completed successfully."
     } catch {
-        Write-Host "Error installing $packageName $_"
+        Write-Output "Error installing $packageName $_"
         Write-Log "Error installing $packageName $_"
     }
 } 
@@ -67,8 +67,8 @@ $isAdmin = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -m
 
 if (-not $isAdmin) {
     # Explain the importance of running the script with administrative privileges
-    Write-Host "Please note that this script needs administrative privileges to perform these tasks."
-    Write-Host
+    Write-Output "Please note that this script needs administrative privileges to perform these tasks."
+    Write-Output ""
     # Prompt user for consent
     $confirmation = Read-Host "Do you want to run this script with administrative privileges? Press 'Y' to agree, or any other key to exit"
     
@@ -78,23 +78,23 @@ if (-not $isAdmin) {
             # Exit the current instance of the script after triggering the relaunch
             exit
         } catch {
-            Write-Host "Error relaunching the script as an administrator: $_"
+            Write-Output "Error relaunching the script as an administrator: $_"
             Write-Log "Error relaunching the script as an administrator: $_"
-            Write-Host "Exiting..."
-            Write-Host
+            Write-Output "Exiting..."
+            Write-Output ""
             exit 1
         }
     } else {
         exit 0
     }
 } else {
-    Write-Host "Script is  running with administrative privileges."
-    Write-Host
+    Write-Output "Script is  running with administrative privileges."
+    Write-Output "" 
 }
 
 # Check if the QS.bat file already exists in the GalaxyBookEnabler directory
 if (Test-Path -Path $BatchFilePath) {
-    Write-Host "The QS.bat file is already present in the GalaxyBookEnabler directory."
+    Write-Output "The QS.bat file is already present in the GalaxyBookEnabler directory."
     Write-Log "The QS.bat file is already present in the GalaxyBookEnabler directory."
     $firstrun = $false
 }
@@ -103,62 +103,62 @@ if (Test-Path -Path $BatchFilePath) {
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
 if ($task) {
-    Write-Host "The scheduled task with the name 'GalaxyBookEnabler' is already present."
+    Write-Output "The scheduled task with the name 'GalaxyBookEnabler' is already present."
     Write-Log "The scheduled task with the name 'GalaxyBookEnabler' is already present."
     $firstrun = $false
 }
 
 if ($firstrun -ne $true) {
-    Write-Host
-    Write-Host "This script has already been run. Skipping the initial setup steps."
-    Write-Host
+    Write-Output ""
+    Write-Output "This script has already been run. Skipping the initial setup steps."
+    Write-Output ""
     $userchoice = Read-Host "Press (C) to continue with the installation of software packages,
 (D) to delete the GalaxyBookEnabler directory and remove the scheduled task, or any other key to exit."
-    Write-Host
+    Write-Output ""
     if ($userchoice -eq'D')
     {
         try {
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
             Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "Scheduled task and GalaxyBookEnabler directory have been removed."
+            Write-Output "Scheduled task and GalaxyBookEnabler directory have been removed."
             Write-Log "Scheduled task and GalaxyBookEnabler directory have been removed."
             #Ask to exit or continue with the script
             $userchoice2 = Read-Host "Press (C) to continue with the installation of software packages, or any other key to exit."
             if ($userchoice2 -eq 'C') {
-                Write-Host "Continuing with the installation of software packages..."
-                Write-Host
+                Write-Output "Continuing with the installation of software packages..."
+                Write-Output ""
             } else {
-                Write-Host "Exiting..."
-                Write-Host
+                Write-Output "Exiting..."
+                Write-Output ""
                 exit 0
             }
 
         } catch {
-            Write-Host "Error removing scheduled task and GalaxyBookEnabler directory: $_"
+            Write-Output "Error removing scheduled task and GalaxyBookEnabler directory: $_"
             Write-Log "Error removing scheduled task and GalaxyBookEnabler directory: $_"
         }
     } elseif ($userchoice -eq 'C') {
-        Write-Host "Continuing with the installation of software packages..."
+        Write-Output "Continuing with the installation of software packages..."
     } else {
-        Write-Host "Exiting..."
-        Write-Host
+        Write-Output "Exiting..."
+        Write-Output ""
         exit 0
     }
 }
 
 # Inform the user about the purpose of the script and ask for consent
-Write-Host "This script is designed to automate the installation of certain software packages on your system."
-Write-Host "It will also create a scheduled task to run a batch file at startup for software installation."
-Write-Host 
-Write-Host "Please read and understand the actions it will perform before proceeding."
-Write-Host
+Write-Output "This script is designed to automate the installation of certain software packages on your system."
+Write-Output "It will also create a scheduled task to run a batch file at startup for software installation."
+Write-Output "" 
+Write-Output "Please read and understand the actions it will perform before proceeding."
+Write-Output ""
 
 # Provide a brief description of the script's actions
-Write-Host "Actions to be performed:"
-Write-Host "1. Creation of 'GalaxyBookEnabler' directory in your user folder."
-Write-Host "2. Scheduling a task to run a batch file at startup for software installation."
-Write-Host "3. Prompting you to select and install software packages."
-Write-Host
+Write-Output "Actions to be performed:"
+Write-Output "1. Creation of 'GalaxyBookEnabler' directory in your user folder."
+Write-Output "2. Scheduling a task to run a batch file at startup for software installation."
+Write-Output "3. Prompting you to select and install software packages."
+Write-Output ""
 
 
 # Ask for user consent
@@ -166,8 +166,8 @@ $confirmation = Read-Host "Do you consent to run this script? (Type 'Y' for Yes,
 
 # Check if the user consents
 if ($confirmation -ne 'Y' -and $confirmation -ne 'y') {
-    Write-Host "You chose not to run the script. Exiting..."
-    Write-Host
+    Write-Output "You chose not to run the script. Exiting..."
+    Write-Output ""
     exit 1
 }else{
     Write-Log "User consent obtained." }
@@ -179,9 +179,9 @@ try {
         New-Item -Path $GalaxyBookEnablerDirectory -ItemType Directory -ErrorAction Stop
     }
 } catch {
-    Write-Host "Error creating directory: $_"
-    Write-Host "Exiting..."
-    Write-Host
+    Write-Output "Error creating directory: $_"
+    Write-Output "Exiting..."
+    Write-Output ""
     Write-Log "Error creating directory: $_"
     exit 1
 }
@@ -196,7 +196,7 @@ if (Test-Path $BatchFilePath) {
     $destinationContentHash = Get-FileHash -Path $BatchFilePath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
     if ((Test-Path $SourceBatchFilePath) -and (Test-Path $BatchFilePath) -and ($sourceContentHash -eq $destinationContentHash)) {
-        Write-Host "Source and destination file contents are the same. No need to copy."
+        Write-Output "Source and destination file contents are the same. No need to copy."
     } else {
         # Prompt user for confirmation to replace the file
         $replaceConfirmation = Read-Host "Destination file already exists and has different contents. Do you want to replace it? (Y/N)"
@@ -205,20 +205,20 @@ if (Test-Path $BatchFilePath) {
             try {
                 # Copy the batch file to the 'GalaxyBookEnabler' directory
                 Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
-                Write-Host "Batch file copied successfully."
-                Write-Host
+                Write-Output "Batch file copied successfully."
+                Write-Output ""
                 Write-Log "Batch file copied successfully."
             } catch {
-                Write-Host "Error copying batch file: $_"
+                Write-Output "Error copying batch file: $_"
                 Write-Log "Error copying batch file: $_"
-                Write-Host "Exiting..."
-                Write-Host
+                Write-Output "Exiting..."
+                Write-Output ""
                 exit 1
             }
         } else {
-            Write-Host "User chose not to replace the file. Exiting..."
+            Write-Output "User chose not to replace the file. Exiting..."
             Write-Log "User chose not to replace the file. Exiting..."
-            Write-Host
+            Write-Output ""
             break
         }
     }
@@ -226,14 +226,14 @@ if (Test-Path $BatchFilePath) {
     # Destination file doesn't exist, proceed with copying
     try {
         Copy-Item -Path $SourceBatchFilePath -Destination $BatchFilePath -Force -ErrorAction Stop
-        Write-Host "Batch file copied successfully."
-        Write-Host
+        Write-Output "Batch file copied successfully."
+        Write-Output ""
         Write-Log "Batch file copied successfully."
     } catch {
-        Write-Host "Error copying batch file: $_"
+        Write-Output "Error copying batch file: $_"
         Write-Log "Error copying batch file: $_"
-        Write-Host "Exiting..."
-        Write-Host
+        Write-Output "Exiting..."
+        Write-Output ""
         exit 1
     }
 }
@@ -243,13 +243,13 @@ Clear-Host
 try {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger -Principal $TaskPrincipal -Settings $TaskCondition -Description $TaskDescription -ErrorAction Stop
-    Write-Host "Scheduled task registered successfully."
-    Write-Host
+    Write-Output "Scheduled task registered successfully."
+    Write-Output ""
 } catch {
-    Write-Host "Error registering scheduled task: $_"
+    Write-Output "Error registering scheduled task: $_"
     Write-Log "Error registering scheduled task: $_"
-    Write-Host "Exiting..."
-    Write-Host
+    Write-Output "Exiting..."
+    Write-Output ""
     exit 1
 }
  
@@ -268,10 +268,10 @@ try{
     }
 
     if ($taskCompleted) {
-        Write-Host "The scheduled task completed successfully."
-        Write-Host ""
+        Write-Output "The scheduled task completed successfully."
+        Write-Output ""
         Clear-Host
-        Write-Host "For most of the Samsung Services to work, the following need to be installed."
+        Write-Output "For most of the Samsung Services to work, the following need to be installed."
         # Initialize variables
         $CoreInstall = $false
         $AltInstall = $false
@@ -293,23 +293,23 @@ try{
         }
 
         # Display package options
-        Write-Host ""
-        Write-Host "Please select the packages to install:"
+        Write-Output ""
+        Write-Output "Please select the packages to install:"
         foreach ($option in $packageOptions.Keys) {
-            Write-Host "$option. $($packageOptions[$option].Name)"
+            Write-Output "$option. $($packageOptions[$option].Name)"
         }
 
 
         # Get user input
         $UserPrompt = Read-Host "Do you want to proceed with the installation? (Y)es or (N)o:"
-        Write-Host ""
+        Write-Output ""
 
 
         # Validate user input
         if ($UserPrompt -eq 'Y' -or $UserPrompt -eq 'y') {
                 $CoreInstall = $true
                 $selectedPackage = $packageOptions[$UserPrompt]
-                Write-Host "Installing $($selectedPackage.Name)..."                
+                Write-Output "Installing $($selectedPackage.Name)..."                
                 try {
                     # Install all the packages with for loop
                     foreach ($packageKey in $packageOptions.Keys) {
@@ -317,19 +317,19 @@ try{
                         #winget install --accept-source-agreements --accept-package-agreements --id $selectedPackage.Id 
                         InstallPackage $selectedPackage.Name $selectedPackage.Id
                         Write-Log  "Installation of $($selectedPackage.Name) completed successfully."
-                        Write-Host ""
+                        Write-Output ""
                     }
                 } catch {
                     # Handle installation errors
-                    Write-Host ""
+                    Write-Output ""
                     $ErrorMessage = "Error installing $($selectedPackage.Name): $_"
-                    Write-Host $ErrorMessage
+                    Write-Output "" $ErrorMessage
                     Write-Log $ErrorMessage
                 }
 
         } else {
-            Write-Host "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
-            Write-Host ""
+            Write-Output "No valid option selected. If needed, you can install the apps from the Microsoft Store or an alternative source."
+            Write-Output ""
         }
 
 
@@ -340,8 +340,8 @@ if ($CoreInstall) {
         Clear-Host  # Clear the console screen
         
         # Print currently selected packages
-        Write-Host "Selected packages: $($selectedPackages -join ', ')"
-        Write-Host ""         
+        Write-Output "Selected packages: $($selectedPackages -join ', ')"
+        Write-Output ""         
         $packageOptions = @{
             '1' = 'Samsung Multi Control'
             '2' = 'Quick Share'
@@ -351,7 +351,7 @@ if ($CoreInstall) {
         }
 
         foreach ($key in ($packageOptions.Keys | Sort-Object)) {
-            Write-Host "$key. $($packageOptions[$key])"
+            Write-Output "$key. $($packageOptions[$key])"
         }
 
   
@@ -399,7 +399,7 @@ if ($UserPrompt -in $packageOptions.Keys){
             }
         }
         '5' {
-            Write-Host "Finishing package selection."
+            Write-Output "Finishing package selection."
         }
     }          
 }
@@ -408,7 +408,7 @@ if ($UserPrompt -in $packageOptions.Keys){
     # Install selected packages
     if ($selectedPackages.Count -gt 0) {
         Clear-Host 
-        Write-Host "Installing selected packages..."
+        Write-Output "Installing selected packages..."
         foreach ($package in $selectedPackages) {
             switch ($package) {
                 'Samsung Multi Control' {
@@ -423,28 +423,28 @@ if ($UserPrompt -in $packageOptions.Keys){
             }
         }
     } else {
-        Write-Host "No additional packages were selected for installation."
+        Write-Output "No additional packages were selected for installation."
     }
 } else {
-    Write-Host "No core packages were installed, skipping additional package installation."
+    Write-Output "No core packages were installed, skipping additional package installation."
 }
 
     # Final message
     if ($AltInstall -or $CoreInstall) {
-        Write-Host "You have successfully installed the selected packages."
+        Write-Output "You have successfully installed the selected packages."
         } else {
-            Write-Host "No packages were installed."
+            Write-Output "No packages were installed."
         }       
     } else {
-        Write-Host "The scheduled task did not complete successfully. Current working directory has been left as is."
+        Write-Output "The scheduled task did not complete successfully. Current working directory has been left as is."
     }
     Write-Log "Script execution completed."
 
-    Write-Host "Please delete the Script directory after the installation is complete."
+    Write-Output "Please delete the Script directory after the installation is complete."
     $deleteConfirmation = Read-Host
     # Write-Log "User decision about directory deletion: $deleteConfirmation"
     } catch {
-        Write-Host "Error checking task completion: $_"
+        Write-Output "Error checking task completion: $_"
         Write-Log "Error checking task completion: $_"
 }
 
@@ -454,14 +454,14 @@ if ($UserPrompt -in $packageOptions.Keys){
 #     try {
 #         Remove-Item $GalaxyBookEnablerDirectory -Recurse -Force -ErrorAction SilentlyContinue
 #     } catch {
-#         Write-Host "Error deleting the directory: $_"
+#         Write-Output "Error deleting the directory: $_"
 #         Write-Log "Error deleting the directory: $_"
 
 #         while ($true) {
-#             Write-Host "Would you like to:"
-#             Write-Host "1. Retry deleting the directory (not recommended if files are locked)."
-#             Write-Host "2. Manually delete the directory from File Explorer."
-#             Write-Host "3. Skip directory deletion and continue."
+#             Write-Output "Would you like to:"
+#             Write-Output "1. Retry deleting the directory (not recommended if files are locked)."
+#             Write-Output "2. Manually delete the directory from File Explorer."
+#             Write-Output "3. Skip directory deletion and continue."
       
 #             $retryChoice = Read-Host
       
@@ -473,7 +473,7 @@ if ($UserPrompt -in $packageOptions.Keys){
 #                   Write-Log "Directory successfully deleted after retry."
 #                   break
 #                 } catch {
-#                   Write-Host "Retry failed. Please manually delete the directory."
+#                   Write-Output "Retry failed. Please manually delete the directory."
 #                   Write-Log "Retry failed: $_"
 #                   break 2
 #                 }
@@ -482,18 +482,18 @@ if ($UserPrompt -in $packageOptions.Keys){
 #                 break
 #               }
 #               '3' {
-#                 Write-Host "Directory left intact."
+#                 Write-Output "Directory left intact."
 #                 Write-Log "Directory deletion skipped."
 #                 break
 #               }
 #               default {
-#                 Write-Host "Invalid choice. Please enter 1, 2, or 3."
+#                 Write-Output "Invalid choice. Please enter 1, 2, or 3."
 #               }
 #             }
 #           }
 #     }
 # } else {
-#     Write-Host "The directory will not be deleted."
+#     Write-Output "The directory will not be deleted."
 # }
 
 # if ($deleteConfirmation -eq 'Y' -or $deleteConfirmation -eq 'y') {
@@ -506,8 +506,8 @@ if ($UserPrompt -in $packageOptions.Keys){
 #     $TaskTrigger = New-ScheduledTaskTrigger -At ((Get-Date) + (New-TimeSpan -Minutes 1))
 #     Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger
 # } else {
-#     Write-Host "The files in the script's directory will not be deleted."
+#     Write-Output "The files in the script's directory will not be deleted."
 # }
 
-Write-Host "Press any key to exit..."
+Write-Output "Press any key to exit..."
 $null = Read-Host
