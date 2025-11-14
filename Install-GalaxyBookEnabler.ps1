@@ -426,12 +426,12 @@ function Show-PackageSelectionMenu {
 
 function Get-PackagesByProfile {
     param (
-        [string]$Profile
+        [string]$ProfileName
     )
     
     $packages = @()
     
-    switch ($Profile) {
+    switch ($ProfileName) {
         "1" { # Core Only
             $packages = $PackageDatabase.Core
         }
@@ -843,7 +843,9 @@ if ($alreadyInstalled) {
         try {
             $config = Get-Content $configPath | ConvertFrom-Json
             $currentVersion = if ($config.InstalledVersion) { $config.InstalledVersion } else { "1.0.0" }
-        } catch {}
+        } catch {
+            Write-Verbose "Failed to read config file, using default version"
+        }
     }
     Write-Host "Current version: $currentVersion" -ForegroundColor Gray
     Write-Host "Installer version: $SCRIPT_VERSION" -ForegroundColor Gray
@@ -1140,7 +1142,7 @@ if ($installChoice -eq "6") {
     $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
 } else {
     # Profile-based selection
-    $packagesToInstall = Get-PackagesByProfile -Profile $installChoice
+    $packagesToInstall = Get-PackagesByProfile -ProfileName $installChoice
     
     # Show what will be installed
     Clear-Host
