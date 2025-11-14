@@ -49,7 +49,7 @@ jobs:
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
           # Extract the section for this version from CHANGELOG.md
-          CHANGELOG=$(awk "/## \[$VERSION\]/,/^## \[/" CHANGELOG.md | sed '$d' | tail -n +2)
+          CHANGELOG=$(awk "/^## \\[$VERSION\\]/ {flag=1; next} /^## \\[/ {flag=0} flag" CHANGELOG.md)
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
