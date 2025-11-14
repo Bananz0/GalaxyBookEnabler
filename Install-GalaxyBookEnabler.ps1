@@ -600,6 +600,167 @@ function Test-IntelWiFi {
     }
 }
 
+function Get-LegacyBiosValues {
+    param (
+        [string]$OldBatchPath
+    )
+    
+    if (-not (Test-Path $OldBatchPath)) {
+        return $null
+    }
+    
+    try {
+        $content = Get-Content $OldBatchPath -Raw
+        
+        # Default values (Galaxy Book3 Ultra) for comparison
+        $defaults = @{
+            BIOSVendor = "American Megatrends International, LLC."
+            BIOSVersion = "P04RKI.049.220408.ZQ"
+            BIOSMajorRelease = "0x04"
+            BIOSMinorRelease = "0x11"
+            SystemManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+            SystemFamily = "Galaxy Book3 Ultra"
+            SystemProductName = "NP960XFH-XA2UK"
+            ProductSku = "SCAI-A5A5-ADLP-PSLP"
+            EnclosureKind = "0x1f"
+            BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+            BaseBoardProduct = "NP960XFH-XA2UK"
+        }
+        
+        # Extract all 11 registry values using regex
+        $values = @{}
+        
+        # String values (REG_SZ)
+        if ($content -match 'BIOSVendor.*?/d\s+"([^"]+)"') {
+            $values.BIOSVendor = $Matches[1]
+        }
+        if ($content -match 'BIOSVersion.*?/d\s+"([^"]+)"') {
+            $values.BIOSVersion = $Matches[1]
+        }
+        if ($content -match 'SystemManufacturer.*?/d\s+"([^"]+)"') {
+            $values.SystemManufacturer = $Matches[1]
+        }
+        if ($content -match 'SystemFamily.*?/d\s+"([^"]+)"') {
+            $values.SystemFamily = $Matches[1]
+        }
+        if ($content -match 'SystemProductName.*?/d\s+"([^"]+)"') {
+            $values.SystemProductName = $Matches[1]
+        }
+        if ($content -match 'ProductSku.*?/d\s+"([^"]+)"') {
+            $values.ProductSku = $Matches[1]
+        }
+        if ($content -match 'BaseBoardManufacturer.*?/d\s+"([^"]+)"') {
+            $values.BaseBoardManufacturer = $Matches[1]
+        }
+        if ($content -match 'BaseBoardProduct.*?/d\s+"([^"]+)"') {
+            $values.BaseBoardProduct = $Matches[1]
+        }
+        
+        # DWORD values (REG_DWORD) - can be with or without quotes
+        if ($content -match 'BIOSMajorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+            $values.BIOSMajorRelease = $Matches[1]
+        }
+        if ($content -match 'BIOSMinorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+            $values.BIOSMinorRelease = $Matches[1]
+        }
+        if ($content -match 'EnclosureKind.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+            $values.EnclosureKind = $Matches[1]
+        }
+        
+        # Check if values are custom (different from Galaxy Book3 Ultra defaults)
+        $customCount = 0
+        foreach ($key in $values.Keys) {
+            if ($defaults.ContainsKey($key) -and $values[$key] -ne $defaults[$key]) {
+                $customCount++
+            }
+        }
+        
+        # Consider it custom if we found values and at least one differs from defaults
+        $isCustom = $values.Count -ge 3 -and $customCount -gt 0
+        
+        if ($isCustom) {
+            return @{
+                IsCustom = $true
+                Values = $values
+            }
+        }
+        
+        return $null
+    } catch {
+        Write-Verbose "Failed to parse legacy batch file: $_"
+        return $null
+    }
+}
+
+function New-RegistrySpoofBatch {
+    param (
+        [string]$OutputPath,
+        [hashtable]$BiosValues = $null
+    )
+    
+    # Default values (Galaxy Book3 Ultra)
+    $defaults = @{
+        BIOSVendor = "American Megatrends International, LLC."
+        BIOSVersion = "P04RKI.049.220408.ZQ"
+        BIOSMajorRelease = "0x04"
+        BIOSMinorRelease = "0x11"
+        SystemManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+        SystemFamily = "Galaxy Book3 Ultra"
+        SystemProductName = "NP960XFH-XA2UK"
+        ProductSku = "SCAI-A5A5-ADLP-PSLP"
+        EnclosureKind = "0x1f"
+        BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+        BaseBoardProduct = "NP960XFH-XA2UK"
+    }
+    
+    # Use custom values if provided, otherwise use defaults
+    $values = if ($BiosValues) { $BiosValues } else { $defaults }
+    
+    # Ensure all keys exist (fill missing ones with defaults)
+    foreach ($key in $defaults.Keys) {
+        if (-not $values.ContainsKey($key)) {
+            $values[$key] = $defaults[$key]
+        }
+    }
+    
+    # Helper function to format registry value
+    function Format-RegValue {
+        param($Key, $Value)
+        
+        $isDword = $Key -match '(Release|Kind)$'
+        $type = if ($isDword) { "REG_DWORD" } else { "REG_SZ" }
+        $formattedValue = if ($isDword) { $Value } else { "`"$Value`"" }
+        
+        return "reg add `"HKLM\HARDWARE\DESCRIPTION\System\BIOS`" /v $Key /t $type /d $formattedValue /f"
+    }
+    
+    $batchContent = @"
+@echo off
+REM ============================================================================
+REM Galaxy Book Enabler - Registry Spoof Script
+REM Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+REM ============================================================================
+
+$(Format-RegValue "BIOSVendor" $values.BIOSVendor)
+$(Format-RegValue "BIOSVersion" $values.BIOSVersion)
+$(Format-RegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
+$(Format-RegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
+$(Format-RegValue "SystemManufacturer" $values.SystemManufacturer)
+$(Format-RegValue "SystemFamily" $values.SystemFamily)
+$(Format-RegValue "SystemProductName" $values.SystemProductName)
+$(Format-RegValue "ProductSku" $values.ProductSku)
+$(Format-RegValue "EnclosureKind" $values.EnclosureKind)
+$(Format-RegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
+$(Format-RegValue "BaseBoardProduct" $values.BaseBoardProduct)
+
+REM ============================================================================
+REM Model: $($values.SystemFamily) ($($values.SystemProductName))
+REM ============================================================================
+"@
+    
+    $batchContent | Set-Content $OutputPath -Encoding ASCII
+}
+
 # Check if running as administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -813,18 +974,83 @@ if (-not (Test-Path $installPath)) {
     New-Item -Path $installPath -ItemType Directory -Force | Out-Null
 }
 
-# Create the batch file for registry spoofing
-$batchContent = @"
-@echo off
-reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BaseBoardManufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f
-reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BaseBoardProduct /t REG_SZ /d "NP960XFH-XA2UK" /f
-reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemProductName /t REG_SZ /d "NP960XFH-XA2UK" /f
-reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemFamily /t REG_SZ /d "Galaxy Book3 Ultra" /f
-reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemManufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f
-"@
+# Check for legacy v1.x installation
+$legacyPath = Join-Path $env:USERPROFILE "GalaxyBookEnablerScript"
+$legacyBatchPath = Join-Path $legacyPath "QS.bat"
+$biosValuesToUse = $null
 
-$batchContent | Set-Content $batchScriptPath
-Write-Host "✓ Registry spoof script created" -ForegroundColor Green
+if (Test-Path $legacyBatchPath) {
+    Write-Host "Detected legacy installation (v1.x)" -ForegroundColor Yellow
+    
+    $legacyValues = Get-LegacyBiosValues -OldBatchPath $legacyBatchPath
+    
+    if ($legacyValues -and $legacyValues.IsCustom) {
+        Write-Host "`nCustom BIOS values detected in old QS.bat:" -ForegroundColor Cyan
+        
+        # Display all detected custom values
+        $defaults = @{
+            BIOSVendor = "American Megatrends International, LLC."
+            BIOSVersion = "P04RKI.049.220408.ZQ"
+            BIOSMajorRelease = "0x04"
+            BIOSMinorRelease = "0x11"
+            SystemManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+            SystemFamily = "Galaxy Book3 Ultra"
+            SystemProductName = "NP960XFH-XA2UK"
+            ProductSku = "SCAI-A5A5-ADLP-PSLP"
+            EnclosureKind = "0x1f"
+            BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
+            BaseBoardProduct = "NP960XFH-XA2UK"
+        }
+        
+        $customCount = 0
+        foreach ($key in $legacyValues.Values.Keys | Sort-Object) {
+            $value = $legacyValues.Values[$key]
+            $isCustom = $defaults[$key] -ne $value
+            $marker = if ($isCustom) { "→" } else { " " }
+            $color = if ($isCustom) { "Green" } else { "DarkGray" }
+            Write-Host "  $marker $($key.PadRight(25)) = $value" -ForegroundColor $color
+            if ($isCustom) { $customCount++ }
+        }
+        
+        Write-Host "`nDetected model: $($legacyValues.Values.SystemFamily) ($($legacyValues.Values.SystemProductName))" -ForegroundColor Cyan
+        Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from GB3U defaults" -ForegroundColor Yellow
+        Write-Host ""
+        
+        $preserve = Read-Host "Would you like to preserve these custom values? (Y/N)"
+        
+        if ($preserve -eq "Y" -or $preserve -eq "y") {
+            $biosValuesToUse = $legacyValues.Values
+            Write-Host "✓ Will use your custom BIOS values" -ForegroundColor Green
+        } else {
+            Write-Host "✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "✓ Legacy installation uses standard values" -ForegroundColor Green
+    }
+    Write-Host ""
+}
+
+# Create the batch file for registry spoofing
+Write-Host "Creating registry spoof script..." -ForegroundColor Yellow
+New-RegistrySpoofBatch -OutputPath $batchScriptPath -BiosValues $biosValuesToUse
+
+if ($biosValuesToUse) {
+    Write-Host "✓ Registry spoof script created (custom values preserved)" -ForegroundColor Green
+} else {
+    Write-Host "✓ Registry spoof script created (Galaxy Book3 Ultra)" -ForegroundColor Green
+}
+
+# Clean up legacy installation if it exists
+if (Test-Path $legacyPath) {
+    Write-Host "Cleaning up legacy installation files..." -ForegroundColor Yellow
+    try {
+        Remove-Item $legacyPath -Recurse -Force -ErrorAction Stop
+        Write-Host "✓ Legacy files removed" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠ Could not remove legacy files: $_" -ForegroundColor Yellow
+        Write-Host "  You can manually delete: $legacyPath" -ForegroundColor Gray
+    }
+}
 
 # Save configuration
 $config = @{

@@ -186,7 +186,37 @@ HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemFamily
 HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemManufacturer
 ```
 
-## 📖 Installation Guide
+**Default Values** (Galaxy Book3 Ultra):
+- Manufacturer: `SAMSUNG ELECTRONICS CO., LTD.`
+- Product: `NP960XFH-XA2UK`
+- Family: `Galaxy Book3 Ultra`
+- BIOS Version: `P04RKI.049.220408.ZQ`
+- SKU: `SCAI-A5A5-ADLP-PSLP`
+
+**How It Works:**
+1. Installer detects existing `QS.bat` file
+2. Extracts all 11 BIOS registry values
+3. Compares against Galaxy Book3 Ultra defaults
+4. Shows you what custom values were detected
+5. Asks if you want to preserve them
+6. Generates new installation with your custom values
+
+**Example Detection:**
+```
+Custom BIOS values detected in old QS.bat:
+
+→ SystemFamily              = Galaxy Book4 Ultra
+→ SystemProductName         = 960XGL
+→ BIOSVersion               = P07RGJ.068.220524.HC
+→ ProductSku                = SCAI-PROT-A5A5-MTLH-PALX
+→ BaseBoardProduct          = NP960XGL-XG1UK
+  ... (other values)
+
+Detected model: Galaxy Book4 Ultra (960XGL)
+Custom values: 7/11 keys modified from GB3U defaults
+
+Would you like to preserve these custom values? (Y/N)
+```
 
 ## 📖 Installation Guide
 
@@ -203,7 +233,10 @@ HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemManufacturer
 
 3. **File Setup**
    - Creates installation directory: `%USERPROFILE%\.galaxy-book-enabler`
-   - Generates registry spoof script
+   - Detects legacy v1.x installation (if present)
+   - **Preserves custom BIOS values** from old QS.bat (Galaxy Book4 Ultra, GB4 Pro, etc.)
+   - Generates registry spoof script with preserved or default values
+   - Cleans up old installation files
    - Saves configuration file
 
 4. **Startup Task Creation**
@@ -387,6 +420,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [GitHub Repository](https://github.com/Bananz0/GalaxyBookEnabler)
 - [Issues & Bug Reports](https://github.com/Bananz0/GalaxyBookEnabler/issues)
 - [Changelog](CHANGELOG.md)
+- [Custom Model Examples](CUSTOM_MODEL_EXAMPLES.md) - GB4 Ultra, GB4 Pro, GB5 configs
 - [Google Nearby Share Alternative](https://www.android.com/better-together/nearby-share-app/)
 
 ---

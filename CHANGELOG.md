@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Downloads and launches updated installer automatically
   - Shows release notes before updating
   - Fallback to manual update if download fails
+- **Legacy configuration preservation** - Upgrading from v1.x
+  - Detects custom BIOS values in old QS.bat
+  - Prompts user to preserve custom values or use defaults
+  - Automatically cleans up old installation files
+  - Seamless migration from v1.x to v2.x
 - **Comprehensive package database** - Defined all 33+ Samsung apps with metadata
   - Core packages (required): Account, Settings, Cloud, Continuity Service, Intelligence Service
   - Recommended packages (21 apps): All fully working Samsung apps
@@ -92,6 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Show-CustomPackageSelection()` - Interactive custom package picker
 - `Install-SamsungPackages()` - Batch installer with progress tracking
 - `Test-IntelWiFi()` - Returns structured Wi-Fi adapter information
+- `Get-LegacyBiosValues()` - Extracts custom values from v1.x QS.bat
+- `New-RegistrySpoofBatch()` - Generates batch file with custom or default values
 - Package database structured as hashtable with arrays per category
 - Package objects include all necessary metadata for smart filtering
 
@@ -174,11 +181,19 @@ Here's what's planned for future versions:
 
 **How to upgrade:**
 1. Run the new installer - it will detect your v1.x installation
-2. Choose option [1] to update
-3. Old files will be cleaned up automatically
-4. Your registry spoof settings are preserved
+2. If you customized BIOS values in QS.bat, you'll be asked to preserve them
+3. Choose option [1] to update
+4. Old files will be cleaned up automatically
+5. Your registry spoof settings are preserved (if you chose to keep them)
 
-**Note:** If you customized the old QS.bat file, those changes will be lost. The new version uses a standard Galaxy Book3 Ultra profile.
+**Custom BIOS values:**
+If you modified QS.bat with custom device names (e.g., different Galaxy Book model), the installer will:
+- Detect your custom values automatically
+- Ask if you want to preserve them
+- Apply your custom values to the new installation
+- Or use the default Galaxy Book3 Ultra profile
+
+**Note:** Standard Galaxy Book3 Ultra values are used by default if no customization is detected.
 
 ---
 
