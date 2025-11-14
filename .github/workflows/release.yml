@@ -3,9 +3,7 @@ name: Create Release
 on:
   push:
     tags:
-      - 'v*.*.*'  
-    branches:
-      - main 
+      - 'v*.*.*'
 
 permissions:
   contents: write
