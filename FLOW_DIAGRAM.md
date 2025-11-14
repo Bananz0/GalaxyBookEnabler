@@ -60,7 +60,7 @@
 │  └───────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │ [3] Full Experience (27 packages)                         │ │
+│  │ [3] Full Experience (29 packages)                         │ │
 │  │     • Recommended + Apps requiring extra setup            │ │
 │  │     • Samsung Phone, Find, Quick Search                   │ │
 │  └───────────────────────────────────────────────────────────┘ │
