@@ -49,8 +49,8 @@
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │ [1] Core Only (6 packages)                                │ │
-│  │     • Samsung Account, Settings, Cloud, Continuity        │ │
+│  │ [1] Core Only (7 packages)                                │ │
+│  │     • Samsung Account, Settings, Settings Runtime, Cloud, Cloud Assistant, Continuity, Intelligence Service │ │
 │  └───────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
