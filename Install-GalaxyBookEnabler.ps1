@@ -298,7 +298,8 @@ $PackageDatabase = @{
             Id = "9MVWDZ5KX9LH"
             Category = "Security"
             Description = "Password manager with biometric auth"
-            Status = "Working"
+            Status = "RequiresExtraSteps"
+            Warning = "Requires additional configuration steps to work properly"
         }
     )
     
