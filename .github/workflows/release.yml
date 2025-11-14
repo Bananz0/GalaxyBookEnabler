@@ -58,7 +58,6 @@ jobs:
         run: |
           mkdir -p release-files
           cp Install-GalaxyBookEnabler.ps1 release-files/
-          cp GalaxyBookEnabler.ps1 release-files/
           cp README.md release-files/
           cp CHANGELOG.md release-files/
           cp PACKAGES.md release-files/
