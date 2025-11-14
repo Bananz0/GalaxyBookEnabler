@@ -97,7 +97,6 @@ jobs:
             Run the installer again - it will detect your current installation and offer to update.
             
             ## 📖 Documentation
-            - [Quick Start Guide](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/QUICKSTART.md)
             - [Full Documentation](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/README.md)
             - [Package List](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/PACKAGES.md)
             
