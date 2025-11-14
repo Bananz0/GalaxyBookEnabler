@@ -18,11 +18,6 @@ function Test-UpdateAvailable {
             if ($response.assets) {
                 $downloadUrl = $response.assets | Where-Object { $_.name -like "Install-*.ps1" } | Select-Object -First 1 -ExpandProperty browser_download_url
             }
-        if ([version]$latestVersion -gt [version]$SCRIPT_VERSION) {
-            $downloadUrl = $null
-            if ($response.assets) {
-                $downloadUrl = $response.assets | Where-Object { $_.name -like "Install-*.ps1" } | Select-Object -First 1 -ExpandProperty browser_download_url
-            }
 
             return @{
                 Available = $true
