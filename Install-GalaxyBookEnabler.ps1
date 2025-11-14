@@ -379,7 +379,7 @@ $PackageDatabase = @{
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
     Version        : 2.0.0
-    Repository     : https://github.com/YOUR_USERNAME/GalaxyBookEnabler
+    Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
 param(
