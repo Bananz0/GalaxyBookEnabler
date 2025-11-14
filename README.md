@@ -17,7 +17,7 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Automated Startup** - Registry spoof runs automatically on every boot
 - **Professional Installer** - Clean, color-coded UI with progress tracking
 - **Version Management** - Update detection and migration support
-- **Easy Uninstall** - One-command removal with cleanu
+- **Easy Uninstall** - One-command removal with cleanup
 ## Quick Start
 
 ### One-Line Install (from GitHub)
