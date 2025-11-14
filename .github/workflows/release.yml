@@ -61,7 +61,6 @@ jobs:
           cp GalaxyBookEnabler.ps1 release-files/
           cp README.md release-files/
           cp CHANGELOG.md release-files/
-          cp QUICKSTART.md release-files/
           cp PACKAGES.md release-files/
           cp LICENSE release-files/
           cd release-files
