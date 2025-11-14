@@ -11,7 +11,7 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-## Feature
+## Features
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
 - **Automated Startup** - Registry spoof runs automatically on every boot
