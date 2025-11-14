@@ -551,15 +551,24 @@ function Install-SamsungPackages {
         }
         
         try {
-            Write-Host "  Installing..." -ForegroundColor Gray
-            $result = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1
+            # Check if package is already installed
+            Write-Host "  Checking installation status..." -ForegroundColor Gray
+            $checkResult = winget list --id $pkg.Id 2>&1
             
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "  ✓ Installed successfully" -ForegroundColor Green
-                $installed++
+            if ($LASTEXITCODE -eq 0 -and $checkResult -match $pkg.Id) {
+                Write-Host "  ✓ Already installed (skipping)" -ForegroundColor Cyan
+                $skipped++
             } else {
-                Write-Host "  ✗ Installation failed" -ForegroundColor Red
-                $failed++
+                Write-Host "  Installing..." -ForegroundColor Gray
+                $result = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  ✓ Installed successfully" -ForegroundColor Green
+                    $installed++
+                } else {
+                    Write-Host "  ✗ Installation failed" -ForegroundColor Red
+                    $failed++
+                }
             }
         } catch {
             Write-Host "  ✗ Error: $_" -ForegroundColor Red
@@ -572,6 +581,7 @@ function Install-SamsungPackages {
     return @{
         Installed = $installed
         Failed = $failed
+        Skipped = $skipped
         Total = $Packages.Count
     }
 }
@@ -1193,6 +1203,10 @@ if ($packagesToInstall.Count -gt 0) {
     Write-Host "========================================`n" -ForegroundColor Cyan
     
     Write-Host "Successfully installed: $($installResult.Installed)/$($installResult.Total)" -ForegroundColor Green
+    
+    if ($installResult.Skipped -gt 0) {
+        Write-Host "Already installed (skipped): $($installResult.Skipped)" -ForegroundColor Cyan
+    }
     
     if ($installResult.Failed -gt 0) {
         Write-Host "Failed: $($installResult.Failed)" -ForegroundColor Red
