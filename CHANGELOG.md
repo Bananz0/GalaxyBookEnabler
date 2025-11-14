@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Configuration guides for "Extra Steps" apps (Phone, Find, Quick Search, Pass)
+- Configuration guides for "Extra Steps" apps (Phone, Find, Quick Search, Pass and Camera Share)
 - Advanced AI Select launcher with auto-hotkey registration
 - Differential package updates (only install new packages)
 - Silent installation mode
