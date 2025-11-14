@@ -59,53 +59,11 @@ jobs:
           CHANGELOG=$(awk "/^## \\[$VERSION\\]/ {flag=1; next} /^## \\[/ {flag=0} flag" CHANGELOG.md)
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Create release archive
-        run: |
-          mkdir -p release-files
-          cp Install-GalaxyBookEnabler.ps1 release-files/
-          cp README.md release-files/
-          cp CHANGELOG.md release-files/
-          cp PACKAGES.md release-files/
-          cp LICENSE release-files/
-          cd release-files
-          zip -r ../GalaxyBookEnabler-${{ steps.get_version.outputs.version }}.zip .
-          cd ..
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           name: Galaxy Book Enabler v${{ steps.get_version.outputs.version }}
           body: |
             # Galaxy Book Enabler v${{ steps.get_version.outputs.version }}
-            
+      
             ## 🚀 Quick Install
-            ```powershell
-            irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
-            ```
-            
-            ## 📋 What's Changed
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ## 📦 Installation
-            1. Download `Install-GalaxyBookEnabler.ps1`
-            2. Right-click PowerShell → Run as Administrator
-            3. Run: `.\Install-GalaxyBookEnabler.ps1`
-            
-            ## 🔄 Updating from Previous Version
-            Run the installer again - it will detect your current installation and offer to update.
-            
-            ## 📖 Documentation
-            - [Full Documentation](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/README.md)
-            - [Package List](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/PACKAGES.md)
-            
-            **Full Changelog**: https://github.com/Bananz0/GalaxyBookEnabler/blob/main/CHANGELOG.md
-          files: |
-            GalaxyBookEnabler-${{ steps.get_version.outputs.version }}.zip
-            Install-GalaxyBookEnabler.ps1
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
