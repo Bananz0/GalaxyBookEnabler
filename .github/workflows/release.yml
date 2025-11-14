@@ -36,14 +36,21 @@ jobs:
           VERSION=${{ steps.get_version.outputs.version }}
           sed -i "s/version-.*-blue/version-$VERSION-blue/" README.md
 
-      - name: Commit version updates
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add Install-GalaxyBookEnabler.ps1 README.md
-          git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}" || echo "No changes to commit"
-          git push origin HEAD:main
-
+      - name: Create Pull Request for version updates
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "chore: bump version to ${{ steps.get_version.outputs.version }}"
+          branch: "version-bump/${{ steps.get_version.outputs.version }}"
+          title: "chore: bump version to ${{ steps.get_version.outputs.version }}"
+          body: "Automated version bump for release v${{ steps.get_version.outputs.version }}."
+          add-paths: |
+            Install-GalaxyBookEnabler.ps1
+            README.md
+          base: main
+          labels: |
+            automated
+          delete-branch: true
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract changelog for this version
         id: changelog
         run: |
