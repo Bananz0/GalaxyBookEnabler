@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Storage Share** (Recommended) - Share storage between devices
 - **Advanced package selection system** with multiple profiles
   - **Core Only**: Essential packages for basic functionality
-  - **Recommended**: Core + all fully working apps (18 packages)
+  - **Recommended**: Core + all fully working apps (25 packages)
   - **Full Experience**: Recommended + apps requiring extra setup
   - **Everything**: All packages including non-functional ones
   - **Custom Selection**: Pick individual packages by category
