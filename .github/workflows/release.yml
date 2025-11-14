@@ -42,7 +42,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add Install-GalaxyBookEnabler.ps1 README.md
           git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}" || echo "No changes to commit"
-          git push origin HEAD:main || echo "Failed to push, continuing anyway"
+          git push origin HEAD:main
 
       - name: Extract changelog for this version
         id: changelog
