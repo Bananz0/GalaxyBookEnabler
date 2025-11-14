@@ -371,7 +371,7 @@ $PackageDatabase = @{
     Removes the Galaxy Book Enabler from your system.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/YOUR_USERNAME/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
+    irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
     Installs in one line from GitHub.
 
 .NOTES
@@ -1012,8 +1012,42 @@ if ($alreadyInstalled) {
             pause
             exit
         }
-        default {
+        "4" {
+            # Uninstall (for 5-option menu) or Cancel (for 4-option menu)
+            # Check which menu was shown based on update availability
+            if ($updateCheck.Available) {
+                # 5-option menu: option 4 is Uninstall
+                Write-Host "`nUninstalling..." -ForegroundColor Yellow
+                
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-Host "  ✓ Task removed" -ForegroundColor Green
+                }
+                
+                if (Test-Path $installPath) {
+                    Remove-Item -Path $installPath -Recurse -Force
+                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
+                }
+                
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                pause
+                exit
+            } else {
+                # 4-option menu: option 4 is Cancel
+                Write-Host "`nCancelled." -ForegroundColor Yellow
+                pause
+                exit
+            }
+        }
+        "5" {
+            # Cancel (only for 5-option menu when update is available)
             Write-Host "`nCancelled." -ForegroundColor Yellow
+            pause
+            exit
+        }
+        default {
+            Write-Host "`nInvalid choice. Exiting." -ForegroundColor Red
             pause
             exit
         }
