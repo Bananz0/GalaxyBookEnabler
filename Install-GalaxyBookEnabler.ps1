@@ -589,7 +589,8 @@ function Install-SamsungPackages {
 function Test-IntelWiFi {
     $wifiAdapters = Get-NetAdapter | Where-Object { 
         $_.InterfaceDescription -like "*Wi-Fi*" -or 
-        $_.InterfaceDescription -like "*Wireless*" 
+        $_.InterfaceDescription -like "*Wireless*" -or
+        $_.InterfaceDescription -like "*802.11*"
     }
     
     if ($wifiAdapters.Count -eq 0) {
@@ -597,16 +598,26 @@ function Test-IntelWiFi {
             HasWiFi = $false
             IsIntel = $false
             AdapterName = "None"
+            Model = "None"
         }
     }
     
     $wifiInfo = $wifiAdapters[0].InterfaceDescription
     $isIntel = $wifiInfo -like "*Intel*"
     
+    # Detect specific Intel Wi-Fi models
+    $model = "Unknown"
+    if ($isIntel) {
+        if ($wifiInfo -match "(AX\d+|AC \d+|Wi-Fi \d+[E]?)") {
+            $model = $matches[1]
+        }
+    }
+    
     return @{
         HasWiFi = $true
         IsIntel = $isIntel
         AdapterName = $wifiInfo
+        Model = $model
     }
 }
 
@@ -845,6 +856,9 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 # Check if already installed
 $alreadyInstalled = (Test-Path $installPath) -or (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)
 
+# Initialize BIOS values variable (may be set during reinstall)
+$biosValuesToUse = $null
+
 if ($alreadyInstalled) {
     Write-Host "⚠ Galaxy Book Enabler is already installed!" -ForegroundColor Yellow
     
@@ -912,16 +926,60 @@ if ($alreadyInstalled) {
     switch ($choice) {
         "1" {
             Write-Host "`nUpdating to version $SCRIPT_VERSION..." -ForegroundColor Cyan
-            # Continue with installation
+            
+            # Check if there's a custom BIOS config to preserve
+            if (Test-Path $batchScriptPath) {
+                $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
+                if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                    Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
+                    Write-Host "  Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Cyan
+                    Write-Host ""
+                    $preserveChoice = Read-Host "Keep your custom config? (Y=Keep custom, N=Use default GB3U)"
+                    
+                    if ($preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
+                        $biosValuesToUse = $backupBiosValues.Values
+                        Write-Host "  ✓ Will preserve your custom BIOS values" -ForegroundColor Green
+                    } else {
+                        Write-Host "  ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+                    }
+                }
+            }
         }
         "2" {
             Write-Host "`nReinstalling..." -ForegroundColor Yellow
+            
+            # Backup existing BIOS configuration before reinstall
+            $backupBiosValues = $null
+            if (Test-Path $batchScriptPath) {
+                Write-Host "  Backing up current BIOS configuration..." -ForegroundColor Cyan
+                $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
+                if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                    Write-Host "  ✓ Custom BIOS values backed up" -ForegroundColor Green
+                }
+            }
+            
+            # Remove existing installation
             if (Test-Path $installPath) {
                 Remove-Item $installPath -Recurse -Force -ErrorAction SilentlyContinue
             }
             $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
             if ($existingTask) {
                 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+            }
+            
+            # Ask user if they want to restore backed up BIOS values
+            if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
+                Write-Host "  Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Cyan
+                Write-Host ""
+                $preserveChoice = Read-Host "Keep your custom config? (Y=Keep custom, N=Use default GB3U)"
+                
+                if ($preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
+                    $biosValuesToUse = $backupBiosValues.Values
+                    Write-Host "  ✓ Will restore your custom BIOS values" -ForegroundColor Green
+                } else {
+                    Write-Host "  ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+                }
             }
         }
         "3" {
@@ -989,9 +1047,9 @@ if (-not (Test-Path $installPath)) {
 # Check for legacy v1.x installation
 $legacyPath = Join-Path $env:USERPROFILE "GalaxyBookEnablerScript"
 $legacyBatchPath = Join-Path $legacyPath "QS.bat"
-$biosValuesToUse = $null
 
-if (Test-Path $legacyBatchPath) {
+# Skip legacy check if reinstalling (BIOS values already backed up)
+if ((Test-Path $legacyBatchPath) -and -not $biosValuesToUse) {
     Write-Host "Detected legacy installation (v1.x)" -ForegroundColor Yellow
     
     $legacyValues = Get-LegacyBiosValues -OldBatchPath $legacyBatchPath
