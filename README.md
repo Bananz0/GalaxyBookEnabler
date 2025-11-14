@@ -420,7 +420,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [GitHub Repository](https://github.com/Bananz0/GalaxyBookEnabler)
 - [Issues & Bug Reports](https://github.com/Bananz0/GalaxyBookEnabler/issues)
 - [Changelog](CHANGELOG.md)
-- [Custom Model Examples](CUSTOM_MODEL_EXAMPLES.md) - GB4 Ultra, GB4 Pro, GB5 configs
 - [Google Nearby Share Alternative](https://www.android.com/better-together/nearby-share-app/)
 
 ---
