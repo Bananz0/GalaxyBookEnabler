@@ -42,9 +42,10 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 Essential packages for basic Samsung ecosystem functionality:
 - Samsung Account
 - Samsung Settings + Runtime
-- Samsung Cloud + Cloud Assistant
+- Samsung Cloud Assistant
 - Samsung Continuity Service
 - Samsung Intelligence Service
+- Samsung Bluetooth Sync
 
 ### Recommended ⭐
 Core packages + all fully working Samsung apps:
@@ -89,10 +90,10 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Account | ✅ Working | No | Required |
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
-| Samsung Cloud | ✅ Working | No | Required |
 | Samsung Cloud Assistant | ✅ Working | No | Required |
 | Samsung Continuity Service | ✅ Working | No | Required |
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
+| Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Quick Share | ✅ Working | **Yes** | Limited on non-Intel |
 | Galaxy Book Experience | ✅ Working | No | Recommended |
 | Samsung Notes | ✅ Working | No | - |
@@ -118,6 +119,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Pass | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Recovery | ❌ Not Working | No | Requires genuine hardware |
 | Samsung Update | ❌ Not Working | No | Requires genuine hardware |
+| Camera Share | ❌ Not Working | No | Currently not working |
 
 ## 💻 System Requirements
 

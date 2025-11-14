@@ -10,13 +10,13 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 
 | Package | Store ID | Description |
 |---------|----------|-------------|
-| Samsung Account | 9P98T77876KZ | Authentication for Samsung ecosystem |
+| Samsung Account | 9NGW9K44GQ5F | Authentication for Samsung ecosystem |
 | Samsung Settings | 9P2TBWSHK6HJ | Central configuration hub |
 | Samsung Settings Runtime | 9NL68DVFP841 | Required runtime for Settings |
-| Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
-| Samsung Cloud Assistant | 9NFWHCHM52HQ | Cloud feature assistant |
-| Samsung Continuity Service | 9NGW9K44GQ5F | Cross-device continuity |
+| Samsung Cloud Assistant | 9NFWHCHM52HQ | Cloud storage and sync |
+| Samsung Continuity Service | 9P98T77876KZ | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
+| Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
 
 ---
 
@@ -55,7 +55,6 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Package | Store ID | Description |
 |---------|----------|-------------|
 | Samsung Parental Controls | 9N5GWJTCZKGS | Manage children's device usage |
-| Samsung Find | 9MWD59CZJ1RN | Find your Samsung devices (requires setup) |
 
 ### Maintenance
 | Package | Store ID | Description |
@@ -97,7 +96,13 @@ These packages install successfully but require additional configuration to func
 
 ## Non-Working Packages
 
-These packages will NOT work on non-Samsung devices due to hardware/firmware requirements.
+These packages will NOT work on non-Samsung devices.
+
+| Package | Store ID | Description | Notes |
+|---------|----------|-------------|-------|
+| Samsung Recovery | 9NBFVH4X67LF | Factory reset and recovery | Requires genuine hardware |
+| Samsung Update | 9NQ3HDB99VBF | Firmware and driver updates | Requires genuine hardware |
+| Camera Share | 9NPCS7FN6VB9 | Use phone camera with PC apps | Currently not working |
 
 | Package | Store ID | Description | Why It Doesn't Work |
 |---------|----------|-------------|---------------------|

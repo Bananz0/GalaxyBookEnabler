@@ -116,7 +116,7 @@ $PackageDatabase = @{
     Core = @(
         @{
             Name = "Samsung Account"
-            Id = "9P98T77876KZ"
+            Id = "9NGW9K44GQ5F"
             Category = "Core"
             Description = "Required for Samsung ecosystem authentication"
             Status = "Working"
@@ -139,7 +139,7 @@ $PackageDatabase = @{
             Required = $true
         },
         @{
-            Name = "Samsung Cloud"
+            Name = "Samsung Cloud Assistant"
             Id = "9NFWHCHM52HQ"
             Category = "Core"
             Description = "Cloud storage and sync service"
@@ -147,16 +147,8 @@ $PackageDatabase = @{
             Required = $true
         },
         @{
-            Name = "Samsung Cloud Assistant"
-            Id = "9NFWHCHM52HQ"
-            Category = "Core"
-            Description = "Assistant for cloud features"
-            Status = "Working"
-            Required = $true
-        },
-        @{
             Name = "Samsung Continuity Service"
-            Id = "9NGW9K44GQ5F"
+            Id = "9P98T77876KZ"
             Category = "Core"
             Description = "Enables cross-device continuity features"
             Status = "Working"
@@ -167,6 +159,14 @@ $PackageDatabase = @{
             Id = "9NS0SHL4PQL9"
             Category = "Core"
             Description = "Required for Galaxy AI features and AI Select"
+            Status = "Working"
+            Required = $true
+        },
+        @{
+            Name = "Samsung Bluetooth Sync"
+            Id = "9NJNNJTTFL45"
+            Category = "Core"
+            Description = "Bluetooth device synchronization"
             Status = "Working"
             Required = $true
         }
@@ -356,7 +356,7 @@ $PackageDatabase = @{
             Category = "Maintenance"
             Description = "Factory reset and recovery options"
             Status = "NotWorking"
-            Warning = "This app will NOT work on non-Samsung devices"
+            Warning = "This app will NOT work on non-Samsung devices (requires genuine hardware)"
         },
         @{
             Name = "Samsung Update"
@@ -364,7 +364,15 @@ $PackageDatabase = @{
             Category = "Maintenance"
             Description = "Firmware and driver updates"
             Status = "NotWorking"
-            Warning = "This app will NOT work on non-Samsung devices"
+            Warning = "This app will NOT work on non-Samsung devices (requires genuine hardware)"
+        },
+        @{
+            Name = "Camera Share"
+            Id = "9NPCS7FN6VB9"
+            Category = "Connectivity"
+            Description = "Use phone camera with PC apps"
+            Status = "NotWorking"
+            Warning = "This app is currently not working (reason unknown)"
         }
     )
     
@@ -461,7 +469,6 @@ function Show-CustomPackageSelection {
     )
     
     $selectedPackages = @()
-    $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
     
     Clear-Host
     Write-Host "========================================" -ForegroundColor Cyan
@@ -566,7 +573,7 @@ function Install-SamsungPackages {
                 $skipped++
             } else {
                 Write-Host "  Installing..." -ForegroundColor Gray
-                $result = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1
+                winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-Null
                 
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "  ✓ Installed successfully" -ForegroundColor Green
