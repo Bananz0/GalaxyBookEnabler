@@ -1,6 +1,46 @@
 # Galaxy Book Enabler Installer/Uninstaller
 # Enables Samsung Galaxy Book features on non-Galaxy Book devices
 
+<#
+.SYNOPSIS
+    Galaxy Book Enabler - Enable Samsung Galaxy Book features on any Windows PC
+
+.DESCRIPTION
+    This tool spoofs your device as a Samsung Galaxy Book to enable features like:
+    - Quick Share
+    - Multi Control
+    - Samsung Notes
+    - AI Select (with keyboard shortcut setup)
+    
+    It handles automatic startup configuration and Wi-Fi compatibility detection.
+
+.PARAMETER Uninstall
+    Removes the Galaxy Book Enabler from your system.
+
+.EXAMPLE
+    .\Install-GalaxyBookEnabler.ps1
+    Installs the Galaxy Book Enabler with interactive configuration.
+
+.EXAMPLE
+    .\Install-GalaxyBookEnabler.ps1 -Uninstall
+    Removes the Galaxy Book Enabler from your system.
+
+.EXAMPLE
+    irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
+    Installs in one line from GitHub.
+
+.NOTES
+    File Name      : Install-GalaxyBookEnabler.ps1
+    Prerequisite   : PowerShell 7.0 or later
+    Requires Admin : Yes
+    Version        : 2.0.0
+    Repository     : https://github.com/Bananz0/GalaxyBookEnabler
+#>
+
+param(
+    [switch]$Uninstall
+)
+
 # VERSION CONSTANT - Update this when releasing new versions
 $SCRIPT_VERSION = "2.0.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
@@ -341,47 +381,7 @@ $PackageDatabase = @{
     )
 }
 
-<#
-.SYNOPSIS
-    Galaxy Book Enabler - Enable Samsung Galaxy Book features on any Windows PC
-
-.DESCRIPTION
-    This tool spoofs your device as a Samsung Galaxy Book to enable features like:
-    - Quick Share
-    - Multi Control
-    - Samsung Notes
-    - AI Select (with keyboard shortcut setup)
-    
-    It handles automatic startup configuration and Wi-Fi compatibility detection.
-
-.PARAMETER Uninstall
-    Removes the Galaxy Book Enabler from your system.
-
-.EXAMPLE
-    .\Install-GalaxyBookEnabler.ps1
-    Installs the Galaxy Book Enabler with interactive configuration.
-
-.EXAMPLE
-    .\Install-GalaxyBookEnabler.ps1 -Uninstall
-    Removes the Galaxy Book Enabler from your system.
-
-.EXAMPLE
-    irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
-    Installs in one line from GitHub.
-
-.NOTES
-    File Name      : Install-GalaxyBookEnabler.ps1
-    Prerequisite   : PowerShell 7.0 or later
-    Requires Admin : Yes
-    Version        : 2.0.0
-    Repository     : https://github.com/Bananz0/GalaxyBookEnabler
-#>
-
-param(
-    [switch]$Uninstall
-)
-
-# ==================== HELPER FUNCTIONS ====================
+# ==================== HELPER FUNCTIONS (continued) ====================
 
 function Show-PackageSelectionMenu {
     param (
