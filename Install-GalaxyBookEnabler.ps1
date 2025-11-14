@@ -893,9 +893,12 @@ if ($alreadyInstalled) {
         Write-Host "✨ New version available: v$($updateCheck.LatestVersion)" -ForegroundColor Green
         Write-Host ""
         Write-Host "Release notes:" -ForegroundColor Yellow
-        Write-Host $updateCheck.ReleaseNotes.Substring(0, [Math]::Min(500, $updateCheck.ReleaseNotes.Length)) -ForegroundColor Gray
-        if ($updateCheck.ReleaseNotes.Length -gt 500) {
-            Write-Host "..." -ForegroundColor Gray
+        if ($updateCheck.ReleaseNotes) {
+            $noteLength = [Math]::Min(500, $updateCheck.ReleaseNotes.Length)
+            Write-Host $updateCheck.ReleaseNotes.Substring(0, $noteLength) -ForegroundColor Gray
+            if ($updateCheck.ReleaseNotes.Length -gt 500) {
+                Write-Host "..." -ForegroundColor Gray
+            }
         }
         Write-Host ""
         
@@ -1382,7 +1385,7 @@ if ($setupShortcut -like "y*") {
 }
 
 Write-Host "`nUpdate/Manage:" -ForegroundColor Cyan
-Write-Host "  Check for updates: irm https://your-repo-url/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor Gray
+Write-Host "  Check for updates: irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor Gray
 Write-Host "  Uninstall: .\Install-GalaxyBookEnabler.ps1 -Uninstall" -ForegroundColor Gray
 
 Write-Host "`n"
