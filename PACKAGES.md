@@ -17,6 +17,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Samsung Continuity Service | 9P98T77876KZ | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
+| Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features (shows available Samsung apps) |
 
 ---
 
@@ -32,11 +33,11 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display |
 
 ### Productivity
-| Package | Store ID | Description |
-|---------|----------|-------------|
-| Samsung Notes | 9NBLGGH43VHV | Note-taking with stylus support |
-| Samsung Screen Recorder | 9P5025MM7WDT | Screen recording with annotations |
-| AI Select | 9PM11FHJQLZ4 | Smart screenshot tool with text extraction and AI features |
+| Package | Store ID | Description | Notes |
+|---------|----------|-------------|-------|
+| Samsung Notes | 9NBLGGH43VHV | Note-taking with stylus support | |
+| Samsung Screen Recorder | 9P5025MM7WDT | Screen recording with annotations | Shows "optimized for Galaxy Books" message but works normally |
+| AI Select | 9PM11FHJQLZ4 | Smart screenshot tool with text extraction and AI features | |
 
 ### Media
 | Package | Store ID | Description |
@@ -46,20 +47,10 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Samsung Studio for Gallery | 9NND8BT5WFC5 | Gallery-integrated editing |
 | Live Wallpaper | 9N1G7F25FXCB | Animated wallpapers |
 
-### Experience
-| Package | Store ID | Description |
-|---------|----------|-------------|
-| Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features |
-
 ### Security
 | Package | Store ID | Description |
 |---------|----------|-------------|
 | Samsung Parental Controls | 9N5GWJTCZKGS | Manage children's device usage |
-
-### Maintenance
-| Package | Store ID | Description |
-|---------|----------|-------------|
-| Samsung Device Care | 9NBLGGH4XDV0 | Device optimization and diagnostics |
 
 ### Smart Home
 | Package | Store ID | Description |
@@ -85,6 +76,7 @@ These packages install successfully but require additional configuration to func
 
 | Package | Store ID | Description | Notes |
 |---------|----------|-------------|-------|
+| Samsung Device Care | 9NBLGGH4XDV0 | Device optimization and diagnostics | Requires additional setup to function |
 | Samsung Phone | 9MWJXXLCHBGK | Phone app integration | Additional setup required |
 | Samsung Find | 9MWD59CZJ1RN | Find your devices | Additional setup required |
 | Quick Search | 9N092440192Z | System-wide search | Additional setup required |
@@ -125,26 +117,28 @@ Deprecated versions - use newer alternatives instead.
 
 ## Installation Profiles
 
-### Core Only (7 packages)
+### Core Only (8 packages)
 - Samsung Account
 - Samsung Settings + Runtime
 - Samsung Cloud + Cloud Assistant
 - Samsung Continuity Service
 - Samsung Intelligence Service
+- Samsung Bluetooth Sync
+- Galaxy Book Experience
 
-### Recommended (25 packages)
+### Recommended (24 packages)
 Core + all fully working Samsung apps including:
 - Quick Share, Multi Control, Flow, Nearby Devices
 - Notes, Screen Recorder, AI Select
 - Gallery, Studio, Live Wallpaper
 - SmartThings, Galaxy Buds
-- Device Care, Parental Controls
-- Galaxy Book Experience
+- Parental Controls
 - Storage Share
 - And more...
 
 ### Full Experience (29 packages)
 Recommended + apps requiring extra setup:
+- Samsung Device Care
 - Samsung Phone
 - Samsung Find
 - Quick Search
@@ -163,9 +157,9 @@ Pick individual packages by category with full control over what gets installed.
 ## Quick Stats
 
 - **Total Packages**: 33+
-- **Core (Required)**: 7
-- **Fully Working**: 21
-- **Requires Extra Steps**: 4
+- **Core (Required)**: 8
+- **Fully Working**: 20
+- **Requires Extra Steps**: 5
 - **Non-Working**: 2
 - **Legacy**: 1
 
@@ -206,4 +200,4 @@ winget search "Samsung" --source msstore
 
 ---
 
-**Last Updated**: November 14, 2025 (v2.0.0)
+**Last Updated**: November 15, 2025 (v2.1.0)

@@ -163,7 +163,7 @@ Here's what's planned for future versions:
   - One-command install/uninstall for individual packages
   - Update all Samsung packages at once
 
-- **Compatibility profiles** (v3.0.0)
+- **Compatibility profiles** (v2.1.0)
   - Support for different Galaxy Book models (Book2, Book3, Book4)
   - Custom registry profiles for specific features
   - Profile switching without reinstallation

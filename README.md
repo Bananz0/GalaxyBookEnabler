@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![CodeFactor](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler/badge)](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler)
@@ -55,11 +55,11 @@ Essential packages for basic Samsung ecosystem functionality:
 - Samsung Continuity Service
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
+- Galaxy Book Experience
 
 ### Recommended ⭐
 Core packages + all fully working Samsung apps:
 - Quick Share (requires Intel Wi-Fi for best results)
-- Galaxy Book Experience
 - Samsung Notes
 - Multi Control
 - Samsung Gallery
@@ -68,7 +68,6 @@ Core packages + all fully working Samsung apps:
 - Samsung Flow
 - SmartThings
 - Galaxy Buds Manager
-- Samsung Device Care
 - Samsung Parental Controls
 - AI Select
 - Nearby Devices
@@ -103,18 +102,17 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Continuity Service | ✅ Working | No | Required |
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
+| Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
 | Quick Share | ✅ Working | **Yes** | Limited on non-Intel |
-| Galaxy Book Experience | ✅ Working | No | Recommended |
 | Samsung Notes | ✅ Working | No | - |
 | Multi Control | ✅ Working | No | - |
 | Samsung Gallery | ✅ Working | No | - |
 | Samsung Studio | ✅ Working | No | - |
 | Samsung Studio for Gallery | ✅ Working | No | - |
-| Samsung Screen Recorder | ✅ Working | No | - |
+| Samsung Screen Recorder | ⚠️ Working | No | Shows "optimized for Galaxy Books" |
 | Samsung Flow | ✅ Working | No | - |
 | SmartThings | ✅ Working | No | - |
 | Galaxy Buds | ✅ Working | No | - |
-| Samsung Device Care | ✅ Working | No | - |
 | Samsung Parental Controls | ✅ Working | No | - |
 | AI Select | ✅ Working | No | - |
 | Nearby Devices | ✅ Working | No | - |
@@ -122,6 +120,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Second Screen | ✅ Working | No | - |
 | Live Wallpaper | ✅ Working | No | - |
 | Galaxy Book Smart Switch | ✅ Working | No | - |
+| Samsung Device Care | ⚠️ Extra Steps | No | May not function properly |
 | Samsung Phone | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Find | ⚠️ Extra Steps | No | Configuration required |
 | Quick Search | ⚠️ Extra Steps | No | Configuration required |
@@ -283,7 +282,12 @@ Would you like to preserve these custom values? (Y/N)
    - Immediate spoof application
    - No reboot required for testing
 
-9. **Reboot**
+9. **Launch Galaxy Book Experience**
+   - Automatically opens after installation
+   - Explore available Samsung apps
+   - Access app catalog at any time
+
+10. **Reboot**
    - Restart your PC for full activation
    - Sign into Samsung Account
    - Configure Samsung apps

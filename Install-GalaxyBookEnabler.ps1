@@ -38,7 +38,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 3.0.0
+    Version        : 2.1.0
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -48,7 +48,7 @@ param(
 )
 
 # VERSION CONSTANT - Update this when releasing new versions
-$SCRIPT_VERSION = "3.0.0"
+$SCRIPT_VERSION = "2.1.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -175,6 +175,14 @@ $PackageDatabase = @{
             Description = "Bluetooth device synchronization"
             Status = "Working"
             Required = $true
+        },
+        @{
+            Name = "Galaxy Book Experience"
+            Id = "9P7QF37HPMGX"
+            Category = "Core"
+            Description = "Samsung app discovery and Galaxy Book features"
+            Status = "Working"
+            Required = $true
         }
     )
     
@@ -188,14 +196,6 @@ $PackageDatabase = @{
             Status = "Working"
             RequiresIntelWiFi = $true
             Warning = "Requires Intel Wi-Fi adapter for full functionality"
-        },
-        @{
-            Name = "Galaxy Book Experience"
-            Id = "9P7QF37HPMGX"
-            Category = "Experience"
-            Description = "Enhanced Galaxy Book features and optimizations"
-            Status = "Working"
-            Recommended = $true
         },
         @{
             Name = "Samsung Notes"
@@ -238,6 +238,7 @@ $PackageDatabase = @{
             Category = "Productivity"
             Description = "Screen recording with annotations"
             Status = "Working"
+            Warning = "Shows 'optimized for Galaxy Books' message on launch, but works normally"
         },
         @{
             Name = "Samsung Flow"
@@ -258,13 +259,6 @@ $PackageDatabase = @{
             Id = "9NHTLWTKFZNB"
             Category = "Accessories"
             Description = "Galaxy Buds management and settings"
-            Status = "Working"
-        },
-        @{
-            Name = "Samsung Device Care"
-            Id = "9NBLGGH4XDV0"
-            Category = "Maintenance"
-            Description = "Device optimization and diagnostics"
             Status = "Working"
         },
         @{
@@ -320,6 +314,14 @@ $PackageDatabase = @{
     
     # EXTRA STEPS REQUIRED - Need additional configuration
     ExtraSteps = @(
+        @{
+            Name = "Samsung Device Care"
+            Id = "9NBLGGH4XDV0"
+            Category = "Maintenance"
+            Description = "Device optimization and diagnostics"
+            Status = "RequiresExtraSteps"
+            Note = "Requires additional setup to function properly"
+        },
         @{
             Name = "Samsung Phone"
             Id = "9MWJXXLCHBGK"
@@ -874,11 +876,11 @@ function Install-SystemSupportEngine {
     
     # Download CAB
     Write-Host "`nDownloading Samsung System Support Service CAB..." -ForegroundColor Cyan
-    Write-Host "Recommended version: 6.3.3.0 (tested and stable)" -ForegroundColor Gray
+    Write-Host "Recommended version: 7.1.2.0 (tested and stable)" -ForegroundColor Gray
     Write-Host ""
     
-    $useRecommended = Read-Host "Use recommended version 6.3.3.0? (Y/n)"
-    $cabVersion = if ($useRecommended -like "n*") { $null } else { "6.3.3.0" }
+    $useRecommended = Read-Host "Use recommended version 7.1.2.0? (Y/n)"
+    $cabVersion = if ($useRecommended -like "n*") { $null } else { "7.1.2.0" }
     
     $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
     if (-not (Test-Path $tempDir)) {
@@ -1055,88 +1057,78 @@ function Install-SystemSupportEngine {
         Copy-Item $targetExePath $backupExePath -Force
         Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
         
-        # Patch patterns
-        $originalPattern = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
-        $targetPattern = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x48, 0xE9, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
+
+        $originalPattern_v7_0 = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
+        $targetPattern_v7_0 = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x48, 0xE9, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
+
+        $originalPattern_v7_1 = @(0x00, 0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85, 0x8F, 0x00, 0x00, 0x00, 0xFF, 0x15)
+        $targetPattern_v7_1 = @(0x00, 0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x48, 0xE9, 0x8F, 0x00, 0x00, 0x00, 0xFF, 0x15)
+
+        $pattern_v7_0 = @(0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85)
+        $pattern_v7_1 = @(0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85)
         
         $fileBytes = [System.IO.File]::ReadAllBytes($targetExePath)
         
-        # Find pattern
-        $offset = -1
-        for ($i = 0; $i -le ($fileBytes.Length - $originalPattern.Length); $i++) {
-            $match = $true
-            for ($j = 0; $j -lt $originalPattern.Length; $j++) {
-                if ($fileBytes[$i + $j] -ne $originalPattern[$j]) {
-                    $match = $false
-                    break
+        # Function to find byte pattern
+        function Find-Pattern {
+            param([byte[]]$Bytes, [byte[]]$Pattern)
+            for ($i = 0; $i -le ($Bytes.Length - $Pattern.Length); $i++) {
+                $match = $true
+                for ($j = 0; $j -lt $Pattern.Length; $j++) {
+                    if ($Bytes[$i + $j] -ne $Pattern[$j]) {
+                        $match = $false
+                        break
+                    }
                 }
+                if ($match) { return $i }
             }
-            if ($match) {
-                $offset = $i
-                break
-            }
+            return -1
         }
         
-        if ($offset -eq -1) {
+        # Detect SSSE version
+        $offset_v7_0 = Find-Pattern -Bytes $fileBytes -Pattern $pattern_v7_0
+        $offset_v7_1 = Find-Pattern -Bytes $fileBytes -Pattern $pattern_v7_1
+        
+        $originalPattern = $null
+        $targetPattern = $null
+        $detectedVersion = $null
+        $offset = -1
+        
+        if ($offset_v7_0 -ne -1) {
+            $detectedVersion = "7.0.x"
+            $originalPattern = $originalPattern_v7_0
+            $targetPattern = $targetPattern_v7_0
+            $offset = $offset_v7_0 - 1
+        } elseif ($offset_v7_1 -ne -1) {
+            $detectedVersion = "7.1.x"
+            $originalPattern = $originalPattern_v7_1
+            $targetPattern = $targetPattern_v7_1
+            $offset = $offset_v7_1 - 1
+        }
+        
+        if ($originalPattern -eq $null) {
+            Write-Host "    ⚠ Pattern not found - may already be patched" -ForegroundColor Yellow
+        } else {
             # Check if already patched
-            $patchedOffset = -1
-            for ($i = 0; $i -le ($fileBytes.Length - $targetPattern.Length); $i++) {
-                $match = $true
-                for ($j = 0; $j -lt $targetPattern.Length; $j++) {
-                    if ($fileBytes[$i + $j] -ne $targetPattern[$j]) {
-                        $match = $false
-                        break
-                    }
-                }
-                if ($match) {
-                    $patchedOffset = $i
-                    break
-                }
-            }
-            
+            $patchedOffset = Find-Pattern -Bytes $fileBytes -Pattern $targetPattern
             if ($patchedOffset -ne -1) {
                 Write-Host "  ✓ Binary already patched!" -ForegroundColor Green
-                Write-Host "    Target pattern found at offset: 0x$($patchedOffset.ToString('X8'))" -ForegroundColor Cyan
-                Write-Host "    Patched bytes: $(($targetPattern | ForEach-Object { $_.ToString('X2') }) -join ' ')" -ForegroundColor Gray
             } else {
-                Write-Warning "Original pattern not found - binary may be a different version"
-                Write-Host "    Files copied but not patched." -ForegroundColor Yellow
-                Write-Host "    You can try manually patching or use a different version." -ForegroundColor Gray
-            }
-        } else {
-            # Apply patch
-            Write-Host "    Found original pattern at offset: 0x$($offset.ToString('X8'))" -ForegroundColor Cyan
-            Write-Host "    Current bytes: $(($fileBytes[$offset..($offset + $originalPattern.Length - 1)] | ForEach-Object { $_.ToString('X2') }) -join ' ')" -ForegroundColor Gray
-            Write-Host "    Patching: 0F 85 (JNZ) → 48 E9 (JMP)" -ForegroundColor Yellow
-            
-            for ($i = 0; $i -lt $targetPattern.Length; $i++) {
-                $fileBytes[$offset + $i] = $targetPattern[$i]
-            }
-            [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
-            
-            # Verify the patch
-            $verifyBytes = [System.IO.File]::ReadAllBytes($targetExePath)
-            $verifyOffset = -1
-            for ($i = 0; $i -le ($verifyBytes.Length - $targetPattern.Length); $i++) {
-                $match = $true
-                for ($j = 0; $j -lt $targetPattern.Length; $j++) {
-                    if ($verifyBytes[$i + $j] -ne $targetPattern[$j]) {
-                        $match = $false
-                        break
-                    }
+                # Apply patch
+                for ($i = 0; $i -lt $targetPattern.Length; $i++) {
+                    $fileBytes[$offset + $i] = $targetPattern[$i]
                 }
-                if ($match) {
-                    $verifyOffset = $i
-                    break
+                [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
+                
+                # Verify patch
+                $verifyBytes = [System.IO.File]::ReadAllBytes($targetExePath)
+                $verifyOffset = Find-Pattern -Bytes $verifyBytes -Pattern $targetPattern
+                
+                if ($verifyOffset -eq $offset) {
+                    Write-Host "  ✓ Binary patched and verified successfully!" -ForegroundColor Green
+                } else {
+                    Write-Error "Patch verification failed!"
                 }
-            }
-            
-            if ($verifyOffset -eq $offset) {
-                Write-Host "  ✓ Binary patched and verified successfully!" -ForegroundColor Green
-                Write-Host "    From: $(($originalPattern | ForEach-Object { $_.ToString('X2') }) -join ' ')" -ForegroundColor Red
-                Write-Host "    To:   $(($targetPattern | ForEach-Object { $_.ToString('X2') }) -join ' ')" -ForegroundColor Green
-            } else {
-                Write-Error "Patch verification failed! The file may not have been written correctly."
             }
         }
         
@@ -1181,7 +1173,7 @@ function Install-SystemSupportEngine {
         $newServiceName = "GBeSupportService"
         $service = Get-Service -Name $newServiceName -ErrorAction SilentlyContinue
         
-        $binPath = Join-Path $InstallPath "SamsungSystemSupportEngine.exe"
+        $binPath = Join-Path $InstallPath "SamsungSystemSupportService.exe"
         $displayName = "Galaxy Book Enabler Support Service"
         $description = "Samsung System Support Engine service (patched by Galaxy Book Enabler). Enables Samsung Settings and device features."
         
@@ -1205,6 +1197,7 @@ function Install-SystemSupportEngine {
             $maxWait = 30  # Maximum 30 seconds
             $waited = 0
             $serviceDeleted = $false
+            $shownHelp = $false
             
             while ($waited -lt $maxWait) {
                 Start-Sleep -Seconds 2
@@ -1218,14 +1211,79 @@ function Install-SystemSupportEngine {
                     break
                 }
                 
-                if ($waited % 6 -eq 0) {
+                # Show help after 10 seconds if still waiting
+                if ($waited -eq 10 -and -not $shownHelp) {
+                    Write-Host "`n      ⚠ Service deletion is taking longer than usual..." -ForegroundColor Yellow
+                    Write-Host "      Common causes:" -ForegroundColor Cyan
+                    Write-Host "        • Task Manager is open" -ForegroundColor Gray
+                    Write-Host "        • Services console (services.msc) is open" -ForegroundColor Gray
+                    Write-Host "        • Event Viewer is open" -ForegroundColor Gray
+                    Write-Host "        • Process Explorer is open" -ForegroundColor Gray
+                    Write-Host "`n      Options:" -ForegroundColor Cyan
+                    Write-Host "        [1] Close these apps manually and I'll wait" -ForegroundColor White
+                    Write-Host "        [2] Auto-close Task Manager, Services, Event Viewer" -ForegroundColor White
+                    Write-Host "        [3] Continue waiting (will timeout in $($maxWait - $waited)s)" -ForegroundColor White
+                    Write-Host ""
+                    
+                    $choice = Read-Host "      Choose option [1-3]"
+                    
+                    if ($choice -eq "2") {
+                        Write-Host "      Attempting to close interfering applications..." -ForegroundColor Yellow
+                        
+                        # Close MMC instances (Services, Event Viewer)
+                        $mmcProcesses = Get-Process -Name "mmc" -ErrorAction SilentlyContinue
+                        if ($mmcProcesses) {
+                            Write-Host "        Closing MMC instances (Services/Event Viewer)..." -ForegroundColor Gray
+                            $mmcProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+                        }
+                        
+                        # Close Task Manager
+                        $taskmgrProcesses = Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue
+                        if ($taskmgrProcesses) {
+                            Write-Host "        Closing Task Manager..." -ForegroundColor Gray
+                            $taskmgrProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+                        }
+                        
+                        # Close Process Explorer if present
+                        $procexpProcesses = Get-Process -Name "procexp*" -ErrorAction SilentlyContinue
+                        if ($procexpProcesses) {
+                            Write-Host "        Closing Process Explorer..." -ForegroundColor Gray
+                            $procexpProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+                        }
+                        
+                        Write-Host "        ✓ Applications closed, resuming wait..." -ForegroundColor Green
+                        Start-Sleep -Seconds 2
+                    } elseif ($choice -eq "1") {
+                        Write-Host "      Please close the applications, then press Enter to continue..." -ForegroundColor Yellow
+                        Read-Host
+                    }
+                    
+                    $shownHelp = $true
+                    Write-Host ""
+                }
+                
+                if ($waited % 6 -eq 0 -and $shownHelp) {
                     Write-Host "      Still waiting... ($waited/$maxWait seconds)" -ForegroundColor Gray
                 }
             }
             
             if (-not $serviceDeleted) {
-                Write-Host "      ⚠ Service still marked for deletion after $maxWait seconds" -ForegroundColor Yellow
-                Write-Host "      This usually resolves after a reboot" -ForegroundColor Yellow
+                Write-Host "`n      ⚠ Service still marked for deletion - unable to remove old service" -ForegroundColor Yellow
+                Write-Host "      Creating upgraded service with new name instead..." -ForegroundColor Cyan
+                
+                # Use a versioned name to avoid conflict
+                $timestamp = Get-Date -Format 'yyyyMMdd'
+                $newServiceName = "GBeSupportService_$timestamp"
+                $displayName = "Galaxy Book Enabler Support Service ($timestamp)"
+                
+                Write-Host "      New service name: $newServiceName" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "      ⚠ IMPORTANT: Old service 'GBeSupportService' is still present" -ForegroundColor Yellow
+                Write-Host "      After reboot, you should manually delete it:" -ForegroundColor Yellow
+                Write-Host "        1. Open PowerShell as Administrator" -ForegroundColor White
+                Write-Host "        2. Run: sc delete GBeSupportService" -ForegroundColor Cyan
+                Write-Host "        3. Or use Services console to delete it" -ForegroundColor White
+                Write-Host ""
             }
             
             # Extra pause before recreation
@@ -2483,6 +2541,15 @@ if ($TestMode) {
     Write-Host "`nUpdate/Manage:" -ForegroundColor Cyan
     Write-Host "  Check for updates: irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor Gray
     Write-Host "  Uninstall: .\Install-GalaxyBookEnabler.ps1 -Uninstall" -ForegroundColor Gray
+
+    # Launch Galaxy Book Experience to show available Samsung apps
+    Write-Host "`nLaunching Galaxy Book Experience..." -ForegroundColor Cyan
+    try {
+        Start-Process "explorer.exe" "shell:AppsFolder\SAMSUNGELECTRONICSCoLtd.GalaxyBookExperience_9P7QF37HPMGX!App"
+        Write-Host "  ✓ Galaxy Book Experience opened - explore available Samsung apps!" -ForegroundColor Green
+    } catch {
+        Write-Host "  Note: Galaxy Book Experience will be available after reboot" -ForegroundColor Yellow
+    }
 }
 
 Write-Host "`n"
