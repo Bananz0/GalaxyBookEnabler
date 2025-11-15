@@ -5,8 +5,10 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
+[![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
+[![SSSE Support](https://img.shields.io/badge/SSSE-Integrated-purple.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![CodeFactor](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler/badge)](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler)
-![View Count](https://komarev.com/ghpvc/?username=Bananz0&repository=galaxybookenabler&color=brightgreen)
+![View Count](https://komarev.com/ghpvc/?username=Bananz0&repo=GalaxyBookEnabler&color=brightgreen)
 
 
 ## Overview
