@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![CodeFactor](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler/badge)](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler)
@@ -14,8 +14,10 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 ## Features
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
+- **System Support Engine (Advanced)** - Optional experimental feature for enhanced Samsung integration (Windows 11 only)
 - **Automated Startup** - Registry spoof runs automatically on every boot
 - **Professional Installer** - Clean, color-coded UI with progress tracking
+- **Test Mode** - Simulate installation without making changes to your system
 - **Version Management** - Update detection and migration support
 - **Easy Uninstall** - One-command removal with cleanup
 ## Quick Start
@@ -35,6 +37,13 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 ```powershell
 .\Install-GalaxyBookEnabler.ps1 -Uninstall
 ```
+
+### Test Mode (No Changes Applied)
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -TestMode
+```
+
+Test mode simulates the entire installation without making any actual changes. Perfect for testing or reviewing what the installer will do before committing.
 
 ## Package Profiles
 
@@ -133,6 +142,12 @@ Pick individual packages by category with detailed descriptions and warnings.
 - Intel Wi-Fi adapter (for Quick Share)
 - 8GB RAM or more
 - Samsung account
+
+### System Support Engine (Optional Advanced Feature)
+- **Windows 11 (Build 22000+)** - Required
+- **x64 architecture** - ARM not supported
+- **Advanced users only** - Involves binary patching and service creation
+- **Experimental** - May cause system instability or trigger antivirus warnings
 
 ## ⚠️ Wi-Fi Compatibility
 
@@ -250,21 +265,38 @@ Would you like to preserve these custom values? (Y/N)
    - Create desktop shortcut
    - Set up keyboard shortcut manually
 
-6. **Package Selection**
+6. **System Support Engine (Optional/Advanced)**
+   - **Windows 11 only** - Experimental feature
+   - Downloads Samsung System Support Service CAB from Microsoft Update Catalog
+   - Extracts and patches binary executable
+   - Installs to `C:\GalaxyBook`
+   - Creates `GBeSupportService` Windows service (LocalSystem, Auto startup)
+   - Installs driver automatically via pnputil
+   - **Use with caution** - May trigger antivirus, requires advanced troubleshooting
+
+7. **Package Selection**
    - Choose installation profile
    - Review package list
    - Confirm installation
 
-7. **Apply Registry Spoof**
+8. **Apply Registry Spoof**
    - Immediate spoof application
    - No reboot required for testing
 
-8. **Reboot**
+9. **Reboot**
    - Restart your PC for full activation
    - Sign into Samsung Account
    - Configure Samsung apps
 
 ## Troubleshooting
+
+### System Support Engine Issues
+- **Service not starting**: Check Event Viewer for errors
+- **Antivirus blocking**: Add `C:\GalaxyBook` to exclusions
+- **Driver not installing**: Manually install via Device Manager
+- **Samsung Settings not appearing**: Wait 5-10 minutes after reboot for background installation
+- **Service verification**: Run `Get-Service 'GBeSupportService'` in PowerShell
+- **Only for Windows 11**: Feature requires Windows 11 Build 22000 or higher
 
 ### Quick Share Not Working
 - **Check Wi-Fi adapter**: Quick Share requires Intel Wi-Fi
@@ -383,6 +415,7 @@ Contributions are welcome! Please:
 ## Known Limitations
 
 - **Quick Share**: Requires Intel Wi-Fi adapter for full functionality
+- **System Support Engine**: Windows 11 only, experimental, may cause instability
 - **Samsung Recovery**: Will never work (requires genuine Samsung hardware)
 - **Samsung Update**: Will never work (requires genuine Samsung hardware)
 - **Some features**: May require additional Samsung account setup
