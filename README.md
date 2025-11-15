@@ -9,6 +9,8 @@
 [![SSSE Support](https://img.shields.io/badge/SSSE-Integrated-purple.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![CodeFactor](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler/badge)](https://www.codefactor.io/repository/github/bananz0/galaxybookenabler)
 ![View Count](https://komarev.com/ghpvc/?username=Bananz0&repo=GalaxyBookEnabler&color=brightgreen)
+![Downloads](https://img.shields.io/github/downloads/Bananz0/GalaxyBookEnabler/total.svg)
+
 
 
 ## Overview
