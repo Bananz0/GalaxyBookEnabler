@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.0] - 2025-11-15
 
 ### Added
+- **Samsung MultiPoint Support** - Galaxy Buds multipoint connectivity
+  - Works through Samsung Settings app (included in Core packages)
+  - Connect your Galaxy Buds to multiple devices simultaneously
+  - Seamless switching between PC and phone
+  - No additional configuration needed - automatic with proper BIOS spoofing
 - **21 Authentic Galaxy Book Models** - Complete hardware profile database
   - Galaxy Book5 series (2025): 960XHA, 940XHA, 960QHA, 750QHA
   - Galaxy Book4 series (2024): 960XGL, 960XGK, 940XGK, 960QGK, 750XGK, 750XGL, 750QGK
