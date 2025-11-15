@@ -14,6 +14,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Silent installation mode
 - Export/import package selections
 
+## [2.2.0] - 2025-11-15
+
+### Added
+- **21 Authentic Galaxy Book Models** - Complete hardware profile database
+  - Galaxy Book5 series (2025): 960XHA, 940XHA, 960QHA, 750QHA
+  - Galaxy Book4 series (2024): 960XGL, 960XGK, 940XGK, 960QGK, 750XGK, 750XGL, 750QGK
+  - Galaxy Book3 series (2023): 960XFH, 960XFG, 960QFG, 750XFG, 750XFH, 730QFG
+  - Galaxy Book2/Earlier: 950XGK, 930XDB, 935QDC, 930SBE
+  - All 11 BIOS/DMI registry values per model extracted from real hardware
+  - Data sourced from linux-hardware.org DMI dumps
+- **Interactive Model Selection Menu** - New Step 2 in installation flow
+  - Categorized by generation (Book5/4/3/2)
+  - Shows product family for each model
+  - Option to use legacy default (960XFH - Galaxy Book3 Ultra)
+  - Clear display of selected model details
+- **Automatic Privilege Elevation** - No more manual "Run as Administrator"
+  - Detects if running without admin rights
+  - Supports gsudo for seamless elevation (no UAC popup)
+  - Supports Windows 11 native sudo
+  - Falls back to traditional UAC prompt if no sudo available
+  - Preserves script parameters during re-launch
+  - Smart handling of piped scripts (irm | iex)
+- **Python Extraction Tools** - Developer tools for future model updates
+  - `analyze-patterns.py` - DMI/BIOS pattern analysis
+  - `extract-registry-db.py` - Model database generator
+  - `GalaxyBookModels.ps1` - PowerShell hashtable reference
+  - `galaxy-book-database.json` - Portable JSON database
+- **MODELS.md Documentation** - Comprehensive model selection guide
+  - Detailed specifications for all 21 models
+  - Screen sizes, types (laptop/convertible), generations
+  - Recommendations for different use cases
+  - Technical details on naming patterns
+  - Migration guidance for legacy users
+
+### Changed
+- **Installation flow updated to 8 steps** (was 7)
+  - Step 2 is now Model Selection (new)
+  - All subsequent steps renumbered (3-8)
+- **Core packages increased to 8** (was 7)
+  - Added Galaxy Book Experience to Core
+  - GBE now launches at end of installation
+- **README.md updated**
+  - Model selection feature highlighted
+  - Auto-elevation instructions added
+  - gsudo installation recommendation
+  - Updated Quick Start section
+- **FLOW_DIAGRAM.md updated**
+  - Added Step 2: Model Selection
+  - Updated Core package count
+  - Renumbered all subsequent steps
+
+### Technical
+- Model database embedded directly in installer (no external files needed)
+- Pattern analysis confirmed no algorithmic generation possible
+- BIOS versions contain unpredictable build dates
+- SKU codes use model-specific platform identifiers
+- Lookup table required for accurate spoofing
+
 ## [2.0.0] - 2025-11-14
 
 ### Added

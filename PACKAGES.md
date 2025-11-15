@@ -200,4 +200,4 @@ winget search "Samsung" --source msstore
 
 ---
 
-**Last Updated**: November 15, 2025 (v2.1.0)
+**Last Updated**: November 15, 2025 (v2.2.0)

@@ -38,7 +38,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 2.1.0
+    Version        : 2.2.0
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -48,9 +48,36 @@ param(
 )
 
 # VERSION CONSTANT - Update this when releasing new versions
-$SCRIPT_VERSION = "2.1.0"
+$SCRIPT_VERSION = "2.2.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+
+# ==================== GALAXY BOOK MODEL DATABASE ====================
+
+# Galaxy Book Model Database - 21 models extracted from linux-hardware.org
+$GalaxyBookModels = @{
+    '730QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03VAE.330.230322.PL'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 360'; SystemProductName = '730QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PVAE'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP730QFG-KB1UK'; EnclosureKind = 31 }
+    '750QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03RHC.170.240226.HC'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 360'; SystemProductName = '750QGK'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRHC'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QGK-KG2US'; EnclosureKind = 31 }
+    '750QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04RHG.270.250515.SX'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 360'; SystemProductName = '750QHA'; ProductSku = 'SCAI-A5A5-A5A5-LNLM-PRHG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QHA-KA1US'; EnclosureKind = 31 }
+    '750XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFL.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFG'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFL'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFG-KA3SE'; EnclosureKind = 10 }
+    '750XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFH'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFM'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFH-XF1BR'; EnclosureKind = 10 }
+    '750XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGK'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGK-KG1IT'; EnclosureKind = 10 }
+    '750XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGL'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGL-XG1BR'; EnclosureKind = 10 }
+    '930SBE' = @{ BIOSVendor = 'American Megatrends Inc.'; BIOSVersion = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Notebook 9 Series'; SystemProductName = '930SBE/931SBE/930SBV'; ProductSku = 'SCAI-A5A5-A5A5-A5A5-PAGW'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NT930SBE-K716'; EnclosureKind = 31 }
+    '930XDB' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '930XDB/931XDB/930XDY'; ProductSku = 'SCAI-A5A5-A5A5-TGL3-PRFX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP930XDB-KF6IT'; EnclosureKind = 10 }
+    '935QDC' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '935QDC'; ProductSku = 'SCAI-A5A5-A5A5-TGL4-PAKJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP935QDC-KE2US'; EnclosureKind = 31 }
+    '940XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '940XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PVAG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XGK-KG1FR'; EnclosureKind = 10 }
+    '940XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '940XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PVAJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XHA-KG3IT'; EnclosureKind = 10 }
+    '950XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book2 Pro Special Edition'; SystemProductName = '950XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHD'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP950XGK-KA2FR'; EnclosureKind = 10 }
+    '960QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro 360'; SystemProductName = '960QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PALN'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP964QFG-KA1IT'; EnclosureKind = 31 }
+    '960QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro 360'; SystemProductName = '960QGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHB'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QGK-KG1IT'; EnclosureKind = 31 }
+    '960QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro 360'; SystemProductName = '960QHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PALY'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QHA-KG2UK'; EnclosureKind = 31 }
+    '960XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro'; SystemProductName = '960XFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRGU'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFG-KC2CL'; EnclosureKind = 10 }
+    '960XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Ultra'; SystemProductName = '960XFH'; ProductSku = 'SCAI-ICPS-A5A5-RPLH-PALQ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFH-XA2BR'; EnclosureKind = 10 }
+    '960XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '960XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGK-KG1UK'; EnclosureKind = 10 }
+    '960XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Ultra'; SystemProductName = '960XGL'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PALX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGL-XG2BR'; EnclosureKind = 10 }
+    '960XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '960XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PAMA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XHA-KG2DE'; EnclosureKind = 10 }
+}
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -1739,6 +1766,84 @@ function Test-IntelWiFi {
     }
 }
 
+function Show-ModelSelectionMenu {
+    <#
+    .SYNOPSIS
+        Display interactive menu for Galaxy Book model selection
+    .DESCRIPTION
+        Shows categorized menu of 21 Galaxy Book models and returns selected model's registry values
+    #>
+    
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "  Select Galaxy Book Model to Spoof" -ForegroundColor Cyan
+    Write-Host "========================================`n" -ForegroundColor Cyan
+    
+    Write-Host "Available Models:" -ForegroundColor Yellow
+    Write-Host ""
+    
+    # Group models by family for easier selection
+    $modelGroups = @{
+        'Galaxy Book5' = @('960XHA', '940XHA', '960QHA', '750QHA')
+        'Galaxy Book4' = @('960XGL', '960XGK', '940XGK', '960QGK', '750XGK', '750XGL', '750QGK')
+        'Galaxy Book3' = @('960XFH', '960XFG', '960QFG', '750XFG', '750XFH', '730QFG')
+        'Galaxy Book2/Series' = @('950XGK', '930XDB', '935QDC', '930SBE')
+    }
+    
+    $index = 1
+    $modelIndex = @{}
+    
+    foreach ($group in $modelGroups.GetEnumerator() | Sort-Object { 
+        # Custom sort: Book5 > Book4 > Book3 > Book2
+        switch ($_.Key) {
+            'Galaxy Book5' { 1 }
+            'Galaxy Book4' { 2 }
+            'Galaxy Book3' { 3 }
+            'Galaxy Book2/Series' { 4 }
+        }
+    }) {
+        Write-Host "  $($group.Key):" -ForegroundColor Magenta
+        
+        foreach ($model in $group.Value) {
+            $modelData = $GalaxyBookModels[$model]
+            $displayName = "$model - $($modelData.SystemFamily)"
+            Write-Host ("    {0,2}. {1}" -f $index, $displayName) -ForegroundColor White
+            $modelIndex[$index] = $model
+            $index++
+        }
+        Write-Host ""
+    }
+    
+    Write-Host "  Default:" -ForegroundColor Magenta
+    Write-Host "    22. Galaxy Book3 Ultra (960XFH) - Legacy Default" -ForegroundColor Gray
+    Write-Host ""
+    
+    # Get user selection
+    do {
+        $selection = Read-Host "Enter model number (1-22)"
+        
+        if ($selection -eq '22') {
+            # Legacy default - return null to use old default values
+            Write-Host "`n✓ Using legacy default: Galaxy Book3 Ultra (960XFH)" -ForegroundColor Green
+            return $null
+        }
+        
+        $selectedNumber = [int]$selection
+        if ($modelIndex.ContainsKey($selectedNumber)) {
+            $selectedModel = $modelIndex[$selectedNumber]
+            $selectedData = $GalaxyBookModels[$selectedModel]
+            
+            Write-Host "`n✓ Selected: $selectedModel - $($selectedData.SystemFamily)" -ForegroundColor Green
+            Write-Host "  Product: $($selectedData.SystemProductName)" -ForegroundColor Gray
+            Write-Host "  BIOS: $($selectedData.BIOSVersion)" -ForegroundColor Gray
+            Write-Host ""
+            
+            return $selectedData
+        } else {
+            Write-Host "Invalid selection. Please enter a number between 1 and 22." -ForegroundColor Red
+        }
+    } while ($true)
+}
+
 function Get-LegacyBiosValues {
     param (
         [string]$OldBatchPath
@@ -1904,10 +2009,86 @@ REM ============================================================================
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    Write-Host "ERROR: This script must be run as Administrator!" -ForegroundColor Red
-    Write-Host "Right-click PowerShell and select 'Run as Administrator', then run this script again." -ForegroundColor Yellow
-    pause
-    exit
+    Write-Host "⚠ Administrator privileges required" -ForegroundColor Yellow
+    Write-Host ""
+    
+    # Check if sudo is available (gsudo or Windows 11 native sudo)
+    $hasSudo = $false
+    $sudoCommand = $null
+    
+    # Check for gsudo first (https://github.com/gerardog/gsudo)
+    if (Get-Command gsudo -ErrorAction SilentlyContinue) {
+        $hasSudo = $true
+        $sudoCommand = "gsudo"
+        Write-Host "✓ Detected gsudo - attempting automatic elevation..." -ForegroundColor Cyan
+    }
+    # Check for Windows 11 native sudo
+    elseif (Get-Command sudo -ErrorAction SilentlyContinue) {
+        $hasSudo = $true
+        $sudoCommand = "sudo"
+        Write-Host "✓ Detected Windows sudo - attempting automatic elevation..." -ForegroundColor Cyan
+    }
+    else {
+        Write-Host "Requesting administrator privileges..." -ForegroundColor Cyan
+        Write-Host "(Tip: Install 'gsudo' for seamless elevation: winget install gerardog.gsudo)" -ForegroundColor Gray
+    }
+    
+    Write-Host ""
+    
+    try {
+        if ($hasSudo) {
+            # Use sudo for seamless elevation
+            $scriptPath = $MyInvocation.MyCommand.Path
+            $arguments = $MyInvocation.BoundParameters.GetEnumerator() | ForEach-Object {
+                if ($_.Value -is [switch] -and $_.Value) {
+                    "-$($_.Key)"
+                }
+            }
+            
+            # Re-launch with sudo
+            if ($scriptPath) {
+                & $sudoCommand pwsh -NoProfile -ExecutionPolicy Bypass -File "`"$scriptPath`"" @arguments
+            } else {
+                # Script was piped (irm | iex), need to re-download
+                Write-Host "⚠ Cannot auto-elevate piped script with sudo" -ForegroundColor Yellow
+                Write-Host "Please run as administrator or download the script first." -ForegroundColor Gray
+                pause
+                exit
+            }
+        } else {
+            # Use traditional UAC elevation
+            $scriptPath = $MyInvocation.MyCommand.Path
+            $arguments = $MyInvocation.BoundParameters.GetEnumerator() | ForEach-Object {
+                if ($_.Value -is [switch] -and $_.Value) {
+                    "-$($_.Key)"
+                }
+            }
+            
+            if ($scriptPath) {
+                Start-Process -FilePath "pwsh" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" $($arguments -join ' ')" -Verb RunAs
+            } else {
+                # Script was piped, show manual instructions
+                Write-Host "Cannot auto-elevate when script is piped (irm | iex)." -ForegroundColor Red
+                Write-Host ""
+                Write-Host "Options:" -ForegroundColor Yellow
+                Write-Host "  1. Download the script first, then run as administrator" -ForegroundColor Gray
+                Write-Host "  2. Install gsudo: winget install gerardog.gsudo" -ForegroundColor Gray
+                Write-Host "     Then run: irm <url> | gsudo pwsh" -ForegroundColor Gray
+                pause
+                exit
+            }
+        }
+        
+        # Exit current non-elevated instance
+        exit
+    } catch {
+        Write-Host "✗ Failed to elevate: $_" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please run PowerShell as Administrator manually:" -ForegroundColor Yellow
+        Write-Host "  Right-click PowerShell → Run as Administrator" -ForegroundColor Gray
+        pause
+        exit
+    }
 }
 
 $taskName = "GalaxyBookEnabler"
@@ -2205,9 +2386,19 @@ if ($wifiCheck.HasWiFi) {
 
 Write-Host ""
 
-# ==================== STEP 2: CREATE INSTALLATION ====================
+# ==================== STEP 2: MODEL SELECTION ====================
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  STEP 2: Setting Up Files" -ForegroundColor Cyan
+Write-Host "  STEP 2: Galaxy Book Model Selection" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# Only prompt for model selection if not already set from reinstall/legacy
+if (-not $biosValuesToUse) {
+    $biosValuesToUse = Show-ModelSelectionMenu
+}
+
+# ==================== STEP 3: CREATE INSTALLATION ====================
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "  STEP 3: Setting Up Files" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 if (-not (Test-Path $installPath)) {
@@ -2303,9 +2494,9 @@ $config = @{
 $config | ConvertTo-Json | Set-Content $configPath
 Write-Host "✓ Configuration saved" -ForegroundColor Green
 
-# ==================== STEP 3: SCHEDULED TASK ====================
+# ==================== STEP 4: SCHEDULED TASK ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 3: Creating Startup Task" -ForegroundColor Cyan
+Write-Host "  STEP 4: Creating Startup Task" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 if ($TestMode) {
@@ -2333,9 +2524,9 @@ if ($TestMode) {
     Write-Host "  The spoof will run automatically on startup" -ForegroundColor Gray
 }
 
-# ==================== STEP 4: AI SELECT KEYBOARD SHORTCUT ====================
+# ==================== STEP 5: AI SELECT KEYBOARD SHORTCUT ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 4: AI Select Configuration" -ForegroundColor Cyan
+Write-Host "  STEP 5: AI Select Configuration" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 Write-Host "AI Select is Samsung's intelligent selection tool." -ForegroundColor White
@@ -2370,16 +2561,16 @@ if ($setupShortcut -like "y*") {
     Write-Host "  You can manually create it later if needed" -ForegroundColor Gray
 }
 
-# ==================== STEP 5: SYSTEM SUPPORT ENGINE (OPTIONAL/ADVANCED) ====================
+# ==================== STEP 6: SYSTEM SUPPORT ENGINE (OPTIONAL/ADVANCED) ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 5: System Support Engine (Advanced)" -ForegroundColor Cyan
+Write-Host "  STEP 6: System Support Engine (Advanced)" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 $ssseInstalled = Install-SystemSupportEngine -TestMode $TestMode
 
-# ==================== STEP 6: PACKAGE INSTALLATION ====================
+# ==================== STEP 7: PACKAGE INSTALLATION ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 6: Samsung Software Installation" -ForegroundColor Cyan
+Write-Host "  STEP 7: Samsung Software Installation" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 $installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
@@ -2491,9 +2682,9 @@ if ($packagesToInstall.Count -gt 0) {
     }
 }
 
-# ==================== STEP 7: APPLY SPOOF NOW ====================
+# ==================== STEP 8: APPLY SPOOF NOW ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 7: Applying Registry Spoof" -ForegroundColor Cyan
+Write-Host "  STEP 8: Applying Registry Spoof" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 if ($TestMode) {

@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -18,6 +18,8 @@
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
 ## Features
+- **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
+- **Auto-Elevation** - Automatically requests admin rights (supports gsudo and Windows 11 native sudo)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
 - **System Support Engine (Advanced)** - Optional experimental feature for enhanced Samsung integration (Windows 11 only)
@@ -26,18 +28,31 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Test Mode** - Simulate installation without making changes to your system
 - **Version Management** - Update detection and migration support
 - **Easy Uninstall** - One-command removal with cleanup
+
 ## Quick Start
 
 ### One-Line Install (from GitHub)
 ```powershell
 irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
 ```
+*The installer will automatically request administrator privileges if needed.*
+
+**With gsudo (recommended for seamless elevation):**
+```powershell
+# Install gsudo first (one-time)
+winget install gerardog.gsudo
+
+# Then install Galaxy Book Enabler with automatic elevation
+irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | gsudo pwsh
+```
 
 ### Manual Install
 1. Download `Install-GalaxyBookEnabler.ps1`
-2. Right-click PowerShell → Run as Administrator
-3. Run: `.\Install-GalaxyBookEnabler.ps1`
+2. Run: `.\Install-GalaxyBookEnabler.ps1`
+3. Accept UAC prompt when requested
 4. Follow the interactive installer
+
+*No need to manually "Run as Administrator" - the script handles elevation automatically!*
 
 ### Uninstall
 ```powershell
@@ -201,43 +216,77 @@ explorer.exe shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g
 
 ### Modified Registry Keys
 ```
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSVendor
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSVersion
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSMajorRelease
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSMinorRelease
 HKLM\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardManufacturer
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardProduct  
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardProduct
 HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemProductName
 HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemFamily
 HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemManufacturer
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\ProductSku
+HKLM\HARDWARE\DESCRIPTION\System\BIOS\EnclosureKind
 ```
 
-**Default Values** (Galaxy Book3 Ultra):
-- Manufacturer: `SAMSUNG ELECTRONICS CO., LTD.`
-- Product: `NP960XFH-XA2UK`
-- Family: `Galaxy Book3 Ultra`
-- BIOS Version: `P04RKI.049.220408.ZQ`
-- SKU: `SCAI-A5A5-ADLP-PSLP`
+**Available Models** (21 authentic hardware profiles):
 
-**How It Works:**
-1. Installer detects existing `QS.bat` file
-2. Extracts all 11 BIOS registry values
-3. Compares against Galaxy Book3 Ultra defaults
-4. Shows you what custom values were detected
-5. Asks if you want to preserve them
-6. Generates new installation with your custom values
+| Model   | Family                              | Gen  |
+|---------|-------------------------------------|------|
+| 960XHA  | Galaxy Book5 Pro                    | 2025 |
+| 940XHA  | Galaxy Book5 Pro                    | 2025 |
+| 960QHA  | Galaxy Book5 Pro 360                | 2025 |
+| 750QHA  | Galaxy Book5 360                    | 2025 |
+| 960XGL  | Galaxy Book4 Ultra                  | 2024 |
+| 960XGK  | Galaxy Book4 Pro                    | 2024 |
+| 940XGK  | Galaxy Book4 Pro                    | 2024 |
+| 960QGK  | Galaxy Book4 Pro 360                | 2024 |
+| 750XGK  | Galaxy Book4                        | 2024 |
+| 750XGL  | Galaxy Book4                        | 2024 |
+| 750QGK  | Galaxy Book4 360                    | 2024 |
+| 960XFH  | Galaxy Book3 Ultra                  | 2023 |
+| 960XFG  | Galaxy Book3 Pro                    | 2023 |
+| 960QFG  | Galaxy Book3 Pro 360                | 2023 |
+| 750XFG  | Galaxy Book3                        | 2023 |
+| 750XFH  | Galaxy Book3                        | 2023 |
+| 730QFG  | Galaxy Book3 360                    | 2023 |
+| 950XGK  | Galaxy Book2 Pro Special Edition    | 2022 |
+| 930XDB  | Galaxy Book Series                  | 2021 |
+| 935QDC  | Galaxy Book Series                  | 2021 |
+| 930SBE  | Notebook 9 Series                   | 2020 |
 
-**Example Detection:**
+**How Model Selection Works:**
+1. During installation, you'll see a categorized menu of all 21 models
+2. Models are grouped by generation (Book5 > Book4 > Book3 > Book2)
+3. Each model has authentic BIOS/DMI values extracted from real hardware
+4. Select your preferred model to spoof
+5. All 11 registry values are automatically configured
+
+**Example Selection:**
 ```
-Custom BIOS values detected in old QS.bat:
+========================================
+  Select Galaxy Book Model to Spoof
+========================================
 
-→ SystemFamily              = Galaxy Book4 Ultra
-→ SystemProductName         = 960XGL
-→ BIOSVersion               = P07RGJ.068.220524.HC
-→ ProductSku                = SCAI-PROT-A5A5-MTLH-PALX
-→ BaseBoardProduct          = NP960XGL-XG1UK
-  ... (other values)
+Available Models:
 
-Detected model: Galaxy Book4 Ultra (960XGL)
-Custom values: 7/11 keys modified from GB3U defaults
+  Galaxy Book5:
+     1. 960XHA - Galaxy Book5 Pro
+     2. 940XHA - Galaxy Book5 Pro
+     3. 960QHA - Galaxy Book5 Pro 360
+     4. 750QHA - Galaxy Book5 360
 
-Would you like to preserve these custom values? (Y/N)
+  Galaxy Book4:
+     5. 960XGL - Galaxy Book4 Ultra
+     6. 960XGK - Galaxy Book4 Pro
+     7. 940XGK - Galaxy Book4 Pro
+     [... more models ...]
+
+Enter model number (1-22): 5
+
+✓ Selected: 960XGL - Galaxy Book4 Ultra
+  Product: 960XGL
+  BIOS: P08ALX.400.250306.05
 ```
 
 ## 📖 Installation Guide

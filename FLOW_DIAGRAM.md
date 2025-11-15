@@ -2,7 +2,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Galaxy Book Enabler v2.0.0                   │
+│                    Galaxy Book Enabler v2.2.0                   │
 │                        Installation Flow                         │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -17,16 +17,34 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 2: File Setup                                              │
+│ STEP 2: Galaxy Book Model Selection                             │
 ├─────────────────────────────────────────────────────────────────┤
-│  • Create: %USERPROFILE%\.galaxy-book-enabler\                 │
-│  • Generate: GalaxyBookSpoof.bat (registry spoof script)       │
-│  • Save: gbe-config.json (version, date, Wi-Fi info)           │
+│  • Display 21 authentic Galaxy Book models                      │
+│  • Grouped by generation (Book5/4/3/2)                         │
+│  • User selects model to spoof (1-22)                          │
+│  • Loads 11 BIOS/DMI registry values for selected model        │
+│  • Option 22: Legacy default (Galaxy Book3 Ultra)              │
+│                                                                 │
+│  Models Available:                                              │
+│    • Galaxy Book5: 960XHA, 940XHA, 960QHA, 750QHA              │
+│    • Galaxy Book4: 960XGL, 960XGK, 940XGK, 960QGK, etc.        │
+│    • Galaxy Book3: 960XFH, 960XFG, 960QFG, 750XFG, etc.        │
+│    • Galaxy Book2/Series: 950XGK, 930XDB, 935QDC, 930SBE       │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 3: Scheduled Task Creation                                 │
+│ STEP 3: File Setup                                              │
+├─────────────────────────────────────────────────────────────────┤
+│  • Create: %USERPROFILE%\.galaxy-book-enabler\                 │
+│  • Generate: GalaxyBookSpoof.bat (registry spoof script)       │
+│  •   Uses selected model's 11 BIOS/DMI values                  │
+│  • Save: gbe-config.json (version, date, Wi-Fi info, model)    │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STEP 4: Scheduled Task Creation                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Task Name: "GalaxyBookEnabler"                              │
 │  • Trigger: At Startup (10 second delay)                       │
@@ -36,7 +54,17 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 4: AI Select Configuration (Optional)                      │
+│ STEP 4: Scheduled Task Creation                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  • Task Name: "GalaxyBookEnabler"                              │
+│  • Trigger: At Startup (10 second delay)                       │
+│  • Privileges: SYSTEM / Highest                                 │
+│  • Action: Run GalaxyBookSpoof.bat                             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STEP 5: AI Select Configuration (Optional)                      │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Create Desktop shortcut?                                     │
 │  • Instructions for keyboard shortcut setup                     │
@@ -45,7 +73,16 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 5: Package Selection                                       │
+│ STEP 6: System Support Engine (Advanced - Optional)             │
+├─────────────────────────────────────────────────────────────────┤
+│  • Windows 11 only (experimental)                               │
+│  • Enhanced Samsung integration                                 │
+│  • User prompted to enable/skip                                 │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STEP 7: Package Selection                                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
