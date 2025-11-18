@@ -54,35 +54,33 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 4: Scheduled Task Creation                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  • Task Name: "GalaxyBookEnabler"                              │
-│  • Trigger: At Startup (10 second delay)                       │
-│  • Privileges: SYSTEM / Highest                                 │
-│  • Action: Run GalaxyBookSpoof.bat                             │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 5: AI Select Configuration (Optional)                      │
-├─────────────────────────────────────────────────────────────────┤
-│  • Create Desktop shortcut?                                     │
-│  • Instructions for keyboard shortcut setup                     │
-│  • Launch command: shell:AppsFolder\...SmartSelect...!App      │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 6: System Support Engine (Advanced - Optional)             │
+│ STEP 5: System Support Engine (Advanced - Optional)             │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Windows 11 only (experimental)                               │
 │  • Enhanced Samsung integration                                 │
+│  • ⚠ Checks for existing Samsung Settings (version mismatch)   │
 │  • User prompted to enable/skip                                 │
+│                                                                 │
+│  Installation Process:                                          │
+│    1. Download CAB from Windows Update Catalog                  │
+│    2. Extract and patch SSSE binary                            │
+│    3. Create GBeSupportService                                  │
+│    4. Driver installation (user choice):                        │
+│       [1] Interactive (recommended)                             │
+│           • Add INF to driver store                             │
+│           • Guide binding to safe Bluetooth endpoint            │
+│           • Priority: CONTINUITY_MSG_SPP → SMS/MMS →            │
+│                      Flow/Flow15 → Bluetooth Peripheral         │
+│       [2] Automatic                                             │
+│           • Blind pnputil /add-driver /install                  │
+│                                                                 │
+│  Note: Samsung Settings & Runtime NOT installed manually -      │
+│        they install automatically via INF AddSoftware           │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 7: Package Selection                                       │
+│ STEP 6: Package Selection                                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
@@ -155,6 +153,17 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
+│ STEP 7: AI Select Configuration (Conditional)                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Only shown if 'AI Select' was selected in Step 6              │
+│                                                                 │
+│  • Create Desktop shortcut?                                     │
+│  • Instructions for keyboard shortcut setup                     │
+│  • Launch command: shell:AppsFolder\...SmartSelect...!App      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
 │ Package Installation                                            │
 ├─────────────────────────────────────────────────────────────────┤
 │  [1/15] Samsung Account                                         │
@@ -162,10 +171,14 @@
 │    ✓ Installed successfully                                     │
 │                                                                 │
 │  [2/15] Samsung Settings                                        │
-│    Installing...                                                │
-│    ✓ Installed successfully                                     │
+│    Managed by System Support Engine driver. Skipping.           │
+│    ✓ Skipped (auto via Store)                                   │
 │                                                                 │
-│  [3/15] Quick Share                                             │
+│  [3/15] Samsung Settings Runtime                                │
+│    Managed by System Support Engine driver. Skipping.           │
+│    ✓ Skipped (auto via Store)                                   │
+│                                                                 │
+│  [4/15] Quick Share                                             │
 │    ⚠ Requires Intel Wi-Fi for full functionality               │
 │    Installing...                                                │
 │    ✓ Installed successfully                                     │
@@ -182,9 +195,9 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │ Installation Results                                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  Successfully installed: 14/15                                  │
-│  Failed: 1                                                      │
-│    Tip: Failed packages can be installed manually               │
+│  Successfully installed: 13/15                                  │
+│  Skipped: 2 (Samsung Settings managed by SSSE driver)           │
+│  Failed: 0                                                      │
 │                                                                 │
 │  ⚠ QUICK SHARE WARNING:                                         │
 │    Quick Share was installed but may not work with your         │
@@ -203,7 +216,7 @@
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STEP 6: Apply Registry Spoof                                    │
+│ STEP 8: Apply Registry Spoof                                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  Applying Samsung Galaxy Book spoof...                          │
 │  ✓ Registry spoof applied!                                      │
@@ -240,11 +253,14 @@
 │   CORE (Required)    │  Auto-installed in all profiles
 ├──────────────────────┤
 │ • Samsung Account    │  Authentication
-│ • Samsung Settings   │  Configuration
-│ • Settings Runtime   │  Runtime support
+│ • Samsung Settings ⚠ │  Via SSSE driver (not winget)
+│ • Settings Runtime ⚠ │  Via SSSE driver (not winget)
 │ • Samsung Cloud      │  Cloud storage
 │ • Cloud Assistant    │  Cloud features
 │ • Continuity Service │  Cross-device sync
+│ • Bluetooth Sync     │  Bluetooth sync
+│ • Intelligence Svc   │  Galaxy AI / AI Select
+│ • Galaxy Book Exp.   │  App discovery
 └──────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────┐
