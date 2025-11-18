@@ -524,7 +524,7 @@ function Get-SamsungDriverCab {
                 try {
                     $lastUpdated = [DateTime]::Parse($Matches[1])
                 } catch {
-                    # Keep default date
+                    Write-Verbose "Failed to parse date '$($Matches[1])': $_. Using default date."
                 }
             }
             
