@@ -47,10 +47,28 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Version Management** - Update detection and migration support
 - **Easy Uninstall** - One-command removal with cleanup
 
+## 📋 Requirements
+
+**⚠️ IMPORTANT: This script requires PowerShell 7.0 or later**
+
+Windows comes with PowerShell 5.1 by default, which is **NOT compatible**. You must install PowerShell 7:
+
+```powershell
+# Install PowerShell 7 (one-time setup)
+winget install Microsoft.PowerShell
+```
+
+**Note:** If this is your first time using `winget`, you may need to run `winget list` first to accept the source agreements. The command may appear to stall without this step.
+
+Or download from: https://aka.ms/powershell
+
+After installing, use `pwsh` (PowerShell 7) instead of `powershell` (Windows PowerShell 5.1).
+
 ## Quick Start
 
 ### One-Line Install (from GitHub)
 ```powershell
+# Run in PowerShell 7 (pwsh)
 irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
 ```
 *The installer will automatically request administrator privileges if needed.*
