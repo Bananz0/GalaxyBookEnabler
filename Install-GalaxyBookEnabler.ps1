@@ -38,7 +38,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 2.2.0
+    Version        : 2.2.1
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -74,7 +74,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "2.2.0"
+$SCRIPT_VERSION = "2.2.1"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -1157,22 +1157,19 @@ function Install-SystemSupportEngine {
         
         $originalPattern = $null
         $targetPattern = $null
-        $detectedVersion = $null
         $offset = -1
         
         if ($offset_v7_0 -ne -1) {
-            $detectedVersion = "7.0.x"
             $originalPattern = $originalPattern_v7_0
             $targetPattern = $targetPattern_v7_0
             $offset = $offset_v7_0 - 1
         } elseif ($offset_v7_1 -ne -1) {
-            $detectedVersion = "7.1.x"
             $originalPattern = $originalPattern_v7_1
             $targetPattern = $targetPattern_v7_1
             $offset = $offset_v7_1 - 1
         }
         
-        if ($originalPattern -eq $null) {
+        if ($null -eq $originalPattern) {
             Write-Host "    ⚠ Pattern not found - may already be patched" -ForegroundColor Yellow
         } else {
             # Check if already patched
@@ -1255,7 +1252,7 @@ function Install-SystemSupportEngine {
             
             # Delete existing service
             Write-Host "      Deleting old service..." -ForegroundColor Gray
-            $deleteResult = & sc.exe delete $newServiceName 2>&1
+            & sc.exe delete $newServiceName 2>&1 | Out-Null
             Write-Host "      ✓ Service deletion initiated" -ForegroundColor Green
             
             # Wait for Windows to complete the deletion (marked for deletion issue)
@@ -1364,7 +1361,7 @@ function Install-SystemSupportEngine {
             Write-Host "    ✓ Service created successfully!" -ForegroundColor Green
             
             # Set service description
-            $descResult = & sc.exe description $newServiceName $description 2>&1
+            & sc.exe description $newServiceName $description 2>&1 | Out-Null
             
             Write-Host "      Name: $newServiceName" -ForegroundColor Gray
             Write-Host "      Display: $displayName" -ForegroundColor Gray
@@ -2760,9 +2757,6 @@ if ($TestMode) {
  try {
      $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
      if ($existingSettings) {
-         $settingsApps = @($existingSettings | Where-Object { $_.Name -notlike "*Runtime*" })
-         $runtimeApps = @($existingSettings | Where-Object { $_.Name -like "*Runtime*" })
-         
          Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
          foreach ($app in $existingSettings) {
              Write-Host "  • $($app.Name) (version: $($app.Version))" -ForegroundColor Gray
@@ -2977,6 +2971,11 @@ if ($TestMode) {
         Write-Host "  Your PC now identifies as a Samsung Galaxy Book3 Ultra" -ForegroundColor Gray
     }
 }
+
+# Kill all Samsung processes after installation
+Write-Host "`nStopping Samsung processes..." -ForegroundColor Yellow
+Get-Process -Name 'Samsung*' -ErrorAction SilentlyContinue | Stop-Process -Force
+Write-Host "✓ Samsung processes stopped" -ForegroundColor Green
 
 # ==================== COMPLETION ====================
 if ($TestMode) {
