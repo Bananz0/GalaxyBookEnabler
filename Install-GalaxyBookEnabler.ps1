@@ -2670,7 +2670,13 @@ if ($alreadyInstalled) {
                 $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
                 if ($dummyService) {
                     & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                if ($gbeService) {
+                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                }
+                if ($dummyService -or $gbeService) {
+                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
                 }
                 
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -2725,7 +2731,13 @@ if ($alreadyInstalled) {
                 $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
                 if ($dummyService) {
                     & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                if ($gbeService) {
+                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                }
+                if ($dummyService -or $gbeService) {
+                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
                 }
                 
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -2750,7 +2762,13 @@ if ($alreadyInstalled) {
                 $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
                 if ($dummyService) {
                     & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                if ($gbeService) {
+                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                }
+                if ($dummyService -or $gbeService) {
+                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
                 }
                 
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
