@@ -10,11 +10,12 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 
 | Package | Store ID | Description |
 |---------|----------|-------------|
-| Samsung Account | 9NGW9K44GQ5F | Authentication for Samsung ecosystem |
-| Samsung Settings | 9P2TBWSHK6HJ | Central configuration hub |
-| Samsung Settings Runtime | 9NL68DVFP841 | Required runtime for Settings |
-| Samsung Cloud Assistant | 9NFWHCHM52HQ | Cloud storage and sync |
-| Samsung Continuity Service | 9P98T77876KZ | Cross-device continuity |
+| Samsung Account | 9P98T77876KZ | Authentication for Samsung ecosystem |
+| Samsung Settings | SAMSUNGELECTRONICSCO.LTD.SamsungSettings_wj2mmv5czbaks | Central configuration hub |
+| Samsung Settings Runtime | SAMSUNGELECTRONICSCO.LTD.SamsungSettingsRuntime_wj2mmv5czbaks | Required runtime for Settings |
+| Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
+| Knox Matrix for Windows | 9NJRV1DT8N79 | Samsung Knox security synchronization |
+| Samsung Continuity Service | SAMSUNGELECTRONICSCO.LTD.SamsungContinuityService_wj2mmv5czbaks | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
 | Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features (shows available Samsung apps) |
@@ -48,9 +49,10 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Live Wallpaper | 9N1G7F25FXCB | Animated wallpapers |
 
 ### Security
-| Package | Store ID | Description |
-|---------|----------|-------------|
-| Samsung Parental Controls | 9N5GWJTCZKGS | Manage children's device usage |
+| Package | Store ID | Description | Notes |
+|---------|----------|-------------|-------|
+| Samsung Parental Controls | 9N5GWJTCZKGS | Manage children's device usage | |
+| Samsung Pass | 9MVWDZ5KX9LH | Password manager with biometric auth | ⚠️ Untested on non-Samsung devices |
 
 ### Smart Home
 | Package | Store ID | Description |
@@ -80,7 +82,6 @@ These packages install successfully but require additional configuration to func
 | Samsung Phone | 9MWJXXLCHBGK | Phone app integration | Additional setup required |
 | Samsung Find | 9MWD59CZJ1RN | Find your devices | Additional setup required |
 | Quick Search | 9N092440192Z | System-wide search | Additional setup required |
-| Samsung Pass | 9MVWDZ5KX9LH | Password manager with biometric auth | Additional setup required |
 
 > **Note**: Configuration guides for these apps will be added in future updates.
 
@@ -117,16 +118,17 @@ Deprecated versions - use newer alternatives instead.
 
 ## Installation Profiles
 
-### Core Only (8 packages)
+### Core Only (9 packages)
 - Samsung Account
 - Samsung Settings + Runtime
-- Samsung Cloud + Cloud Assistant
+- Samsung Cloud
+- Knox Matrix Agent
 - Samsung Continuity Service
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
 - Galaxy Book Experience
 
-### Recommended (24 packages)
+### Recommended (25 packages)
 Core + all fully working Samsung apps including:
 - Quick Share, Multi Control, Flow, Nearby Devices
 - Notes, Screen Recorder, AI Select
@@ -142,7 +144,6 @@ Recommended + apps requiring extra setup:
 - Samsung Phone
 - Samsung Find
 - Quick Search
-- Samsung Pass
 
 ### Everything (31+ packages)
 All packages including non-working ones:
@@ -157,9 +158,9 @@ Pick individual packages by category with full control over what gets installed.
 ## Quick Stats
 
 - **Total Packages**: 33+
-- **Core (Required)**: 8
-- **Fully Working**: 20
-- **Requires Extra Steps**: 5
+- **Core (Required)**: 9
+- **Fully Working**: 21
+- **Requires Extra Steps**: 4
 - **Non-Working**: 2
 - **Legacy**: 1
 

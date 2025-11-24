@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.2.1-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -72,6 +72,12 @@ After installing, use `pwsh` (PowerShell 7) instead of `powershell` (Windows Pow
 irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
 ```
 *The installer will automatically request administrator privileges if needed.*
+
+### Uninstall Options
+When running the installer on an existing installation, you have granular uninstall options:
+- **Uninstall everything**: Removes all Samsung apps, services, scheduled task, and configuration
+- **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled task
+- **Uninstall services only**: Removes scheduled task and Samsung services while keeping apps installed
 
 **With gsudo (recommended for seamless elevation):**
 ```powershell
