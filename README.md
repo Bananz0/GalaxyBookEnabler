@@ -73,6 +73,12 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 ```
 *The installer will automatically request administrator privileges if needed.*
 
+### Uninstall Options
+When running the installer on an existing installation, you have granular uninstall options:
+- **Uninstall everything**: Removes all Samsung apps, services, scheduled task, and configuration
+- **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled task
+- **Uninstall services only**: Removes scheduled task and Samsung services while keeping apps installed
+
 **With gsudo (recommended for seamless elevation):**
 ```powershell
 # Install gsudo first (one-time)

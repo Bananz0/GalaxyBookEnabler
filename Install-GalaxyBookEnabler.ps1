@@ -2502,11 +2502,13 @@ if ($alreadyInstalled) {
         Write-Host "  [1] Download and install latest version (v$($updateCheck.LatestVersion))" -ForegroundColor Green
         Write-Host "  [2] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [3] Reinstall current version" -ForegroundColor Gray
-        Write-Host "  [4] Uninstall" -ForegroundColor Gray
-        Write-Host "  [5] Cancel" -ForegroundColor Gray
+        Write-Host "  [4] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [5] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [6] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [7] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-5]"
+        $choice = Read-Host "Enter choice [1-7]"
         
         if ($choice -eq "1") {
             if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
@@ -2529,11 +2531,13 @@ if ($alreadyInstalled) {
         Write-Host "`nWhat would you like to do?" -ForegroundColor Cyan
         Write-Host "  [1] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [2] Reinstall" -ForegroundColor Gray
-        Write-Host "  [3] Uninstall" -ForegroundColor Gray
-        Write-Host "  [4] Cancel" -ForegroundColor Gray
+        Write-Host "  [3] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [4] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [5] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [6] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-4]"
+        $choice = Read-Host "Enter choice [1-6]"
     }
     
     switch ($choice) {
@@ -2598,30 +2602,40 @@ if ($alreadyInstalled) {
             }
         }
         "3" {
-            # Run uninstall inline
-            Write-Host "`nUninstalling..." -ForegroundColor Yellow
-            
-            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($existingTask) {
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                Write-Host "  ✓ Task removed" -ForegroundColor Green
-            }
-            
-            if (Test-Path $installPath) {
-                Remove-Item -Path $installPath -Recurse -Force
-                Write-Host "  ✓ Folder removed" -ForegroundColor Green
-            }
-            
-            Write-Host "`nUninstall complete!" -ForegroundColor Green
-            pause
-            exit
-        }
-        "4" {
-            # Uninstall (for 5-option menu) or Cancel (for 4-option menu)
-            # Check which menu was shown based on update availability
             if ($updateCheck.Available) {
-                # 5-option menu: option 4 is Uninstall
-                Write-Host "`nUninstalling..." -ForegroundColor Yellow
+                Write-Host "`nReinstalling current version..." -ForegroundColor Cyan
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                }
+                if (Test-Path $batchScriptPath) {
+                    $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
+                    if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                        $preserveChoice = Read-Host "Keep custom BIOS config? ([Y]/N)"
+                        if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
+                            $biosValuesToUse = $backupBiosValues.Values
+                        }
+                    }
+                }
+            } else {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+                
+                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
+                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                foreach ($pkg in $allPackages) {
+                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
+                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
+                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                    }
+                }
+                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                
+                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($dummyService) {
+                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
                 
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
                 if ($existingTask) {
@@ -2635,25 +2649,134 @@ if ($alreadyInstalled) {
                 }
                 
                 Write-Host "`nUninstall complete!" -ForegroundColor Green
-                pause
                 exit
             }
-            else {
-                # 4-option menu: option 4 is Cancel
-                Write-Host "`nCancelled." -ForegroundColor Yellow
-                pause
+        }
+        "4" {
+            if ($updateCheck.Available) {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+                
+                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
+                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                foreach ($pkg in $allPackages) {
+                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
+                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
+                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                    }
+                }
+                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                
+                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($dummyService) {
+                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-Host "  ✓ Task removed" -ForegroundColor Green
+                }
+                
+                if (Test-Path $installPath) {
+                    Remove-Item -Path $installPath -Recurse -Force
+                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
+                }
+                
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                exit
+            } else {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+                
+                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
+                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                foreach ($pkg in $allPackages) {
+                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
+                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
+                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                    }
+                }
+                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
                 exit
             }
         }
         "5" {
-            # Cancel (only for 5-option menu when update is available)
+            if ($updateCheck.Available) {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+                
+                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
+                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                foreach ($pkg in $allPackages) {
+                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
+                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
+                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                    }
+                }
+                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                exit
+            } else {
+                Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
+                
+                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($dummyService) {
+                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-Host "  ✓ Task removed" -ForegroundColor Green
+                }
+                
+                if (Test-Path $installPath) {
+                    Remove-Item -Path $installPath -Recurse -Force
+                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
+                }
+                
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                exit
+            }
+        }
+        "6" {
+            if ($updateCheck.Available) {
+                Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
+                
+                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($dummyService) {
+                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
+                }
+                
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-Host "  ✓ Task removed" -ForegroundColor Green
+                }
+                
+                if (Test-Path $installPath) {
+                    Remove-Item -Path $installPath -Recurse -Force
+                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
+                }
+                
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                exit
+            } else {
+                Write-Host "`nCancelled." -ForegroundColor Yellow
+                exit
+            }
+        }
+        "7" {
             Write-Host "`nCancelled." -ForegroundColor Yellow
-            pause
             exit
         }
         default {
             Write-Host "`nInvalid choice. Exiting." -ForegroundColor Red
-            pause
             exit
         }
     }
