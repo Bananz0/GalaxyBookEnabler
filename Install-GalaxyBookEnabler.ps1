@@ -1646,7 +1646,8 @@ function Stop-SamsungProcesses {
                     $killedCount++
                 }
                 catch {
-                    # Process may have already exited
+                    # Process may have already exited or access denied - this is expected and safe to ignore
+                    Write-Verbose "Could not stop process $($proc.Name) (PID: $($proc.Id)): $($_.Exception.Message)"
                 }
             }
         }
