@@ -1397,6 +1397,11 @@ function Install-SystemSupportEngine {
             
                 # Set service description
                 & sc.exe description $newServiceName $description 2>&1 | Out-Null
+                
+                # Configure service failure recovery - restart service on failure
+                Write-Host "    Configuring service failure recovery..." -ForegroundColor Gray
+                & sc.exe failure $newServiceName reset= 86400 actions= restart/5000/restart/5000/restart/5000 2>&1 | Out-Null
+                Write-Host "    ✓ Service will auto-restart on failure (5s delays)" -ForegroundColor Green
             
                 Write-Host "      Name: $newServiceName" -ForegroundColor Gray
                 Write-Host "      Display: $displayName" -ForegroundColor Gray
@@ -1405,32 +1410,65 @@ function Install-SystemSupportEngine {
                 Write-Host "      Startup: Automatic" -ForegroundColor Gray
                 Write-Host "      Account: LocalSystem" -ForegroundColor Gray
             
-                # Start the service immediately
+                # Start the service immediately with aggressive retry
                 Write-Host "    Starting service..." -ForegroundColor Gray
-                Start-Service -Name $newServiceName -ErrorAction SilentlyContinue
+                Write-Host "      Killing any Samsung processes first..." -ForegroundColor Gray
+                
+                # Kill Samsung processes before starting
+                $samsungProcesses = @(
+                    "SamsungSystemSupportEngine",
+                    "SamsungSystemSupportService",
+                    "SamsungSystemSupportOSD",
+                    "SamsungActiveScreen",
+                    "SamsungHideWindow",
+                    "SettingsEngineTest",
+                    "SettingsExtensionLauncher"
+                )
+                
+                foreach ($procName in $samsungProcesses) {
+                    $processes = Get-Process -Name $procName -ErrorAction SilentlyContinue
+                    if ($processes) {
+                        $processes | Stop-Process -Force -ErrorAction SilentlyContinue
+                    }
+                }
                 Start-Sleep -Seconds 2
                 
-                $serviceStatus = (Get-Service -Name $newServiceName -ErrorAction SilentlyContinue).Status
-                if ($serviceStatus -eq 'Running') {
-                    Write-Host "    ✓ Service started successfully" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "    ⚠ Service created but not running (status: $serviceStatus)" -ForegroundColor Yellow
-                    Write-Host "      Attempting to start..." -ForegroundColor Gray
+                # Retry loop - keep trying until it starts
+                $maxAttempts = 10
+                $attempt = 1
+                $serviceStarted = $false
+                
+                while (-not $serviceStarted -and $attempt -le $maxAttempts) {
+                    Write-Host "      Attempt $attempt/$maxAttempts..." -ForegroundColor Gray
+                    
                     try {
                         Start-Service -Name $newServiceName -ErrorAction Stop
-                        Start-Sleep -Seconds 1
-                        $retryStatus = (Get-Service -Name $newServiceName -ErrorAction SilentlyContinue).Status
-                        if ($retryStatus -eq 'Running') {
-                            Write-Host "      ✓ Service started on retry" -ForegroundColor Green
+                        Start-Sleep -Seconds 3
+                        
+                        $serviceStatus = (Get-Service -Name $newServiceName -ErrorAction SilentlyContinue).Status
+                        if ($serviceStatus -eq 'Running') {
+                            Write-Host "    ✓ Service started successfully (attempt $attempt)" -ForegroundColor Green
+                            $serviceStarted = $true
                         }
                         else {
-                            Write-Host "      Service will start automatically on next reboot" -ForegroundColor Gray
+                            Write-Host "      Status: $serviceStatus - retrying..." -ForegroundColor Yellow
+                            $attempt++
+                            Start-Sleep -Seconds 2
                         }
                     }
                     catch {
-                        Write-Host "      Service will start automatically on next reboot" -ForegroundColor Gray
+                        Write-Host "      Error: $($_.Exception.Message)" -ForegroundColor Yellow
+                        $attempt++
+                        Start-Sleep -Seconds 2
                     }
+                }
+                
+                if (-not $serviceStarted) {
+                    Write-Host "    ⚠ Could not start service after $maxAttempts attempts" -ForegroundColor Red
+                    Write-Host "      The service is set to Automatic and will start on next reboot" -ForegroundColor Yellow
+                    Write-Host "      If it still doesn't start, try:" -ForegroundColor Yellow
+                    Write-Host "        1. Kill all Samsung processes" -ForegroundColor Gray
+                    Write-Host "        2. Manually start GBeSupportService in Services" -ForegroundColor Gray
                 }
             }
             else {
