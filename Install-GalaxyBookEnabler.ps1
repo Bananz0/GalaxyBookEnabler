@@ -175,7 +175,7 @@ $PackageDatabase = @{
     Core        = @(
         @{
             Name        = "Samsung Account"
-            Id          = "9NGW9K44GQ5F"
+            Id          = "9P98T77876KZ"
             Category    = "Core"
             Description = "Required for Samsung ecosystem authentication"
             Status      = "Working"
@@ -198,7 +198,7 @@ $PackageDatabase = @{
             Required    = $true
         },
         @{
-            Name        = "Samsung Cloud Assistant"
+            Name        = "Samsung Cloud"
             Id          = "9NFWHCHM52HQ"
             Category    = "Core"
             Description = "Cloud storage and sync service"
@@ -206,8 +206,16 @@ $PackageDatabase = @{
             Required    = $true
         },
         @{
+            Name        = "Knox Matrix for Windows"
+            Id          = "9NJRV1DT8N79"
+            Category    = "Core"
+            Description = "Samsung Knox security synchronization"
+            Status      = "Working"
+            Required    = $true
+        },
+        @{
             Name        = "Samsung Continuity Service"
-            Id          = "9P98T77876KZ"
+            Id          = "9NGW9K44GQ5F"
             Category    = "Core"
             Description = "Enables cross-device continuity features"
             Status      = "Working"
@@ -1749,7 +1757,9 @@ function Install-SamsungPackages {
                 Write-Host "  Checking installation status..." -ForegroundColor Gray
                 $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
                 
-                if ($checkResult -match $pkg.Id) {
+                $pkgIdPattern = [regex]::Escape($pkg.Id)
+                $pkgNamePattern = [regex]::Escape($pkg.Name)
+                if ($checkResult -match $pkgIdPattern -or $checkResult -match $pkgNamePattern) {
                     Write-Host "  ✓ Already installed (skipping)" -ForegroundColor Cyan
                     $skipped++
                 }
@@ -3054,7 +3064,15 @@ else {
     }
 }
 
-# Kill all Samsung processes after installation
+Write-Host "`nCreating Samsung System Support Service..." -ForegroundColor Yellow
+$dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+if (-not $dummyService) {
+    & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= demand 2>&1 | Out-Null
+    Write-Host "✓ Service created" -ForegroundColor Green
+} else {
+    Write-Host "✓ Service already exists" -ForegroundColor Green
+}
+
 Write-Host "`nStopping Samsung processes..." -ForegroundColor Yellow
 Get-Process -Name 'Samsung*' -ErrorAction SilentlyContinue | Stop-Process -Force
 Write-Host "✓ Samsung processes stopped" -ForegroundColor Green
@@ -3111,4 +3129,3 @@ else {
 }
 
 Write-Host "`n"
-pause
