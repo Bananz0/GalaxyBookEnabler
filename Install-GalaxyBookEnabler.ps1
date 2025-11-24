@@ -775,7 +775,8 @@ function Install-SystemSupportEngine {
     
     # Check for running services
     $existingServices = @()
-    $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
+    $serviceNames = @("SamsungSystemSupportEngine", "SamsungSystemSupportService")
+    # OLD: $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
     foreach ($svcName in $serviceNames) {
         $service = Get-Service -Name $svcName -ErrorAction SilentlyContinue
         if ($service) {
@@ -1234,14 +1235,17 @@ function Install-SystemSupportEngine {
         if ($TestMode) {
             Write-Host "    [TEST MODE] Skipping service operations" -ForegroundColor Yellow
             Write-Host "      Would stop/disable conflicting Samsung services" -ForegroundColor Gray
-            Write-Host "      Would create: GBeSupportService" -ForegroundColor Gray
+            Write-Host "      Would create: SamsungSystemSupportService" -ForegroundColor Gray
+            # OLD: Write-Host "      Would create: GBeSupportService" -ForegroundColor Gray
             Write-Host "      Settings: LocalSystem account, Auto startup, Running" -ForegroundColor Gray
             Write-Host "      Binary: $targetExePath" -ForegroundColor Gray
         }
         else {
-            # Check for existing Samsung services (NOT including GBeSupportService)
+            # Check for existing Samsung services that might conflict
+            # OLD: # Check for existing Samsung services (NOT including GBeSupportService)
+            # We're now using SamsungSystemSupportService itself, so only check for engine variants
             $conflictingServices = @(
-                "SamsungSystemSupportService",
+                # OLD: "SamsungSystemSupportService",
                 "SamsungSystemSupportEngine Service",
                 "SamsungSystemSupportEngine"  # Without space variant
             )
@@ -1265,13 +1269,15 @@ function Install-SystemSupportEngine {
                 }
             }
         
-            # Now handle GBeSupportService (our custom service)
-            Write-Host "    Configuring GBeSupportService..." -ForegroundColor Cyan
-            $newServiceName = "GBeSupportService"
+            # Now handle SamsungSystemSupportService (our custom service)
+            # OLD: $newServiceName = "GBeSupportService"
+            Write-Host "    Configuring SamsungSystemSupportService..." -ForegroundColor Cyan
+            $newServiceName = "SamsungSystemSupportService"
             $service = Get-Service -Name $newServiceName -ErrorAction SilentlyContinue
         
             $binPath = Join-Path $InstallPath "SamsungSystemSupportService.exe"
-            $displayName = "Galaxy Book Enabler Support Service"
+            $displayName = "Samsung System Support Service"
+            # OLD: $displayName = "Galaxy Book Enabler Support Service"
             $description = "Samsung System Support Engine service (patched by Galaxy Book Enabler). Enables Samsung Settings and device features."
         
             if ($service) {
@@ -1468,7 +1474,8 @@ function Install-SystemSupportEngine {
                     Write-Host "      The service is set to Automatic and will start on next reboot" -ForegroundColor Yellow
                     Write-Host "      If it still doesn't start, try:" -ForegroundColor Yellow
                     Write-Host "        1. Kill all Samsung processes" -ForegroundColor Gray
-                    Write-Host "        2. Manually start GBeSupportService in Services" -ForegroundColor Gray
+                    Write-Host "        2. Manually start SamsungSystemSupportService in Services" -ForegroundColor Gray
+                    # OLD: Write-Host "        2. Manually start GBeSupportService in Services" -ForegroundColor Gray
                 }
             }
             else {
@@ -1510,43 +1517,56 @@ function Install-SystemSupportEngine {
         }
         #>
         Write-Host "  [8/8] Driver installation skipped (service-only mode)" -ForegroundColor Yellow
-        Write-Host "    The GBeSupportService will trigger Samsung Settings installation" -ForegroundColor Gray
+        Write-Host "    The SamsungSystemSupportService will trigger Samsung Settings installation" -ForegroundColor Gray
+        # OLD: Write-Host "    The GBeSupportService will trigger Samsung Settings installation" -ForegroundColor Gray
         
         # Cleanup temp extraction
         Write-Host "`n  Cleaning up temporary files..." -ForegroundColor Gray
         Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
         
-        # Final verification: Ensure original Samsung service is disabled and GBeSupportService is enabled
+        # Final verification: Ensure patched service is running
+        # OLD: # Final verification: Ensure original Samsung service is disabled and GBeSupportService is enabled
         Write-Host "`n  Verifying service configuration..." -ForegroundColor Cyan
         
-        $originalSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-        if ($originalSvc) {
-            if ($originalSvc.StartType -ne 'Disabled') {
-                Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
-                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-                if ($originalSvc.Status -eq 'Running') {
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-                }
-            }
-            $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-            if ($verifyOriginal.StartType -eq 'Disabled') {
-                Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
-            }
-            else {
-                Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
-            }
-        }
-        
-        $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-        if ($gbeSvc) {
-            Write-Host "    ✓ GBeSupportService: $($gbeSvc.StartType), $($gbeSvc.Status)" -ForegroundColor Green
-            if ($gbeSvc.StartType -ne 'Automatic') {
+        $patchedSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+        # OLD: $originalSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+        if ($patchedSvc) {
+            Write-Host "    ✓ SamsungSystemSupportService: $($patchedSvc.StartType), $($patchedSvc.Status)" -ForegroundColor Green
+            # OLD: if ($originalSvc.StartType -ne 'Disabled') {
+            # OLD:     Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
+            # OLD:     Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+            # OLD:     if ($originalSvc.Status -eq 'Running') {
+            # OLD:         Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            # OLD:     }
+            # OLD: }
+            # OLD: $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            # OLD: if ($verifyOriginal.StartType -eq 'Disabled') {
+            # OLD:     Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
+            # OLD: }
+            # OLD: else {
+            # OLD:     Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
+            # OLD: }
+            if ($patchedSvc.StartType -ne 'Automatic') {
                 Write-Host "    ⚠ Warning: Service is not set to Automatic startup" -ForegroundColor Yellow
+            }
+            if ($patchedSvc.Status -ne 'Running') {
+                Write-Host "    ⚠ Warning: Service is not running" -ForegroundColor Yellow
             }
         }
         else {
-            Write-Host "    ⚠ GBeSupportService not found" -ForegroundColor Yellow
+            Write-Host "    ⚠ SamsungSystemSupportService not found" -ForegroundColor Yellow
         }
+        
+        # OLD: $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+        # OLD: if ($gbeSvc) {
+        # OLD:     Write-Host "    ✓ GBeSupportService: $($gbeSvc.StartType), $($gbeSvc.Status)" -ForegroundColor Green
+        # OLD:     if ($gbeSvc.StartType -ne 'Automatic') {
+        # OLD:         Write-Host "    ⚠ Warning: Service is not set to Automatic startup" -ForegroundColor Yellow
+        # OLD:     }
+        # OLD: }
+        # OLD: else {
+        # OLD:     Write-Host "    ⚠ GBeSupportService not found" -ForegroundColor Yellow
+        # OLD: }
         
         # Show completion summary
         Write-Host "`n========================================" -ForegroundColor Green
@@ -1555,7 +1575,8 @@ function Install-SystemSupportEngine {
         
         Write-Host "Installation Summary:" -ForegroundColor Cyan
         Write-Host "  Location: $InstallPath" -ForegroundColor White
-        Write-Host "  Service: GBeSupportService" -ForegroundColor White
+        Write-Host "  Service: SamsungSystemSupportService" -ForegroundColor White
+        # OLD: Write-Host "  Service: GBeSupportService" -ForegroundColor White
         Write-Host "  Binary: Patched ✓" -ForegroundColor Green
         Write-Host "  Driver: Installed ✓" -ForegroundColor Green
         
@@ -1580,7 +1601,8 @@ function Install-SystemSupportEngine {
         Write-Host "    • Wait 5-10 minutes (apps install in background)" -ForegroundColor Gray
         Write-Host "    • Check Store for 'Samsung Settings' and install manually" -ForegroundColor Gray
         Write-Host "    • Verify service is running:" -ForegroundColor Gray
-        Write-Host "      Get-Service 'GBeSupportService'" -ForegroundColor DarkGray
+        Write-Host "      Get-Service 'SamsungSystemSupportService'" -ForegroundColor DarkGray
+        # OLD: Write-Host "      Get-Service 'GBeSupportService'" -ForegroundColor DarkGray
         Write-Host "    • Check Event Viewer for errors" -ForegroundColor Gray
         Write-Host "    • Ensure antivirus isn't blocking the patched executable" -ForegroundColor Gray
         
@@ -2912,19 +2934,21 @@ if ($alreadyInstalled) {
                 Uninstall-SamsungApps | Out-Null
                 
                 # Remove services first
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
+                $samsungService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($samsungService) {
                     Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
                     & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ SamsungSystemSupportService removed" -ForegroundColor Green
                 }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
+                # GBeSupportService no longer used (old name)
+                # OLD: $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                # OLD: if ($gbeService) {
+                # OLD:     Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                # OLD:     & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                # OLD: }
+                # OLD: if ($dummyService -or $gbeService) {
+                # OLD:     Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
+                # OLD: }
                 
                 # Remove scheduled task
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -3015,17 +3039,20 @@ if ($alreadyInstalled) {
                 
                 $removedCount = Uninstall-SamsungApps
                 
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
+                $samsungService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($samsungService) {
+                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
                     & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                    Write-Host "  ✓ SamsungSystemSupportService removed" -ForegroundColor Green
                 }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
+                # GBeSupportService no longer used (old name)
+                # OLD: $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                # OLD: if ($gbeService) {
+                # OLD:     & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                # OLD: }
+                # OLD: if ($dummyService -or $gbeService) {
+                # OLD:     Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
+                # OLD: }
                 
                 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
                 if ($existingTask) {
