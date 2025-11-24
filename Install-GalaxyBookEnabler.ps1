@@ -370,6 +370,14 @@ $PackageDatabase = @{
             Category    = "Utilities"
             Description = "Transfer data to new Galaxy Book"
             Status      = "Working"
+        },
+        @{
+            Name        = "Samsung Pass"
+            Id          = "9MVWDZ5KX9LH"
+            Category    = "Security"
+            Description = "Password manager with biometric auth"
+            Status      = "Working"
+            Warning     = "Untested on non-Samsung devices - may require additional setup"
         }
     )
     
@@ -404,14 +412,6 @@ $PackageDatabase = @{
             Id          = "9N092440192Z"
             Category    = "Productivity"
             Description = "Fast system-wide search"
-            Status      = "RequiresExtraSteps"
-            Warning     = "Requires additional configuration steps to work properly"
-        },        
-        @{
-            Name        = "Samsung Pass"
-            Id          = "9MVWDZ5KX9LH"
-            Category    = "Security"
-            Description = "Password manager with biometric auth"
             Status      = "RequiresExtraSteps"
             Warning     = "Requires additional configuration steps to work properly"
         }
