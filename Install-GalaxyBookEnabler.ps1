@@ -1558,6 +1558,171 @@ function Install-SystemSupportEngine {
     }
 }
 
+function Stop-SamsungProcesses {
+    <#
+    .SYNOPSIS
+        Stops all Samsung processes to prevent file locks during uninstall
+    #>
+    
+    $samsungProcesses = @(
+        "SamsungSystemSupportEngine",
+        "SamsungSystemSupportService",
+        "SamsungSystemSupportOSD",
+        "SamsungActiveScreen",
+        "SamsungHideWindow",
+        "SettingsEngineTest",
+        "SettingsExtensionLauncher",
+        "SamsungSettings",
+        "SamsungCloud",
+        "SamsungNotes",
+        "SamsungGallery",
+        "QuickShare",
+        "MultiControl",
+        "AISelect",
+        "SamsungFlow",
+        "SamsungScreenRecorder"
+    )
+    
+    $killedCount = 0
+    foreach ($procName in $samsungProcesses) {
+        $processes = Get-Process -Name $procName -ErrorAction SilentlyContinue
+        if ($processes) {
+            foreach ($proc in $processes) {
+                try {
+                    Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+                    $killedCount++
+                }
+                catch {
+                    # Process may have already exited
+                }
+            }
+        }
+    }
+    
+    if ($killedCount -gt 0) {
+        Write-Host "  Stopped $killedCount Samsung process(es)" -ForegroundColor Gray
+        Start-Sleep -Seconds 2  # Give processes time to fully exit
+    }
+    
+    return $killedCount
+}
+
+function Remove-SamsungSettingsPackages {
+    <#
+    .SYNOPSIS
+        Removes Samsung Settings packages using multiple fallback methods
+    
+    .DESCRIPTION
+        Attempts to remove Samsung Settings packages using several methods:
+        1. PowerShell 7 Remove-AppxPackage -AllUsers
+        2. Windows PowerShell 5.1 Remove-AppxPackage -AllUsers (fallback)
+        3. Remove provisioned packages (for system-wide installations)
+    #>
+    
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$Packages
+    )
+    
+    $results = @{
+        Success = @()
+        Failed  = @()
+    }
+    
+    foreach ($app in $Packages) {
+        $removed = $false
+        $packageName = $app.Name
+        $packageFullName = $app.PackageFullName
+        
+        Write-Host "  Removing $packageName..." -ForegroundColor Gray
+        
+        # Method 1: Try PowerShell 7 (current session)
+        try {
+            Write-Host "    [Method 1] Using PowerShell 7..." -ForegroundColor DarkGray
+            $app | Remove-AppxPackage -AllUsers -ErrorAction Stop
+            Write-Host "    ✓ Successfully removed via PowerShell 7" -ForegroundColor Green
+            $removed = $true
+            $results.Success += $packageName
+        }
+        catch {
+            $error1 = $_.Exception.Message
+            Write-Host "    ✗ PowerShell 7 failed: $error1" -ForegroundColor DarkGray
+            
+            # Method 2: Try Windows PowerShell 5.1
+            try {
+                Write-Host "    [Method 2] Using Windows PowerShell 5.1..." -ForegroundColor DarkGray
+                
+                # Create a script block to run in Windows PowerShell
+                $scriptBlock = @"
+Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFullName' } | Remove-AppxPackage -AllUsers -ErrorAction Stop
+"@
+                
+                $result = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1
+                
+                # Verify removal
+                $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
+                if (-not $stillExists) {
+                    Write-Host "    ✓ Successfully removed via Windows PowerShell" -ForegroundColor Green
+                    $removed = $true
+                    $results.Success += $packageName
+                }
+                else {
+                    throw "Package still exists after removal attempt"
+                }
+            }
+            catch {
+                $error2 = $_.Exception.Message
+                Write-Host "    ✗ Windows PowerShell failed: $error2" -ForegroundColor DarkGray
+                
+                # Method 3: Try removing provisioned package
+                try {
+                    Write-Host "    [Method 3] Checking provisioned packages..." -ForegroundColor DarkGray
+                    
+                    $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { 
+                        $_.PackageName -like "*$($app.Name)*" 
+                    }
+                    
+                    if ($provisioned) {
+                        Write-Host "    Found provisioned package, removing..." -ForegroundColor DarkGray
+                        $provisioned | Remove-AppxProvisionedPackage -Online -ErrorAction Stop
+                        
+                        # Also try to remove user package again
+                        $app | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+                        
+                        # Verify removal
+                        $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
+                        if (-not $stillExists) {
+                            Write-Host "    ✓ Successfully removed provisioned package" -ForegroundColor Green
+                            $removed = $true
+                            $results.Success += $packageName
+                        }
+                        else {
+                            throw "Package still exists after provisioned removal"
+                        }
+                    }
+                    else {
+                        throw "No provisioned package found"
+                    }
+                }
+                catch {
+                    $error3 = $_.Exception.Message
+                    Write-Host "    ✗ Provisioned package removal failed: $error3" -ForegroundColor DarkGray
+                }
+            }
+        }
+        
+        if (-not $removed) {
+            Write-Host "  ✗ Failed to remove $packageName after trying all methods" -ForegroundColor Red
+            $results.Failed += @{
+                Name    = $packageName
+                FullName = $packageFullName
+            }
+        }
+    }
+    
+    return $results
+}
+
 function Show-PackageSelectionMenu {
     param (
         [bool]$HasIntelWiFi
@@ -1767,9 +1932,27 @@ function Install-SamsungPackages {
                     Write-Host "  Installing..." -ForegroundColor Gray
                     $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
                     
+                    # Check for Microsoft Store connection error (0x80d03805)
+                    if ($installOutput -match "0x80d03805|0x80D03805") {
+                        Write-Host "  ✗ Microsoft Store connection error (0x80d03805)" -ForegroundColor Red
+                        Write-Host "" -ForegroundColor Yellow
+                        Write-Host "    ═══════════════════════════════════════════════════════" -ForegroundColor Yellow
+                        Write-Host "    WORKAROUND: Toggle your WiFi connection" -ForegroundColor Yellow
+                        Write-Host "    ═══════════════════════════════════════════════════════" -ForegroundColor Yellow
+                        Write-Host "" -ForegroundColor Yellow
+                        Write-Host "    This is a known Microsoft Store issue. To fix:" -ForegroundColor White
+                        Write-Host "      1. Turn WiFi OFF, wait 5 seconds, turn it back ON" -ForegroundColor Cyan
+                        Write-Host "      2. Or switch to a different WiFi network temporarily" -ForegroundColor Cyan
+                        Write-Host "      3. Then run the installer again" -ForegroundColor Cyan
+                        Write-Host "" -ForegroundColor Yellow
+                        Write-Host "    Alternative: Install manually from Microsoft Store" -ForegroundColor Gray
+                        Write-Host "    Store link: ms-windows-store://pdp/?ProductId=$($pkg.Id)" -ForegroundColor Gray
+                        Write-Host "" -ForegroundColor Yellow
+                        $failed++
+                    }
                     # Winget always returns 0 even when "already installed" or "no upgrade found"
                     # Parse output to determine actual result
-                    if ($installOutput -match "Successfully installed|Installation completed successfully") {
+                    elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
                         $installed++
                     }
@@ -1777,8 +1960,15 @@ function Install-SamsungPackages {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
                         $skipped++
                     }
+                    elseif ($installOutput -match "No package found matching input criteria|No applicable update found") {
+                        Write-Host "  ✗ Package not found in winget" -ForegroundColor Red
+                        Write-Host "    Package ID: $($pkg.Id)" -ForegroundColor Gray
+                        Write-Host "    This may require installation through Microsoft Store instead" -ForegroundColor Yellow
+                        $failed++
+                    }
                     elseif ($LASTEXITCODE -ne 0) {
-                        Write-Host "  ✗ Installation failed" -ForegroundColor Red
+                        Write-Host "  ✗ Installation failed (Exit code: $LASTEXITCODE)" -ForegroundColor Red
+                        Write-Host "    Output: $($installOutput.Substring(0, [Math]::Min(200, $installOutput.Length)))" -ForegroundColor Gray
                         $failed++
                     }
                     else {
@@ -2622,50 +2812,24 @@ if ($alreadyInstalled) {
                 
                 Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
                 $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                $removedCount = 0
                 foreach ($pkg in $allPackages) {
+                    Write-Host "  Checking: $($pkg.Name)..."-ForegroundColor Gray
                     $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
                     if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
-                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
-                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                        Write-Host "    Found - uninstalling..." -ForegroundColor Yellow
+                        $uninstallResult = winget uninstall --id $pkg.Id --silent 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "    ✓ Uninstalled" -ForegroundColor Green
+                            $removedCount++
+                        } else {
+                            Write-Host "    ✗ Failed: $uninstallResult" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "    Not installed (skipping)" -ForegroundColor DarkGray
                     }
                 }
-                Write-Host "  ✓ Apps removed" -ForegroundColor Green
-                
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
-                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                    Write-Host "  ✓ Samsung service removed" -ForegroundColor Green
-                }
-                
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                    Write-Host "  ✓ Task removed" -ForegroundColor Green
-                }
-                
-                if (Test-Path $installPath) {
-                    Remove-Item -Path $installPath -Recurse -Force
-                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
-                }
-                
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            }
-        }
-        "4" {
-            if ($updateCheck.Available) {
-                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
-                
-                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
-                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
-                foreach ($pkg in $allPackages) {
-                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
-                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
-                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
-                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
-                    }
-                }
-                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                Write-Host "  ✓ Removed $removedCount app(s)" -ForegroundColor Green
                 
                 $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
                 if ($dummyService) {
@@ -2686,6 +2850,62 @@ if ($alreadyInstalled) {
                 }
                 
                 if (Test-Path $installPath) {
+                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+                    Stop-SamsungProcesses | Out-Null
+                    Remove-Item -Path $installPath -Recurse -Force
+                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
+                }
+                
+                Write-Host "`nUninstall complete!" -ForegroundColor Green
+                exit
+            }
+        }
+        "4" {
+            if ($updateCheck.Available) {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+                
+                Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
+                $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                $removedCount = 0
+                foreach ($pkg in $allPackages) {
+                    Write-Host "  Checking: $($pkg.Name)..." -ForegroundColor Gray
+                    $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                    if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
+                        Write-Host "    Found - uninstalling..." -ForegroundColor Yellow
+                        $uninstallResult = winget uninstall --id $pkg.Id --silent 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "    ✓ Uninstalled" -ForegroundColor Green
+                            $removedCount++
+                        } else {
+                            Write-Host "    ✗ Failed: $uninstallResult" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "    Not installed (skipping)" -ForegroundColor DarkGray
+                    }
+                }
+                Write-Host "  ✓ Removed $removedCount app(s)" -ForegroundColor Green
+                
+                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($dummyService) {
+                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                }
+                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+                if ($gbeService) {
+                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                }
+                if ($dummyService -or $gbeService) {
+                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
+                }
+                
+                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-Host "  ✓ Task removed" -ForegroundColor Green
+                }
+                
+                if (Test-Path $installPath) {
+                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+                    Stop-SamsungProcesses | Out-Null
                     Remove-Item -Path $installPath -Recurse -Force
                     Write-Host "  ✓ Folder removed" -ForegroundColor Green
                 }
@@ -2697,14 +2917,24 @@ if ($alreadyInstalled) {
                 
                 Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
                 $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                $removedCount = 0
                 foreach ($pkg in $allPackages) {
+                    Write-Host "  Checking: $($pkg.Name)..." -ForegroundColor Gray
                     $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
                     if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
-                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
-                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                        Write-Host "    Found - uninstalling..." -ForegroundColor Yellow
+                        $uninstallResult = winget uninstall --id $pkg.Id --silent 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "    ✓ Uninstalled" -ForegroundColor Green
+                            $removedCount++
+                        } else {
+                            Write-Host "    ✗ Failed: $uninstallResult" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "    Not installed (skipping)" -ForegroundColor DarkGray
                     }
                 }
-                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                Write-Host "  ✓ Removed $removedCount app(s)" -ForegroundColor Green
                 Write-Host "`nUninstall complete!" -ForegroundColor Green
                 exit
             }
@@ -2715,14 +2945,24 @@ if ($alreadyInstalled) {
                 
                 Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
                 $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                $removedCount = 0
                 foreach ($pkg in $allPackages) {
+                    Write-Host "  Checking: $($pkg.Name)..." -ForegroundColor Gray
                     $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
                     if ($checkResult -match [regex]::Escape($pkg.Id) -or $checkResult -match [regex]::Escape($pkg.Name)) {
-                        Write-Host "  Uninstalling $($pkg.Name)..." -ForegroundColor Gray
-                        winget uninstall --id $pkg.Id --silent 2>&1 | Out-Null
+                        Write-Host "    Found - uninstalling..." -ForegroundColor Yellow
+                        $uninstallResult = winget uninstall --id $pkg.Id --silent 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "    ✓ Uninstalled" -ForegroundColor Green
+                            $removedCount++
+                        } else {
+                            Write-Host "    ✗ Failed: $uninstallResult" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "    Not installed (skipping)" -ForegroundColor DarkGray
                     }
                 }
-                Write-Host "  ✓ Apps removed" -ForegroundColor Green
+                Write-Host "  ✓ Removed $removedCount app(s)" -ForegroundColor Green
                 Write-Host "`nUninstall complete!" -ForegroundColor Green
                 exit
             } else {
@@ -2747,6 +2987,8 @@ if ($alreadyInstalled) {
                 }
                 
                 if (Test-Path $installPath) {
+                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+                    Stop-SamsungProcesses | Out-Null
                     Remove-Item -Path $installPath -Recurse -Force
                     Write-Host "  ✓ Folder removed" -ForegroundColor Green
                 }
@@ -2778,6 +3020,8 @@ if ($alreadyInstalled) {
                 }
                 
                 if (Test-Path $installPath) {
+                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+                    Stop-SamsungProcesses | Out-Null
                     Remove-Item -Path $installPath -Recurse -Force
                     Write-Host "  ✓ Folder removed" -ForegroundColor Green
                 }
@@ -2979,11 +3223,25 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 # Warn if Samsung Settings already installed (version mismatch risk with driver-bound install)
 try {
     $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
-    if ($existingSettings) {
+    $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
+    
+    if ($existingSettings -or $provisionedSettings) {
         Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
-        foreach ($app in $existingSettings) {
-            Write-Host "  • $($app.Name) (version: $($app.Version))" -ForegroundColor Gray
+        
+        if ($existingSettings) {
+            Write-Host "`n  Installed packages:" -ForegroundColor Cyan
+            foreach ($app in $existingSettings) {
+                Write-Host "    • $($app.Name) (version: $($app.Version))" -ForegroundColor Gray
+            }
         }
+        
+        if ($provisionedSettings) {
+            Write-Host "`n  Provisioned packages (system-wide):" -ForegroundColor Cyan
+            foreach ($prov in $provisionedSettings) {
+                Write-Host "    • $($prov.DisplayName) (version: $($prov.Version))" -ForegroundColor Gray
+            }
+        }
+        
         Write-Host ""
         Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
         Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
@@ -2993,16 +3251,39 @@ try {
          
         if ($choice -like "u*") {
             Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
-            foreach ($app in $existingSettings) {
-                try {
-                    Write-Host "  Removing $($app.Name)..." -ForegroundColor Gray
-                    $app | Remove-AppxPackage -AllUsers -ErrorAction Stop
-                    Write-Host "  ✓ Successfully removed $($app.Name)" -ForegroundColor Green
-                }
-                catch {
-                    Write-Host "  ✗ Failed to remove $($app.Name): $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "  This will try multiple methods to ensure complete removal." -ForegroundColor Gray
+            Write-Host ""
+            
+            $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
+            
+            Write-Host ""
+            Write-Host "Removal Summary:" -ForegroundColor Cyan
+            if ($removalResult.Success.Count -gt 0) {
+                Write-Host "  ✓ Successfully removed: $($removalResult.Success.Count) package(s)" -ForegroundColor Green
+                foreach ($pkg in $removalResult.Success) {
+                    Write-Host "    • $pkg" -ForegroundColor Gray
                 }
             }
+            
+            if ($removalResult.Failed.Count -gt 0) {
+                Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
+                foreach ($pkg in $removalResult.Failed) {
+                    Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                }
+                Write-Host ""
+                Write-Host "  Manual removal options:" -ForegroundColor Yellow
+                Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
+                Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
+                Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                Write-Host ""
+                
+                $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
+                if ($continueAnyway -notlike "y*") {
+                    Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
+                    return
+                }
+            }
+            
             Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
             Install-SystemSupportEngine -TestMode $TestMode | Out-Null
         }
@@ -3099,7 +3380,11 @@ if ($packagesToInstall.Count -gt 0) {
     
     if ($installResult.Failed -gt 0) {
         Write-Host "Failed: $($installResult.Failed)" -ForegroundColor Red
-        Write-Host "  Tip: Failed packages can be installed manually from Microsoft Store" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Troubleshooting tips:" -ForegroundColor Yellow
+        Write-Host "    • If you see error 0x80d03805: Toggle WiFi OFF/ON and retry" -ForegroundColor Gray
+        Write-Host "    • Or switch to a different WiFi network temporarily" -ForegroundColor Gray
+        Write-Host "    • Manual install: Open Microsoft Store and search for the app" -ForegroundColor Gray
     }
     
     Write-Host ""

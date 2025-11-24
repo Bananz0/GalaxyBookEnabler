@@ -10,11 +10,11 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 
 | Package | Store ID | Description |
 |---------|----------|-------------|
-| Samsung Account | 9NGW9K44GQ5F | Authentication for Samsung ecosystem |
+| Samsung Account | 9P98T77876KZ | Authentication for Samsung ecosystem |
 | Samsung Settings | SAMSUNGELECTRONICSCO.LTD.SamsungSettings_wj2mmv5czbaks | Central configuration hub |
 | Samsung Settings Runtime | SAMSUNGELECTRONICSCO.LTD.SamsungSettingsRuntime_wj2mmv5czbaks | Required runtime for Settings |
-| Samsung Cloud | 9NJRV1DT8N79 | Cloud storage and sync |
-| Knox Matrix Agent | 9NFWHCHM52HQ | Samsung Knox security synchronization |
+| Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
+| Knox Matrix for Windows | 9NJRV1DT8N79 | Samsung Knox security synchronization |
 | Samsung Continuity Service | SAMSUNGELECTRONICSCO.LTD.SamsungContinuityService_wj2mmv5czbaks | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
