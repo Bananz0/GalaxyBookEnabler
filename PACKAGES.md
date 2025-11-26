@@ -28,10 +28,14 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Package | Store ID | Intel Wi-Fi Required | Description |
 |---------|----------|---------------------|-------------|
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
+| Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
+| Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
 | Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse |
 | Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
 | Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display |
+
+> **Note**: Quick Share, Camera Share, and Storage Share require **Intel Wi-Fi (AC/AX/BE)** AND **Intel Bluetooth** adapters.", "oldString": "## Recommended Packages (Fully Working)\n\n### Connectivity\n| Package | Store ID | Intel Wi-Fi Required | Description |\n|---------|----------|---------------------|-------------|\n| Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |\n| Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse |\n| Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |\n| Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |\n| Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display |
 
 ### Productivity
 | Package | Store ID | Description | Notes |
@@ -68,7 +72,6 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Package | Store ID | Description |
 |---------|----------|-------------|
 | Galaxy Book Smart Switch | 9PJ0J9KQWCLB | Transfer data to new Galaxy Book |
-| Storage Share | 9MVNW0XH7HS5 | Share storage between devices |
 
 ---
 
@@ -95,7 +98,6 @@ These packages will NOT work on non-Samsung devices.
 |---------|----------|-------------|-------|
 | Samsung Recovery | 9NBFVH4X67LF | Factory reset and recovery | Requires genuine hardware |
 | Samsung Update | 9NQ3HDB99VBF | Firmware and driver updates | Requires genuine hardware |
-| Camera Share | 9NPCS7FN6VB9 | Use phone camera with PC apps | Currently not working |
 
 | Package | Store ID | Description | Why It Doesn't Work |
 |---------|----------|-------------|---------------------|
@@ -186,7 +188,7 @@ winget search "Samsung" --source msstore
 ## Tips
 
 - **Start with Recommended**: Best balance of features and compatibility
-- **Check Wi-Fi for Quick Share**: Intel adapters work best
+- **Check Wi-Fi for Quick Share/Camera Share/Storage Share**: Requires Intel Wi-Fi (AC/AX/BE) + Intel Bluetooth
 - **Install Core First**: Test basic functionality before adding more
 - **Skip Non-Working**: No point installing Recovery or Update
 - **Custom for Power Users**: Pick exactly what you need

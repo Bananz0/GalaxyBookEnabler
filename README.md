@@ -200,17 +200,20 @@ Pick individual packages by category with detailed descriptions and warnings.
 
 **Quick Share** requires **Intel Wi-Fi AX** and **Intel Bluetooth** adapters for full functionality. This is a Samsung hardware requirement - the app will fail silently or show errors without proper hardware.
 
+### This is a WIP. Your device could be compatible and not present and otherwise
 ### Intel Wi-Fi AX Cards (Full Compatibility) ✅
 - Intel Wi-Fi 6 AX201/AX200
 - Intel Wi-Fi 6E AX210/AX211
-- Intel Wi-Fi 7 BE200
-
-### Intel Wi-Fi AC Cards (NOT Working) ❌
+- Intel Wi-Fi 6 AX201/AX200
 - Intel Wireless-AC 9260/9560
+
+### Intel Wi-Fi Cards (Not Tested) ✅
+- Intel Wi-Fi 7 BE200/BE201/BE202
 - Intel Wireless-AC 8265/8260
+
 - **Note**: AC cards may show "A software or driver update is required" error in Quick Share
 
-### Non-Intel Wi-Fi (NOT Working) ❌ 
+### Non-Intel Wi-Fi (Not Working) ❌ 
 - Realtek adapters
 - MediaTek adapters
 - Qualcomm adapters
@@ -224,7 +227,7 @@ Quick Share also requires an **Intel Bluetooth radio** (not just Wi-Fi). If you'
 Quick Share will fail with unhelpful errors even if you have Intel Wi-Fi.
 
 ### Alternative for Non-Intel Users
-If you don't have Intel Wi-Fi AX **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative:
+If you don't have Intel Wi-Fi **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative:
 - Works with any Wi-Fi adapter
 - Similar file-sharing functionality
 - Cross-platform support (Windows, Android, ChromeOS)
@@ -287,21 +290,6 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 2. **Startup Task**: Creates a scheduled task that runs the spoof on every boot
 3. **Package Installation**: Installs selected Samsung apps from Microsoft Store
 4. **Configuration**: Sets up shortcuts and configuration files
-
-### Modified Registry Keys
-```
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSVendor
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSVersion
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSMajorRelease
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BIOSMinorRelease
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardManufacturer
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardProduct
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemProductName
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemFamily
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemManufacturer
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\ProductSku
-HKLM\HARDWARE\DESCRIPTION\System\BIOS\EnclosureKind
-```
 
 **Available Models** (21 authentic hardware profiles):
 
@@ -550,7 +538,7 @@ Contributions are welcome! Please:
 
 ## Known Limitations
 
-- **Quick Share**: Requires Intel Wi-Fi AX adapter **AND** Intel Bluetooth radio (AC cards don't work)
+- **Quick Share**: Requires Intel Wi-Fi AX adapter **AND** Intel Bluetooth radio (Some AC cards don't work)
 - **System Support Engine**: Windows 11 only, experimental, may cause instability
 - **Samsung Recovery**: Will never work (requires genuine Samsung hardware)
 - **Samsung Update**: Will never work (requires genuine Samsung hardware)

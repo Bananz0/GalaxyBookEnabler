@@ -7,7 +7,9 @@
 
 .DESCRIPTION
     This tool spoofs your device as a Samsung Galaxy Book to enable features like:
-    - Quick Share (requires Intel Wi-Fi AX + Intel Bluetooth)
+    - Quick Share (requires Intel Wi-Fi + Intel Bluetooth)
+    - Camera Share (requires Intel Wi-Fi + Intel Bluetooth)
+    - Storage Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Multi Control
     - Samsung Notes
     - AI Select (with keyboard shortcut setup)
@@ -267,7 +269,7 @@ $PackageDatabase = @{
             Description       = "Fast file sharing between devices"
             Status            = "Working"
             RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi AX (not AC) AND Intel Bluetooth"
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
             Name        = "Samsung Notes"
@@ -355,11 +357,13 @@ $PackageDatabase = @{
             Status      = "Working"
         },
         @{
-            Name        = "Storage Share"
-            Id          = "9MVNW0XH7HS5"
-            Category    = "Utilities"
-            Description = "Share storage between devices"
-            Status      = "Working"
+            Name              = "Storage Share"
+            Id                = "9MVNW0XH7HS5"
+            Category          = "Utilities"
+            Description       = "Share storage between devices"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
             Name        = "Second Screen"
@@ -447,12 +451,13 @@ $PackageDatabase = @{
             Warning     = "This app will NOT work on non-Samsung devices (requires genuine hardware)"
         },
         @{
-            Name        = "Camera Share"
-            Id          = "9NPCS7FN6VB9"
-            Category    = "Connectivity"
-            Description = "Use phone camera with PC apps"
-            Status      = "NotWorking"
-            Warning     = "This app is currently not working (reason unknown)"
+            Name              = "Camera Share"
+            Id                = "9NPCS7FN6VB9"
+            Category          = "Connectivity"
+            Description       = "Use phone camera with PC apps"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         }
     )
     
@@ -1971,7 +1976,7 @@ function Show-PackageSelectionMenu {
     Write-Host "  [2] Recommended" -ForegroundColor Green
     Write-Host "      Core + All working Samsung apps (Gallery, Notes, Multi Control, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
-        Write-Host "      ⚠ Note: Quick Share requires Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Yellow
+        Write-Host "      ⚠ Note: Quick Share/Camera Share/Storage Share require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
     }
     Write-Host ""
     
@@ -2095,7 +2100,7 @@ function Show-CustomPackageSelection {
                     Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
                 }
                 if ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
-                    Write-Host "    ⚠ Requires Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Red
+                    Write-Host "    ⚠ Requires Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
                 }
                 
                 $install = Read-Host "    Install? (Y/N)"
@@ -3420,24 +3425,19 @@ $wifiCheck = Test-IntelWiFi
 if ($wifiCheck.HasWiFi) {
     Write-Host "Detected: $($wifiCheck.AdapterName)" -ForegroundColor Green
     
-    if ($wifiCheck.IsIntel -and $wifiCheck.IsAX) {
-        Write-Host "✓ Intel Wi-Fi AX adapter - Full Quick Share compatibility!" -ForegroundColor Green
-    }
-    elseif ($wifiCheck.IsIntel -and -not $wifiCheck.IsAX) {
-        Write-Host "⚠ Intel Wi-Fi AC adapter detected (NOT compatible with Quick Share)" -ForegroundColor Yellow
-        Write-Host "  Quick Share requires Intel Wi-Fi 6 (AX) or newer" -ForegroundColor Gray
-        Write-Host "  AC cards show 'A software or driver update is required' error" -ForegroundColor Gray
+    if ($wifiCheck.IsIntel) {
+        Write-Host "✓ Intel Wi-Fi adapter - Full* compatibility with Quick Share, Camera Share, Storage Share!" -ForegroundColor Green
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
-        Write-Host "  Quick Share requires Intel Wi-Fi AX adapters" -ForegroundColor Gray
+        Write-Host "  Quick Share, Camera Share, Storage Share require Intel Wi-Fi adapters" -ForegroundColor Gray
         Write-Host "  Alternative: Google Nearby Share works with any adapter" -ForegroundColor Cyan
         Write-Host "  https://www.android.com/better-together/nearby-share-app/" -ForegroundColor Gray
     }
 }
 else {
     Write-Host "⚠ No Wi-Fi adapter detected" -ForegroundColor Yellow
-    Write-Host "  Quick Share requires Wi-Fi to function" -ForegroundColor Gray
+    Write-Host "  Quick Share, Camera Share, Storage Share require Wi-Fi to function" -ForegroundColor Gray
 }
 
 Write-Host ""
@@ -3449,26 +3449,27 @@ if ($btCheck.HasBluetooth) {
     Write-Host "Detected: $($btCheck.AdapterName)" -ForegroundColor Green
     
     if ($btCheck.IsIntel) {
-        Write-Host "✓ Intel Bluetooth radio - Full Quick Share compatibility!" -ForegroundColor Green
+        Write-Host "✓ Intel Bluetooth radio - Full compatibility!" -ForegroundColor Green
     }
     else {
         Write-Host "⚠ Non-Intel Bluetooth adapter detected" -ForegroundColor Yellow
-        Write-Host "  Quick Share requires Intel Bluetooth radio" -ForegroundColor Gray
-        Write-Host "  Third-party Bluetooth adapters cause Quick Share to fail" -ForegroundColor Gray
+        Write-Host "  Quick Share, Camera Share, Storage Share require Intel Bluetooth" -ForegroundColor Gray
+        Write-Host "  Third-party Bluetooth adapters cause these features to fail" -ForegroundColor Gray
     }
 }
 else {
     Write-Host "⚠ No Bluetooth adapter detected" -ForegroundColor Yellow
-    Write-Host "  Quick Share requires Bluetooth to function" -ForegroundColor Gray
+    Write-Host "  Quick Share, Camera Share, Storage Share require Bluetooth" -ForegroundColor Gray
 }
 
-# Summary check for Quick Share compatibility
-$quickShareCompatible = $wifiCheck.HasWiFi -and $wifiCheck.IsIntel -and $wifiCheck.IsAX -and $btCheck.HasBluetooth -and $btCheck.IsIntel
+# Summary check for Quick Share / Camera Share / Storage Share compatibility
+$quickShareCompatible = $wifiCheck.HasWiFi -and $wifiCheck.IsIntel -and $btCheck.HasBluetooth -and $btCheck.IsIntel
 if (-not $quickShareCompatible) {
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
-    Write-Host "  Quick Share will NOT work on this system" -ForegroundColor Red
-    Write-Host "  Requires: Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Red
+    Write-Host "  Quick Share/Camera Share/Storage Share" -ForegroundColor Red
+    Write-Host "  will NOT work on this system" -ForegroundColor Red
+    Write-Host "  Requires: Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
 }
 
