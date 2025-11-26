@@ -38,13 +38,14 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 2.3.0
+    Version        : 2.4.0
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
 param(
     [switch]$Uninstall,
-    [switch]$TestMode
+    [switch]$TestMode,
+    [switch]$UpgradeSSE
 )
 
 # This script requires PowerShell 7.0+ for modern syntax and features
@@ -74,7 +75,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "2.3.0"
+$SCRIPT_VERSION = "2.4.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -698,11 +699,15 @@ function Install-SystemSupportEngine {
     
     .PARAMETER TestMode
         If enabled, simulates installation without creating services or installing drivers
+    
+    .PARAMETER ForceVersion
+        If specified, skips version selection and uses this version directly
     #>
     
     param(
         [string]$InstallPath = "C:\GalaxyBook",
-        [bool]$TestMode = $false
+        [bool]$TestMode = $false,
+        [string]$ForceVersion = $null
     )
     
     Write-Host "`n========================================" -ForegroundColor Yellow
@@ -964,13 +969,36 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Download CAB
+    # Download CAB - Version Selection
     Write-Host "`nDownloading Samsung System Support Service CAB..." -ForegroundColor Cyan
-    Write-Host "Recommended version: 7.1.2.0 (tested and stable)" -ForegroundColor Gray
-    Write-Host ""
     
-    $useRecommended = Read-Host "Use recommended version 7.1.2.0? (Y/n)"
-    $cabVersion = if ($useRecommended -like "n*") { $null } else { "7.1.2.0" }
+    # Use ForceVersion if provided (for quick upgrades), otherwise show menu
+    if ($ForceVersion) {
+        $cabVersion = $ForceVersion
+        Write-Host "  Using specified version: $cabVersion" -ForegroundColor Cyan
+    } else {
+        Write-Host ""
+        Write-Host "Available versions:" -ForegroundColor Yellow
+        Write-Host "  [1] 6.3.3.0 - RECOMMENDED for first install (most compatible)" -ForegroundColor Green
+        Write-Host "  [2] 7.1.2.0 - Latest version (use for upgrades)" -ForegroundColor Cyan
+        Write-Host "  [3] Other   - Choose from all available versions" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "Note: Start with 6.3.3.0 for best compatibility." -ForegroundColor Gray
+        Write-Host "      You can upgrade to 7.1.2.0 later using: -UpgradeSSE" -ForegroundColor Gray
+        Write-Host ""
+        
+        $versionChoice = Read-Host "Select version [1-3] (default: 1)"
+        
+        $cabVersion = switch ($versionChoice) {
+            "2" { "7.1.2.0" }
+            "3" { $null }  # Will show interactive menu
+            default { "6.3.3.0" }  # Default to 6.3.3.0
+        }
+        
+        if ($cabVersion) {
+            Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
+        }
+    }
     
     $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
     if (-not (Test-Path $tempDir)) {
@@ -1152,16 +1180,6 @@ function Install-SystemSupportEngine {
         Copy-Item $targetExePath $backupExePath -Force
         Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
         
-
-        $originalPattern_v7_0 = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
-        $targetPattern_v7_0 = @(0x00, 0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x48, 0xE9, 0x8A, 0x00, 0x00, 0x00, 0xFF, 0x15)
-
-        $originalPattern_v7_1 = @(0x00, 0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85, 0x8F, 0x00, 0x00, 0x00, 0xFF, 0x15)
-        $targetPattern_v7_1 = @(0x00, 0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x48, 0xE9, 0x8F, 0x00, 0x00, 0x00, 0xFF, 0x15)
-
-        $pattern_v7_0 = @(0x4C, 0x8B, 0xF0, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85)
-        $pattern_v7_1 = @(0x4C, 0x8B, 0xF8, 0x48, 0x83, 0xF8, 0xFF, 0x0F, 0x85)
-        
         $fileBytes = [System.IO.File]::ReadAllBytes($targetExePath)
         
         # Function to find byte pattern
@@ -1180,52 +1198,67 @@ function Install-SystemSupportEngine {
             return -1
         }
         
-        # Detect SSSE version
-        $offset_v7_0 = Find-Pattern -Bytes $fileBytes -Pattern $pattern_v7_0
-        $offset_v7_1 = Find-Pattern -Bytes $fileBytes -Pattern $pattern_v7_1
+        $patchCount = 0
+        $needsSecondaryPatch = $false
         
-        $originalPattern = $null
-        $targetPattern = $null
-        $offset = -1
-        
-        if ($offset_v7_0 -ne -1) {
-            $originalPattern = $originalPattern_v7_0
-            $targetPattern = $targetPattern_v7_0
-            $offset = $offset_v7_0 - 1
-        }
-        elseif ($offset_v7_1 -ne -1) {
-            $originalPattern = $originalPattern_v7_1
-            $targetPattern = $targetPattern_v7_1
-            $offset = $offset_v7_1 - 1
-        }
-        
-        if ($null -eq $originalPattern) {
-            Write-Host "    ⚠ Pattern not found - may already be patched" -ForegroundColor Yellow
-        }
-        else {
-            # Check if already patched
-            $patchedOffset = Find-Pattern -Bytes $fileBytes -Pattern $targetPattern
-            if ($patchedOffset -ne -1) {
-                Write-Host "  ✓ Binary already patched!" -ForegroundColor Green
-            }
-            else {
-                # Apply patch
-                for ($i = 0; $i -lt $targetPattern.Length; $i++) {
-                    $fileBytes[$offset + $i] = $targetPattern[$i]
-                }
-                [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
+
+        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+            if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i+1] -eq 0x8B -and 
+                ($fileBytes[$i+2] -eq 0xF0 -or $fileBytes[$i+2] -eq 0xF8) -and
+                $fileBytes[$i+3] -eq 0x48 -and $fileBytes[$i+4] -eq 0x83 -and
+                $fileBytes[$i+5] -eq 0xF8 -and $fileBytes[$i+6] -eq 0xFF -and
+                $fileBytes[$i+7] -eq 0x0F -and $fileBytes[$i+8] -eq 0x85) {
                 
-                # Verify patch
-                $verifyBytes = [System.IO.File]::ReadAllBytes($targetExePath)
-                $verifyOffset = Find-Pattern -Bytes $verifyBytes -Pattern $targetPattern
+                $reg = if ($fileBytes[$i+2] -eq 0xF0) { "R14" } else { "R15" }
+                $patchOffset = $i + 7
                 
-                if ($verifyOffset -eq $offset) {
-                    Write-Host "  ✓ Binary patched and verified successfully!" -ForegroundColor Green
+                $fileBytes[$patchOffset] = 0x48
+                $fileBytes[$patchOffset + 1] = 0xE9
+                
+                Write-Host "    Primary patch @ 0x$($patchOffset.ToString('X5')): 0F 85 -> 48 E9 (MOV $reg pattern)" -ForegroundColor Green
+                $patchCount++
+                $searchEnd = [Math]::Min($i + 512, $fileBytes.Length - 10)
+                for ($j = $i + 12; $j -lt $searchEnd; $j++) {
+                    if ($fileBytes[$j] -eq 0xE8 -and
+                        $fileBytes[$j+5] -eq 0x48 -and $fileBytes[$j+6] -eq 0x83 -and
+                        $fileBytes[$j+7] -eq 0xF8 -and $fileBytes[$j+8] -eq 0xFF -and
+                        $fileBytes[$j+9] -eq 0x75) {
+                        
+                        $secPatchOffset = $j + 9
+                        $fileBytes[$secPatchOffset] = 0xEB
+                        
+                        Write-Host "    Secondary patch @ 0x$($secPatchOffset.ToString('X5')): 75 -> EB (6.x compatibility)" -ForegroundColor Green
+                        $patchCount++
+                        break
+                    }
                 }
-                else {
-                    Write-Error "Patch verification failed!"
+                break  
+            }
+        }
+        
+        if ($patchCount -eq 0) {
+            $alreadyPatched = $false
+            for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+                if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i+1] -eq 0x8B -and 
+                    ($fileBytes[$i+2] -eq 0xF0 -or $fileBytes[$i+2] -eq 0xF8) -and
+                    $fileBytes[$i+3] -eq 0x48 -and $fileBytes[$i+4] -eq 0x83 -and
+                    $fileBytes[$i+5] -eq 0xF8 -and $fileBytes[$i+6] -eq 0xFF -and
+                    $fileBytes[$i+7] -eq 0x48 -and $fileBytes[$i+8] -eq 0xE9) {
+                    $alreadyPatched = $true
+                    break
                 }
             }
+            
+            if ($alreadyPatched) {
+                Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
+            } else {
+                Write-Host "    ⚠ Pattern not found - unknown SSSE version" -ForegroundColor Yellow
+                Write-Host "    Please report this version for analysis" -ForegroundColor Gray
+            }
+        } else {
+            # Write patched bytes back to file
+            [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
+            Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
         }
         
         # Handle conflicting services
@@ -1502,7 +1535,7 @@ function Install-SystemSupportEngine {
                 $infPath = Join-Path $InstallPath $infFile.Name
                 
                 Write-Host "    Using: $($infFile.Name)" -ForegroundColor Gray
-                Write-Host "    This will trigger automatic installation of Samsung Settings & Continuity Service" -ForegroundColor Cyan
+                Write-Host "    This will trigger automatic installation of Samsung Settings" -ForegroundColor Cyan
                 Write-Host ""
                 
                 Install-SSSEDriverInteractive -InfPath $infPath -InstallPath $InstallPath -TestMode $TestMode
@@ -1583,6 +1616,14 @@ function Install-SystemSupportEngine {
         Write-Host "      Get-Service 'GBeSupportService'" -ForegroundColor DarkGray
         Write-Host "    • Check Event Viewer for errors" -ForegroundColor Gray
         Write-Host "    • Ensure antivirus isn't blocking the patched executable" -ForegroundColor Gray
+        
+        # Show upgrade notice for 6.x versions
+        if ($cabVersion -and $cabVersion -like "6.*") {
+            Write-Host "`n💡 UPGRADE TIP:" -ForegroundColor Cyan
+            Write-Host "  You installed SSSE version $cabVersion (stable, compatible)" -ForegroundColor White
+            Write-Host "  Later, you can upgrade to 7.1.2.0 for new features:" -ForegroundColor White
+            Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Yellow
+        }
         
         Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
@@ -2790,6 +2831,50 @@ if ($Uninstall) {
     exit
 }
 
+# ==================== QUICK UPGRADE SSE MODE ====================
+if ($UpgradeSSE) {
+    Clear-Host
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "  SSSE QUICK UPGRADE" -ForegroundColor Yellow
+    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Yellow
+    Write-Host "========================================`n" -ForegroundColor Yellow
+    
+    Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
+    Write-Host "to the latest version (7.1.2.0) without going through" -ForegroundColor White
+    Write-Host "the full installation process.`n" -ForegroundColor White
+    
+    Write-Host "Prerequisites:" -ForegroundColor Cyan
+    Write-Host "  • You must have already run the full installer once" -ForegroundColor Gray
+    Write-Host "  • Registry spoof must be in place" -ForegroundColor Gray
+    Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
+    Write-Host ""
+    
+    $proceed = Read-Host "Proceed with upgrade to 7.1.2.0? (Y/n)"
+    if ($proceed -like "n*") {
+        Write-Host "`nUpgrade cancelled." -ForegroundColor Yellow
+        exit
+    }
+    
+    Write-Host "`n"
+    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion "7.1.2.0"
+    
+    if ($result) {
+        Write-Host "`n========================================" -ForegroundColor Green
+        Write-Host "  Upgrade Complete!" -ForegroundColor Green
+        Write-Host "========================================`n" -ForegroundColor Green
+        Write-Host "SSSE has been upgraded to version 7.1.2.0" -ForegroundColor Cyan
+        Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
+    } else {
+        Write-Host "`n========================================" -ForegroundColor Red
+        Write-Host "  Upgrade Failed" -ForegroundColor Red
+        Write-Host "========================================`n" -ForegroundColor Red
+        Write-Host "Please try running the full installer instead." -ForegroundColor Yellow
+    }
+    
+    pause
+    exit
+}
+
 # ==================== INSTALL MODE ====================
 Clear-Host
 
@@ -3793,6 +3878,7 @@ else {
 
     Write-Host "`nUpdate/Manage:" -ForegroundColor Cyan
     Write-Host "  Check for updates: irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor Gray
+    Write-Host "  Upgrade SSSE: .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Gray
     Write-Host "  Uninstall: .\Install-GalaxyBookEnabler.ps1 -Uninstall" -ForegroundColor Gray
 
     # Launch Galaxy Book Experience to show available Samsung apps
