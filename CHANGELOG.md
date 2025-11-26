@@ -9,10 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - Configuration guides for "Extra Steps" apps (Phone, Find, Quick Search, Pass and Camera Share)
-- Advanced AI Select launcher with auto-hotkey registration
 - Differential package updates (only install new packages)
 - Silent installation mode
 - Export/import package selections
+
+## [2.5.0] - 2025-11-26
+
+### Added
+- **`-UpdateSettings` parameter** - One-command Samsung Settings reinstall
+  - Stops all Samsung processes and services
+  - Cleans C:\GalaxyBook installation folder
+  - Uninstalls Samsung Settings & Settings Runtime packages
+  - Downloads and patches chosen SSSE version
+  - Adds driver to DriverStore automatically
+  - Reinstalls apps from Microsoft Store via winget
+- **"Update/Reinstall Samsung Settings" menu option** - Available from the reinstall menu
+  - Allows `irm|iex` users to upgrade SSSE without needing to pass parameters
+  - Full SSSE version selection including 6.3.3.0 (recommended) and 7.1.2.0 (latest)
+- **Intel Bluetooth detection** - Now checks for Intel Bluetooth radio (required for Quick Share)
+- **Intel Wi-Fi AX vs AC detection** - Distinguishes Wi-Fi 6 (AX) from Wi-Fi 5 (AC) cards
+- **Comprehensive usage guide** - Displayed at installation completion
+  - Online one-line version instructions
+  - Downloaded script version with all available parameters
+- **AI Select launcher scripts** - Created in `C:\GalaxyBook\` for easy hotkey binding
+  - `AISelect.bat` - Batch launcher for shortcuts
+  - `AISelect.ps1` - PowerShell launcher for PowerToys
+  - Detailed setup guide for PowerToys URI method, Run Program.
+
+### Changed
+- **Simplified driver installation** - Driver now added to DriverStore automatically via `pnputil`
+  - Removed manual Device Manager binding prompts
+  - No more interactive driver installation steps
+- **Enhanced Quick Share compatibility warnings**
+  - AC cards explicitly noted as NOT working (shows "software update required" error)
+  - Third-party Bluetooth adapters noted as causing Quick Share failures
+- **Updated README** - Wi-Fi/Bluetooth requirements section rewritten for clarity
+
+### Removed
+- `Install-SSSEDriverInteractive` function - Replaced with simpler `Install-SSSEDriverToStore`
+- Manual driver binding instructions during SSSE setup
+
+## [2.4.0] - 2025-11-25 (unreleased)
+
+### Added
+- **Universal SSSE binary patching** - Supports all Samsung System Support Engine versions
+  - Version 6.x series: 6.1.8.0, 6.3.3.0 (requires 2 patches)
+  - Version 7.x series: 7.0.10.0, 7.0.14.0, 7.0.16.0, 7.1.2.0 (requires 1 patch)
+- **`-UpgradeSSE` parameter** - Quick upgrade path for existing SSSE installations
+- **Version selection menu** - Choose specific SSSE version during installation
+  - 6.3.3.0 recommended for first install (most stable)
+  - 7.1.2.0 for latest features (use for upgrades)
+- **Secondary patch detection** - Automatically applies additional patch for 6.x versions
+
+### Changed
+- **SSSE version 6.3.3.0 now default** - More compatible than 7.x for fresh installs
+- **Improved patching logic** - Pattern matching handles all known SSSE versions
 
 ## [2.2.0] - 2025-11-15
 

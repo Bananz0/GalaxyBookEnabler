@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.2.1-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -17,22 +17,7 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-## 🎉 What's New in v2.2.0
-
-- **21 Authentic Galaxy Book Models** - Choose from real hardware profiles spanning Galaxy Book3/4/5 (2023-2025)
-- **Enhanced Hardware Spoofing** - All 11 BIOS/DMI registry values (previously 5) for better app compatibility
-- **Samsung MultiPoint** - Connect Galaxy Buds to multiple devices simultaneously via Samsung Settings
-- **Galaxy Book Experience** - Samsung's main hub app now included in Core packages
-- **Auto-Elevation** - No more "Run as Administrator" - supports gsudo and Windows 11 native sudo
-- **Interactive Model Selection** - Pick your preferred Galaxy Book during installation
-
-## ✨ What's New in v2.0.0
-
-- **Auto-Update Checker** - Automatically detects and installs latest version from GitHub
-- **Legacy Migration** - Seamless upgrade from v1.x with config preservation  
-- **System Support Engine** - Advanced Windows 11 feature for deeper Samsung integration
-- **Enhanced Package Management** - Better categorization and installation tracking
-- **Professional UI** - Complete installer redesign with progress tracking
+> 📋 **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
@@ -156,8 +141,8 @@ Pick individual packages by category with detailed descriptions and warnings.
 
 ## 📋 Package Compatibility Matrix
 
-| Package | Status | Intel Wi-Fi Required | Notes |
-|---------|--------|---------------------|-------|
+| Package | Status | Intel Wi-Fi AX + BT Required | Notes |
+|---------|--------|------------------------------|-------|
 | Samsung Account | ✅ Working | No | Required |
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
@@ -166,7 +151,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
-| Quick Share | ✅ Working | **Yes** | Limited on non-Intel |
+| Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
 | Multi Control | ✅ Working | No | - |
 | Samsung Gallery | ✅ Working | No | - |
@@ -211,23 +196,35 @@ Pick individual packages by category with detailed descriptions and warnings.
 - **Advanced users only** - Involves binary patching and service creation
 - **Experimental** - May cause system instability or trigger antivirus warnings
 
-## ⚠️ Wi-Fi Compatibility
+## ⚠️ Wi-Fi & Bluetooth Compatibility
 
-**Quick Share** is designed to work with Intel Wi-Fi adapters. While the app may install on systems with other Wi-Fi adapters, functionality may be limited or non-existent.
+**Quick Share** requires **Intel Wi-Fi AX** and **Intel Bluetooth** adapters for full functionality. This is a Samsung hardware requirement - the app will fail silently or show errors without proper hardware.
 
-### Intel Wi-Fi (Full Compatibility)
-- Intel Wi-Fi 6/6E adapters
-- Intel Wi-Fi 5 adapters
-- Intel Wireless-AC adapters
+### Intel Wi-Fi AX Cards (Full Compatibility) ✅
+- Intel Wi-Fi 6 AX201/AX200
+- Intel Wi-Fi 6E AX210/AX211
+- Intel Wi-Fi 7 BE200
 
-### Non-Intel Wi-Fi (Limited/No Support) 
+### Intel Wi-Fi AC Cards (NOT Working) ❌
+- Intel Wireless-AC 9260/9560
+- Intel Wireless-AC 8265/8260
+- **Note**: AC cards may show "A software or driver update is required" error in Quick Share
+
+### Non-Intel Wi-Fi (NOT Working) ❌ 
 - Realtek adapters
 - MediaTek adapters
 - Qualcomm adapters
 - Broadcom adapters
 
+### Intel Bluetooth (Required for Quick Share) ✅
+Quick Share also requires an **Intel Bluetooth radio** (not just Wi-Fi). If you're using:
+- A third-party Bluetooth adapter (USB dongles, etc.)
+- A different brand's built-in Bluetooth
+
+Quick Share will fail with unhelpful errors even if you have Intel Wi-Fi.
+
 ### Alternative for Non-Intel Users
-If you don't have an Intel Wi-Fi adapter, consider **Google Nearby Share** as an alternative:
+If you don't have Intel Wi-Fi AX **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative:
 - Works with any Wi-Fi adapter
 - Similar file-sharing functionality
 - Cross-platform support (Windows, Android, ChromeOS)
@@ -235,19 +232,54 @@ If you don't have an Intel Wi-Fi adapter, consider **Google Nearby Share** as an
 
 ## AI Select (Smart Select)
 
-AI Select is Samsung's intelligent selection tool. The installer can create a Desktop shortcut for easy access.
+AI Select is Samsung's intelligent selection tool. The installer creates launcher scripts in `C:\GalaxyBook\` for easy hotkey binding.
 
-### Keyboard Shortcut Setup
-1. Find the "AI Select.lnk" on your Desktop
+### Launch URI
+```
+shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
+```
+
+### Method 1: PowerToys URI (Recommended - Fastest)
+
+This method launches AI Select instantly with a single key press:
+
+1. Install [PowerToys](https://aka.ms/getPowerToys) from Microsoft Store
+2. Open PowerToys → Keyboard Manager
+3. **Remap a key** (e.g., `Right Alt` → `Win+Ctrl+Alt+S`)
+   - This creates an unused intermediate shortcut
+4. **Remap a shortcut** → `Win+Ctrl+Alt+S` → **Open URI**
+   - URI: `shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App`
+5. Press Right Alt to instantly launch AI Select!
+
+### Method 2: PowerToys Run Program
+
+1. Install PowerToys
+2. Keyboard Manager → Remap a shortcut
+3. Set shortcut (e.g., `Ctrl+Shift+S`) → Action: **Run Program**
+4. Program: `powershell.exe`
+5. Args: `-WindowStyle Hidden -File "C:\GalaxyBook\AISelect.ps1"`
+
+### Method 3: AutoHotkey (AHK)
+
+For advanced users who prefer AutoHotkey:
+
+```autohotkey
+; AI Select launcher - save as AISelect.ahk
+#Requires AutoHotkey v2.0
+
+; Press Right Alt to launch AI Select
+RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
+```
+
+### Method 4: Desktop Shortcut (Standard)
+
+1. Find the "AI Select.lnk" on your Desktop (created by installer)
 2. Right-click → Properties
 3. Click in the "Shortcut key" field
 4. Press your desired key combination (e.g., Ctrl+Alt+S)
 5. Click OK
 
-### Manual Launch Command
-```powershell
-explorer.exe shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
-```
+> **Note:** Desktop shortcuts use explorer.exe which adds slight overhead. PowerToys URI or AHK methods are faster.
 
 ## 🔧 How It Works
 
@@ -400,10 +432,13 @@ Enter model number (1-22): 5
 - **Only for Windows 11**: Feature requires Windows 11 Build 22000 or higher
 
 ### Quick Share Not Working
-- **Check Wi-Fi adapter**: Quick Share requires Intel Wi-Fi
+- **Check Wi-Fi adapter type**: Quick Share requires **Intel Wi-Fi AX** (not AC)
+- **Check Bluetooth adapter**: Quick Share requires **Intel Bluetooth** radio
+- **AC card error**: If you see "A software or driver update is required", your Intel AC card is not supported
+- **Third-party Bluetooth**: USB Bluetooth dongles or non-Intel Bluetooth will cause failures
 - **Verify installation**: Check if app is properly installed
 - **Sign in**: Ensure you're signed into Samsung Account
-- **Alternative**: Use Google Nearby Share for non-Intel adapters
+- **Alternative**: Use Google Nearby Share for non-Intel hardware
 
 ### Apps Not Appearing
 - **Reboot required**: Some apps need a system restart
@@ -438,7 +473,7 @@ A: This doesn't modify hardware or firmware. It only changes registry values.
 A: There's no need - these features already work on genuine Galaxy Books.
 
 **Q: Why does Quick Share need Intel Wi-Fi?**
-A: Samsung designed Quick Share to work specifically with Intel's Wi-Fi Direct implementation.
+A: Samsung designed Quick Share to work specifically with Intel's Wi-Fi Direct implementation. You need both **Intel Wi-Fi AX** (not AC) and **Intel Bluetooth** radios. Third-party Bluetooth adapters or Intel AC cards won't work.
 
 **Q: Can I uninstall specific packages later?**
 A: Yes, uninstall Samsung apps through Windows Settings → Apps like any other app.
@@ -515,7 +550,7 @@ Contributions are welcome! Please:
 
 ## Known Limitations
 
-- **Quick Share**: Requires Intel Wi-Fi adapter for full functionality
+- **Quick Share**: Requires Intel Wi-Fi AX adapter **AND** Intel Bluetooth radio (AC cards don't work)
 - **System Support Engine**: Windows 11 only, experimental, may cause instability
 - **Samsung Recovery**: Will never work (requires genuine Samsung hardware)
 - **Samsung Update**: Will never work (requires genuine Samsung hardware)

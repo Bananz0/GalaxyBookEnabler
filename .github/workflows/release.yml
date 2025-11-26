@@ -94,59 +94,29 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: Galaxy Book Enabler v${{ steps.get_version.outputs.version }}
           tag_name: ${{ steps.get_version.outputs.tag }}
           draft: false
           prerelease: false
           body: |
-            # Galaxy Book Enabler v${{ steps.get_version.outputs.version }}
-            
-            Enable Samsung Galaxy Book features on any Windows PC - spoofs your device as a Samsung Galaxy Book to unlock Quick Share, Multi Control, Samsung Notes, and more.
-            
-            ---
-            
             ## One-Line Install
             
             ```powershell
             irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
             ```
             
-            **Run in PowerShell as Administrator**
+            **Run in PowerShell 7+ as Administrator**
             
             ---
             
-            ## What's Included
-            
-            - **7 Core Packages** - Essential Samsung ecosystem apps
-            - **21 Recommended Apps** - All fully working Samsung features
-            - **Smart Package Profiles** - Core, Recommended, Full Experience, or Custom
-            - **Wi-Fi Compatibility Check** - Detects Intel Wi-Fi for Quick Share
-            - **Auto-Update System** - Checks for new versions automatically
-            - **Legacy Config Preservation** - Keeps custom BIOS values from v1.x
-            
-            ---
-            
-            ## What's New
+            ## What's Changed
             
             ${{ steps.changelog.outputs.changelog }}
             
             ---
             
-            ## Documentation
+            ## Quick Links
             
-            - [Full README](https://github.com/Bananz0/GalaxyBookEnabler#readme)
-            - [Package List](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/PACKAGES.md)
-            - [Compatibility Matrix](https://github.com/Bananz0/GalaxyBookEnabler#-package-compatibility-matrix)
-            - [Troubleshooting](https://github.com/Bananz0/GalaxyBookEnabler#troubleshooting)
-            
-            ---
-            
-            ## Updating from v1.x
-            
-            The installer automatically detects and migrates v1.x installations:
-            - Preserves custom BIOS values (Galaxy Book4, etc.)
-            - Cleans up old files
-            - Seamless upgrade experience
+            📖 [README](https://github.com/Bananz0/GalaxyBookEnabler#readme) · 📦 [Packages](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/PACKAGES.md) · 🔧 [Troubleshooting](https://github.com/Bananz0/GalaxyBookEnabler#troubleshooting) · 📋 [Full Changelog](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/CHANGELOG.md)
             
             ---
             
@@ -155,35 +125,7 @@ jobs:
             - Windows 10/11 (64-bit)
             - PowerShell 7.0+
             - Administrator privileges
-            - Intel Wi-Fi adapter (recommended for Quick Share)
-            
-            ---
-            
-            ## Known Issues
-            
-            - **Quick Share** requires Intel Wi-Fi for full functionality
-            - **Camera Share** is currently not working (investigating)
-            - **Samsung Recovery/Update** will never work (requires genuine hardware)
-            
-            ---
-            
-            ## Report Issues
-            
-            Found a bug? [Open an issue](https://github.com/Bananz0/GalaxyBookEnabler/issues/new)
-            
-            ---
-            
-            ## Support the Project
-            
-            If this helped you, consider:
-            - Starring the repository
-            - Reporting bugs
-            - Improving documentation
-            - Suggesting features
-            
-            ---
-            
-            **Made with ❤️ for Samsung ecosystem enthusiasts**
+            - Intel Wi-Fi AX + Intel Bluetooth (for Quick Share only)
           files: |
             Install-GalaxyBookEnabler.ps1
             README.md
