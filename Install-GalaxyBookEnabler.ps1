@@ -1512,11 +1512,8 @@ function Install-SystemSupportEngine {
             }
         }
         
-        # Install driver (interactive option)
-        # COMMENTED OUT: Driver installation is no longer needed for Samsung Settings to work
-        # The service alone is sufficient to trigger Store package installation
-        <#
-        Write-Host "  [8/8] Installing driver..." -ForegroundColor Yellow
+        # Install driver to DriverStore (required for Samsung Settings)
+        Write-Host "  [8/8] Installing driver to DriverStore..." -ForegroundColor Yellow
         
         if ($TestMode) {
             Write-Host "    [TEST MODE] Skipping driver installation" -ForegroundColor Yellow
@@ -1541,9 +1538,6 @@ function Install-SystemSupportEngine {
                 Install-SSSEDriverInteractive -InfPath $infPath -InstallPath $InstallPath -TestMode $TestMode
             }
         }
-        #>
-        Write-Host "  [8/8] Driver installation skipped (service-only mode)" -ForegroundColor Yellow
-        Write-Host "    The GBeSupportService will trigger Samsung Settings installation" -ForegroundColor Gray
         
         # Cleanup temp extraction
         Write-Host "`n  Cleaning up temporary files..." -ForegroundColor Gray
@@ -1590,7 +1584,7 @@ function Install-SystemSupportEngine {
         Write-Host "  Location: $InstallPath" -ForegroundColor White
         Write-Host "  Service: GBeSupportService" -ForegroundColor White
         Write-Host "  Binary: Patched ✓" -ForegroundColor Green
-        Write-Host "  Driver: Installed ✓" -ForegroundColor Green
+        Write-Host "  Driver: Added to DriverStore ✓" -ForegroundColor Green
         
         Write-Host "`nFiles installed:" -ForegroundColor Cyan
         $installedFiles = Get-ChildItem -Path $InstallPath -File | Select-Object -First 10
