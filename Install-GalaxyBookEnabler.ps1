@@ -2310,8 +2310,9 @@ function Test-IntelWiFi {
 }
 
 function Test-IntelBluetooth {
+    # Filter for actual Bluetooth radio hardware (USB or PCI devices), not paired devices or services
     $btAdapters = Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue | 
-        Where-Object { $_.FriendlyName -notlike "*Enumerator*" }
+        Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
     
     if (-not $btAdapters -or $btAdapters.Count -eq 0) {
         return @{
