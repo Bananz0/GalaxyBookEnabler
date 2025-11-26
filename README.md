@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -17,30 +17,7 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-## 🎉 What's New in v2.4.0
-
-- **Universal SSSE Binary Patching** - Supports all Samsung System Support Engine versions (6.x and 7.x)
-- **Quick Upgrade Mode** - Use `-UpgradeSSE` parameter for fast SSSE version changes
-- **Version Selection** - Choose specific SSSE version (6.3.3.0 default, 7.1.2.0 for upgrades)
-- **Enhanced Hardware Detection** - Now checks for Intel Wi-Fi AX (not just Intel) AND Intel Bluetooth
-- **Improved Quick Share Warnings** - Clear guidance that AC cards and third-party Bluetooth won't work
-
-## 🎉 What's New in v2.2.0
-
-- **21 Authentic Galaxy Book Models** - Choose from real hardware profiles spanning Galaxy Book3/4/5 (2023-2025)
-- **Enhanced Hardware Spoofing** - All 11 BIOS/DMI registry values (previously 5) for better app compatibility
-- **Samsung MultiPoint** - Connect Galaxy Buds to multiple devices simultaneously via Samsung Settings
-- **Galaxy Book Experience** - Samsung's main hub app now included in Core packages
-- **Auto-Elevation** - No more "Run as Administrator" - supports gsudo and Windows 11 native sudo
-- **Interactive Model Selection** - Pick your preferred Galaxy Book during installation
-
-## ✨ What's New in v2.0.0
-
-- **Auto-Update Checker** - Automatically detects and installs latest version from GitHub
-- **Legacy Migration** - Seamless upgrade from v1.x with config preservation  
-- **System Support Engine** - Advanced Windows 11 feature for deeper Samsung integration
-- **Enhanced Package Management** - Better categorization and installation tracking
-- **Professional UI** - Complete installer redesign with progress tracking
+> 📋 **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)

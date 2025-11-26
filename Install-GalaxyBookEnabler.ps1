@@ -18,6 +18,11 @@
 .PARAMETER Uninstall
     Removes the Galaxy Book Enabler from your system.
 
+.PARAMETER UpdateSettings
+    Reinstalls Samsung Settings with a fresh driver version.
+    Cleans up existing installation, uninstalls Samsung Settings apps,
+    fetches chosen SSSE version, patches, adds to DriverStore, and reinstalls apps.
+
 .EXAMPLE
     .\Install-GalaxyBookEnabler.ps1
     Installs the Galaxy Book Enabler with interactive configuration.
@@ -25,6 +30,10 @@
 .EXAMPLE
     .\Install-GalaxyBookEnabler.ps1 -Uninstall
     Removes the Galaxy Book Enabler from your system.
+
+.EXAMPLE
+    .\Install-GalaxyBookEnabler.ps1 -UpdateSettings
+    Reinstalls Samsung Settings with a fresh driver/SSSE version.
 
 .EXAMPLE
     .\Install-GalaxyBookEnabler.ps1 -TestMode
@@ -38,14 +47,15 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 2.4.0
+    Version        : 2.5.0
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
 param(
     [switch]$Uninstall,
     [switch]$TestMode,
-    [switch]$UpgradeSSE
+    [switch]$UpgradeSSE,
+    [switch]$UpdateSettings
 )
 
 # This script requires PowerShell 7.0+ for modern syntax and features
@@ -75,7 +85,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "2.4.0"
+$SCRIPT_VERSION = "2.5.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -1518,7 +1528,7 @@ function Install-SystemSupportEngine {
         if ($TestMode) {
             Write-Host "    [TEST MODE] Skipping driver installation" -ForegroundColor Yellow
             if ($infFile) {
-                Write-Host "      Would add to store and guide interactive binding: $($infFile.Name)" -ForegroundColor Gray
+                Write-Host "      Would add driver to store: $($infFile.Name)" -ForegroundColor Gray
             }
             else {
                 Write-Host "      No .inf file found" -ForegroundColor Gray
@@ -1530,12 +1540,8 @@ function Install-SystemSupportEngine {
             }
             else {
                 $infPath = Join-Path $InstallPath $infFile.Name
-                
                 Write-Host "    Using: $($infFile.Name)" -ForegroundColor Gray
-                Write-Host "    This will trigger automatic installation of Samsung Settings" -ForegroundColor Cyan
-                Write-Host ""
-                
-                Install-SSSEDriverInteractive -InfPath $infPath -InstallPath $InstallPath -TestMode $TestMode
+                Install-SSSEDriverToStore -InfPath $infPath -TestMode $TestMode
             }
         }
         
@@ -2130,17 +2136,21 @@ function Install-SamsungPackages {
     }
 }
 
-function Install-SSSEDriverInteractive {
+function Install-SSSEDriverToStore {
+    <#
+    .SYNOPSIS
+        Adds the Samsung driver to the Windows DriverStore
+    .DESCRIPTION
+        Simply adds the driver INF to the DriverStore using pnputil.
+        This makes the driver available for Windows to use.
+    #>
     param(
         [string]$InfPath,
-        [string]$InstallPath,
         [bool]$TestMode
     )
 
     if ($TestMode) {
         Write-Host "    [TEST MODE] Would add driver to store: $InfPath" -ForegroundColor Gray
-        Write-Host "    [TEST MODE] Would guide user to manually bind driver" -ForegroundColor Gray
-        Write-Host "    [TEST MODE] Would disable conflicting Samsung service" -ForegroundColor Gray
         return $true
     }
 
@@ -2149,7 +2159,6 @@ function Install-SSSEDriverInteractive {
         return $false
     }
 
-    # Step 1: Add driver to driver store
     try {
         Write-Host "    Adding driver to driver store..." -ForegroundColor Yellow
         $addResult = & pnputil.exe /add-driver "$InfPath" 2>&1
@@ -2159,184 +2168,12 @@ function Install-SSSEDriverInteractive {
             return $false
         }
         Write-Host "    ✓ Driver added to driver store" -ForegroundColor Green
+        return $true
     }
     catch {
         Write-Host "    ✗ Error adding driver: $_" -ForegroundColor Red
         return $false
     }
-
-    Write-Host ""
-    Write-Host "    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    Write-Host "        MANUAL DRIVER INSTALLATION REQUIRED" -ForegroundColor Cyan
-    Write-Host "    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "    You need to manually bind the Samsung driver to a safe Bluetooth device." -ForegroundColor White
-    Write-Host "    This triggers the automatic installation of Samsung Settings apps." -ForegroundColor White
-    Write-Host ""
-    Write-Host "       RECOMMENDED DEVICES (in priority order):" -ForegroundColor Yellow
-    Write-Host "       1. CONTINUITY_MSG_SPP (best)" -ForegroundColor Green
-    Write-Host "       2. SMS/MMS Message Access" -ForegroundColor Green
-    Write-Host "       3. Flow or Flow15" -ForegroundColor Green
-    Write-Host "       4. Bluetooth Peripheral Device" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "       INSTRUCTIONS:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "       1. Open Device Manager (Win+X → Device Manager)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       2. Select a device (boxed drivers by preference or see note below)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       3. Right-click → Update driver" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       4. Choose 'Browse my computer for drivers'" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       5. Choose 'Let me pick from a list of available drivers on my computer'" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       6. Select 'Show all devices'" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       7. Click 'Have Disc...'" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       8. Browse to: C:\GalaxyBook" -ForegroundColor Cyan
-    Write-Host "          Select the .inf file and click OK" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "       9. Look for 'Samsung System Support Component Device'" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "       10. Click 'Next' to install the driver" -ForegroundColor White
-    Write-Host ""
-    Write-Host "       11. Windows will install the driver and start the Samsung service" -ForegroundColor White
-    Write-Host ""
-    Write-Host "    ⚠️  IMPORTANT: After installing, you MUST come back here!" -ForegroundColor Yellow
-    Write-Host "        We need to disable the conflicting Samsung service." -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    Write-Host ""
-
-    # Step 2: Wait for user to complete manual installation
-    $serviceDisabled = $false
-    $maxAttempts = 5
-    $attempt = 0
-
-    while (-not $serviceDisabled -and $attempt -lt $maxAttempts) {
-        $attempt++
-        
-        if ($attempt -gt 1) {
-            Write-Host ""
-            Write-Host "    Attempt $attempt of $maxAttempts" -ForegroundColor Gray
-            Write-Host ""
-        }
-
-        $completed = Read-Host "    Have you completed the driver installation? (Y/N/S to skip)"
-        
-        if ($completed -like "s*") {
-            Write-Host "    ⚠️  Skipping SSSE driver installation" -ForegroundColor Yellow
-            Write-Host "       Samsung Settings will need to be installed manually if desired" -ForegroundColor Gray
-            return $false
-        }
-        
-        if ($completed -notlike "y*") {
-            Write-Host "    ⏳ Waiting for you to complete the installation..." -ForegroundColor Yellow
-            Write-Host "       Take your time - press Y when done" -ForegroundColor Gray
-            continue
-        }
-
-        # Step 3: Check if Samsung service was enabled and disable it
-        Write-Host ""
-        Write-Host "    Checking for conflicting Samsung service..." -ForegroundColor Yellow
-        
-        $samsungService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-        
-        if (-not $samsungService) {
-            Write-Host "    ⚠️  Samsung service not found!" -ForegroundColor Yellow
-            Write-Host ""
-            Write-Host "    This means either:" -ForegroundColor Gray
-            Write-Host "       • The driver wasn't installed correctly" -ForegroundColor Gray
-            Write-Host "       • The service hasn't started yet (wait a moment)" -ForegroundColor Gray
-            Write-Host ""
-            
-            $retry = Read-Host "    Try again? (Y/N)"
-            if ($retry -notlike "y*") {
-                Write-Host "    ⚠️  Continuing without service check - may cause conflicts!" -ForegroundColor Red
-                return $true
-            }
-            continue
-        }
-
-        Write-Host "    ✓ Found Samsung service: $($samsungService.DisplayName)" -ForegroundColor Green
-        Write-Host "      Status: $($samsungService.Status)" -ForegroundColor Gray
-        Write-Host "      Startup: $($samsungService.StartType)" -ForegroundColor Gray
-        Write-Host ""
-
-        # Stop the service if running
-        if ($samsungService.Status -eq 'Running') {
-            Write-Host "    Stopping Samsung service..." -ForegroundColor Yellow
-            try {
-                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction Stop
-                Start-Sleep -Seconds 2
-                Write-Host "    ✓ Service stopped" -ForegroundColor Green
-            }
-            catch {
-                Write-Host "    ✗ Failed to stop service: $_" -ForegroundColor Red
-                Write-Host "      You may need to manually stop it in Services console" -ForegroundColor Yellow
-            }
-        }
-
-        # Disable the service
-        Write-Host "    Disabling Samsung service to prevent conflicts..." -ForegroundColor Yellow
-        try {
-            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction Stop
-            Write-Host "    ✓ Service disabled successfully" -ForegroundColor Green
-            
-            # Verify
-            $verifyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-            if ($verifyService.StartType -eq 'Disabled') {
-                Write-Host "    ✓ Verified: Service is disabled" -ForegroundColor Green
-                $serviceDisabled = $true
-            }
-            else {
-                Write-Host "    ⚠️  Service shows as: $($verifyService.StartType)" -ForegroundColor Yellow
-            }
-        }
-        catch {
-            Write-Host "    ✗ Failed to disable service: $_" -ForegroundColor Red
-            Write-Host "      You may need to manually disable it in Services console" -ForegroundColor Yellow
-        }
-
-        if ($serviceDisabled) {
-            Write-Host ""
-            Write-Host "    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
-            Write-Host "    ✓ Driver installation complete!" -ForegroundColor Green
-            Write-Host "    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
-            Write-Host ""
-            Write-Host "    Samsung Settings & Settings Runtime should install automatically" -ForegroundColor Cyan
-            Write-Host "    (May take 5-10 minutes in the background)" -ForegroundColor Gray
-            Write-Host ""
-            return $true
-        }
-        else {
-            Write-Host ""
-            $retry = Read-Host "    Service not disabled. Try again? (Y/N)"
-            if ($retry -notlike "y*") {
-                Write-Host "    ⚠️  WARNING: Conflicting service not disabled!" -ForegroundColor Red
-                Write-Host "       This WILL cause conflicts with GBeSupportService" -ForegroundColor Red
-                Write-Host "       Please manually disable 'SamsungSystemSupportService' in Services" -ForegroundColor Yellow
-                return $false
-            }
-        }
-    }
-
-    if (-not $serviceDisabled) {
-        Write-Host ""
-        Write-Host "    ✗ Failed to disable Samsung service after $maxAttempts attempts" -ForegroundColor Red
-        Write-Host "      You MUST manually disable it to avoid conflicts:" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "      1. Open Services (Win+R → services.msc)" -ForegroundColor White
-        Write-Host "      2. Find 'SamsungSystemSupportService'" -ForegroundColor White
-        Write-Host "      3. Right-click → Properties → Startup type: Disabled" -ForegroundColor White
-        Write-Host "      4. Stop the service if running" -ForegroundColor White
-        Write-Host ""
-        return $false
-    }
-
-    return $true
 }
 
 function Test-IntelWiFi {
@@ -2805,6 +2642,275 @@ $taskName = "GalaxyBookEnabler"
 $installPath = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
 $batchScriptPath = Join-Path $installPath "GalaxyBookSpoof.bat"
 $configPath = Join-Path $installPath "gbe-config.json"
+
+# ==================== UPDATE SAMSUNG SETTINGS MODE ====================
+if ($UpdateSettings) {
+    Clear-Host
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
+    Write-Host "========================================`n" -ForegroundColor Cyan
+    
+    Write-Host "This will perform a clean reinstall of Samsung Settings:" -ForegroundColor White
+    Write-Host "  1. Stop Samsung processes and services" -ForegroundColor Gray
+    Write-Host "  2. Clean C:\GalaxyBook folder" -ForegroundColor Gray
+    Write-Host "  3. Uninstall Samsung Settings & Settings Runtime" -ForegroundColor Gray
+    Write-Host "  4. Download and patch chosen SSSE version" -ForegroundColor Gray
+    Write-Host "  5. Add driver to DriverStore" -ForegroundColor Gray
+    Write-Host "  6. Install Samsung Settings & Settings Runtime from Store" -ForegroundColor Gray
+    Write-Host ""
+    
+    # Version selection
+    Write-Host "Select SSSE version:" -ForegroundColor Yellow
+    Write-Host "  [1] 6.3.3.0 - Stable, most compatible (recommended for first setup)" -ForegroundColor Green
+    Write-Host "  [2] 7.1.2.0 - Latest features" -ForegroundColor Cyan
+    Write-Host "  [3] Other   - Choose from all versions" -ForegroundColor Gray
+    Write-Host ""
+    
+    $versionChoice = Read-Host "Select version [1-3] (default: 1)"
+    $selectedVersion = switch ($versionChoice) {
+        "2" { "7.1.2.0" }
+        "3" { $null }  # Will show full menu later
+        default { "6.3.3.0" }
+    }
+    
+    if ($selectedVersion) {
+        Write-Host "`nSelected version: $selectedVersion" -ForegroundColor Cyan
+    }
+    
+    $proceed = Read-Host "`nProceed with update? (Y/n)"
+    if ($proceed -like "n*") {
+        Write-Host "`nUpdate cancelled." -ForegroundColor Yellow
+        exit
+    }
+    
+    Write-Host ""
+    
+    # Step 1: Stop Samsung processes
+    Write-Host "[1/6] Stopping Samsung processes..." -ForegroundColor Yellow
+    Stop-SamsungProcesses | Out-Null
+    
+    # Stop services
+    $servicesToStop = @("GBeSupportService", "SamsungSystemSupportService", "SamsungSystemSupportEngine")
+    foreach ($svcName in $servicesToStop) {
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq 'Running') {
+            Write-Host "  Stopping $svcName..." -ForegroundColor Gray
+            Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host "  ✓ Processes stopped" -ForegroundColor Green
+    
+    # Step 2: Clean C:\GalaxyBook
+    Write-Host "`n[2/6] Cleaning installation folder..." -ForegroundColor Yellow
+    $ssseInstallPath = "C:\GalaxyBook"
+    if (Test-Path $ssseInstallPath) {
+        Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  ✓ Cleaned: $ssseInstallPath" -ForegroundColor Green
+    } else {
+        Write-Host "  (folder didn't exist)" -ForegroundColor Gray
+    }
+    
+    # Step 3: Uninstall Samsung Settings packages
+    Write-Host "`n[3/6] Uninstalling Samsung Settings packages..." -ForegroundColor Yellow
+    $settingsPackages = Get-AppxPackage -AllUsers | Where-Object { 
+        $_.Name -like "*SamsungSettings*" -or $_.Name -like "*SettingsRuntime*"
+    }
+    
+    if ($settingsPackages) {
+        foreach ($pkg in $settingsPackages) {
+            Write-Host "  Removing: $($pkg.Name)..." -ForegroundColor Gray
+            try {
+                $pkg | Remove-AppxPackage -AllUsers -ErrorAction Stop
+                Write-Host "    ✓ Removed" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "    ⚠ Failed: $_" -ForegroundColor Yellow
+                # Try Windows PowerShell fallback
+                try {
+                    $scriptBlock = "Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$($pkg.PackageFullName)' } | Remove-AppxPackage -AllUsers -ErrorAction Stop"
+                    & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1 | Out-Null
+                }
+                catch { }
+            }
+        }
+    } else {
+        Write-Host "  (no packages found)" -ForegroundColor Gray
+    }
+    
+    # Also remove provisioned packages
+    $provisionedSettings = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object {
+        $_.DisplayName -like "*SamsungSettings*" -or $_.DisplayName -like "*SettingsRuntime*"
+    }
+    if ($provisionedSettings) {
+        foreach ($prov in $provisionedSettings) {
+            Write-Host "  Removing provisioned: $($prov.DisplayName)..." -ForegroundColor Gray
+            try {
+                Remove-AppxProvisionedPackage -Online -PackageName $prov.PackageName -ErrorAction Stop | Out-Null
+                Write-Host "    ✓ Removed" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "    ⚠ Failed: $_" -ForegroundColor Yellow
+            }
+        }
+    }
+    Write-Host "  ✓ Packages uninstalled" -ForegroundColor Green
+    
+    # Step 4: Download and patch SSSE
+    Write-Host "`n[4/6] Downloading and patching SSSE..." -ForegroundColor Yellow
+    
+    $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
+    if (-not (Test-Path $tempDir)) {
+        New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+    }
+    
+    # Get CAB
+    $cabResult = Get-SamsungDriverCab -Version $selectedVersion -OutputPath $tempDir
+    if (-not $cabResult) {
+        Write-Host "  ✗ Failed to download CAB" -ForegroundColor Red
+        pause
+        exit 1
+    }
+    
+    # Extract
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $extractDir = Join-Path $tempDir "CAB_Extract_$timestamp"
+    $level1Dir = Join-Path $extractDir "Level1"
+    $level2Dir = Join-Path $extractDir "Level2_settings_x64"
+    
+    New-Item -Path $level1Dir -ItemType Directory -Force | Out-Null
+    New-Item -Path $level2Dir -ItemType Directory -Force | Out-Null
+    
+    Write-Host "  Extracting outer CAB..." -ForegroundColor Gray
+    & expand.exe "$($cabResult.Path)" -F:* "$level1Dir" | Out-Null
+    
+    $innerCab = Get-ChildItem -Path $level1Dir -Filter "settings_x64.cab" -Recurse | Select-Object -First 1
+    if ($innerCab) {
+        Write-Host "  Extracting inner CAB..." -ForegroundColor Gray
+        & expand.exe "$($innerCab.FullName)" -F:* "$level2Dir" | Out-Null
+    }
+    
+    # Get files
+    $infFile = Get-ChildItem -Path $level1Dir -Filter "*.inf" -Recurse | Select-Object -First 1
+    $catFile = Get-ChildItem -Path $level1Dir -Filter "*.cat" -Recurse | Select-Object -First 1
+    
+    # Create install folder
+    New-Item -Path $ssseInstallPath -ItemType Directory -Force | Out-Null
+    
+    # Copy files
+    $level2AllFiles = Get-ChildItem -Path $level2Dir -File -Recurse
+    foreach ($file in $level2AllFiles) {
+        Copy-Item -Path $file.FullName -Destination $ssseInstallPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($infFile) { Copy-Item -Path $infFile.FullName -Destination $ssseInstallPath -Force }
+    if ($catFile) { Copy-Item -Path $catFile.FullName -Destination $ssseInstallPath -Force }
+    
+    # Patch
+    $targetExePath = Join-Path $ssseInstallPath "SamsungSystemSupportEngine.exe"
+    if (Test-Path $targetExePath) {
+        Write-Host "  Patching binary..." -ForegroundColor Gray
+        $fileBytes = [System.IO.File]::ReadAllBytes($targetExePath)
+        
+        $patchCount = 0
+        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+            if ($fileBytes[$i] -eq 0x48 -and $fileBytes[$i+1] -eq 0x83 -and $fileBytes[$i+2] -eq 0xF8 -and $fileBytes[$i+3] -eq 0xFF) {
+                if ($fileBytes[$i+4] -eq 0x0F -and $fileBytes[$i+5] -eq 0x85) {
+                    $fileBytes[$i+4] = 0x48
+                    $fileBytes[$i+5] = 0xE9
+                    $patchCount++
+                }
+            }
+        }
+        
+        # Secondary patch for 6.x versions
+        if ($selectedVersion -and $selectedVersion -like "6.*") {
+            for ($i = 0; $i -lt ($fileBytes.Length - 6); $i++) {
+                if ($fileBytes[$i] -eq 0x48 -and $fileBytes[$i+1] -eq 0x83 -and $fileBytes[$i+2] -eq 0xF8 -and $fileBytes[$i+3] -eq 0xFF -and $fileBytes[$i+4] -eq 0x75) {
+                    $fileBytes[$i+4] = 0xEB
+                    $patchCount++
+                }
+            }
+        }
+        
+        [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
+        Write-Host "  ✓ Applied $patchCount patch(es)" -ForegroundColor Green
+    }
+    
+    Write-Host "  ✓ SSSE prepared" -ForegroundColor Green
+    
+    # Step 5: Add driver to DriverStore
+    Write-Host "`n[5/6] Adding driver to DriverStore..." -ForegroundColor Yellow
+    if ($infFile) {
+        $infPath = Join-Path $ssseInstallPath $infFile.Name
+        Install-SSSEDriverToStore -InfPath $infPath -TestMode $false
+    } else {
+        Write-Host "  ⚠ No INF file found" -ForegroundColor Yellow
+    }
+    
+    # Ensure GBeSupportService exists and is configured
+    $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+    if (-not $gbeSvc) {
+        Write-Host "  Creating GBeSupportService..." -ForegroundColor Gray
+        $binPath = Join-Path $ssseInstallPath "SamsungSystemSupportEngine.exe"
+        & sc.exe create "GBeSupportService" binPath="$binPath" start=auto obj=LocalSystem DisplayName="Galaxy Book Enabler Support Service" | Out-Null
+        & sc.exe description "GBeSupportService" "Patched Samsung System Support Engine for Galaxy Book Enabler" | Out-Null
+    }
+    
+    # Start the service
+    Start-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+    
+    # Disable conflicting service
+    $origSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+    if ($origSvc) {
+        Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+        if ($origSvc.Status -eq 'Running') {
+            Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
+    # Step 6: Install Samsung Settings from Store
+    Write-Host "`n[6/6] Installing Samsung Settings from Store..." -ForegroundColor Yellow
+    
+    # Samsung Settings
+    Write-Host "  Installing Samsung Settings..." -ForegroundColor Gray
+    $result = winget install --id 9NWPXQ64JFT9 --accept-package-agreements --accept-source-agreements 2>&1
+    if ($LASTEXITCODE -eq 0 -or $result -match "already installed") {
+        Write-Host "    ✓ Samsung Settings installed" -ForegroundColor Green
+    } else {
+        Write-Host "    ⚠ May need manual install from Store" -ForegroundColor Yellow
+    }
+    
+    # Samsung Settings Runtime
+    Write-Host "  Installing Samsung Settings Runtime..." -ForegroundColor Gray
+    $result = winget install --id 9N1SCD5W2R4P --accept-package-agreements --accept-source-agreements 2>&1
+    if ($LASTEXITCODE -eq 0 -or $result -match "already installed") {
+        Write-Host "    ✓ Samsung Settings Runtime installed" -ForegroundColor Green
+    } else {
+        Write-Host "    ⚠ May need manual install from Store" -ForegroundColor Yellow
+    }
+    
+    # Cleanup
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    
+    Write-Host "`n========================================" -ForegroundColor Green
+    Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
+    Write-Host "========================================`n" -ForegroundColor Green
+    
+    Write-Host "Summary:" -ForegroundColor Cyan
+    Write-Host "  • SSSE Version: $($cabResult.Version)" -ForegroundColor White
+    Write-Host "  • Driver: Added to DriverStore" -ForegroundColor White
+    Write-Host "  • Service: GBeSupportService" -ForegroundColor White
+    Write-Host "  • Apps: Samsung Settings, Settings Runtime" -ForegroundColor White
+    
+    Write-Host "`nNext steps:" -ForegroundColor Yellow
+    Write-Host "  1. Reboot your PC" -ForegroundColor White
+    Write-Host "  2. Launch Samsung Settings from Start Menu" -ForegroundColor White
+    Write-Host "  3. Sign in with your Samsung Account" -ForegroundColor White
+    
+    Write-Host ""
+    pause
+    exit
+}
 
 # ==================== UNINSTALL MODE ====================
 if ($Uninstall) {
