@@ -1001,11 +1001,13 @@ function Install-SystemSupportEngine {
         Write-Host ""
         Write-Host "Available versions:" -ForegroundColor Yellow
         Write-Host "  [1] 6.3.3.0 - RECOMMENDED for first install (most compatible)" -ForegroundColor Green
-        Write-Host "  [2] 7.1.2.0 - Latest version (use for upgrades)" -ForegroundColor Cyan
+        Write-Host "  [2] 7.1.2.0 - Latest version (requires 6.3.3.0 first)" -ForegroundColor Cyan
         Write-Host "  [3] Other   - Choose from all available versions" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "Note: Start with 6.3.3.0 for best compatibility." -ForegroundColor Gray
-        Write-Host "      You can upgrade to 7.1.2.0 later using: -UpgradeSSE" -ForegroundColor Gray
+        Write-Host "⚠️  IMPORTANT: You MUST install 6.3.3.0 first and run Samsung Settings" -ForegroundColor Yellow
+        Write-Host "   at least once before upgrading to 7.1.2.0!" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   Upgrade path: 6.3.3.0 → Run Samsung Settings → Reboot → 7.1.2.0" -ForegroundColor Gray
         Write-Host ""
         
         $versionChoice = Read-Host "Select version [1-3] (default: 1)"
