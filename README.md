@@ -232,19 +232,54 @@ If you don't have Intel Wi-Fi AX **and** Intel Bluetooth, consider **Google Near
 
 ## AI Select (Smart Select)
 
-AI Select is Samsung's intelligent selection tool. The installer can create a Desktop shortcut for easy access.
+AI Select is Samsung's intelligent selection tool. The installer creates launcher scripts in `C:\GalaxyBook\` for easy hotkey binding.
 
-### Keyboard Shortcut Setup
-1. Find the "AI Select.lnk" on your Desktop
+### Launch URI
+```
+shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
+```
+
+### Method 1: PowerToys URI (Recommended - Fastest)
+
+This method launches AI Select instantly with a single key press:
+
+1. Install [PowerToys](https://aka.ms/getPowerToys) from Microsoft Store
+2. Open PowerToys → Keyboard Manager
+3. **Remap a key** (e.g., `Right Alt` → `Win+Ctrl+Alt+S`)
+   - This creates an unused intermediate shortcut
+4. **Remap a shortcut** → `Win+Ctrl+Alt+S` → **Open URI**
+   - URI: `shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App`
+5. Press Right Alt to instantly launch AI Select!
+
+### Method 2: PowerToys Run Program
+
+1. Install PowerToys
+2. Keyboard Manager → Remap a shortcut
+3. Set shortcut (e.g., `Ctrl+Shift+S`) → Action: **Run Program**
+4. Program: `powershell.exe`
+5. Args: `-WindowStyle Hidden -File "C:\GalaxyBook\AISelect.ps1"`
+
+### Method 3: AutoHotkey (AHK)
+
+For advanced users who prefer AutoHotkey:
+
+```autohotkey
+; AI Select launcher - save as AISelect.ahk
+#Requires AutoHotkey v2.0
+
+; Press Right Alt to launch AI Select
+RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
+```
+
+### Method 4: Desktop Shortcut (Standard)
+
+1. Find the "AI Select.lnk" on your Desktop (created by installer)
 2. Right-click → Properties
 3. Click in the "Shortcut key" field
 4. Press your desired key combination (e.g., Ctrl+Alt+S)
 5. Click OK
 
-### Manual Launch Command
-```powershell
-explorer.exe shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
-```
+> **Note:** Desktop shortcuts use explorer.exe which adds slight overhead. PowerToys URI or AHK methods are faster.
 
 ## 🔧 How It Works
 

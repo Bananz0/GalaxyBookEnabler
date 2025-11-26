@@ -2731,7 +2731,9 @@ if ($UpdateSettings) {
                     $scriptBlock = "Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$($pkg.PackageFullName)' } | Remove-AppxPackage -AllUsers -ErrorAction Stop"
                     & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1 | Out-Null
                 }
-                catch { }
+                catch {
+                    Write-Verbose "Fallback removal also failed: $_"
+                }
             }
         }
     } else {
@@ -3073,13 +3075,14 @@ if ($alreadyInstalled) {
         Write-Host "  [1] Download and install latest version (v$($updateCheck.LatestVersion))" -ForegroundColor Green
         Write-Host "  [2] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [3] Reinstall current version" -ForegroundColor Gray
-        Write-Host "  [4] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [5] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [6] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [7] Cancel" -ForegroundColor Gray
+        Write-Host "  [4] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
+        Write-Host "  [5] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [6] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [7] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [8] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-7]"
+        $choice = Read-Host "Enter choice [1-8]"
         
         if ($choice -eq "1") {
             if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
@@ -3102,13 +3105,255 @@ if ($alreadyInstalled) {
         Write-Host "`nWhat would you like to do?" -ForegroundColor Cyan
         Write-Host "  [1] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [2] Reinstall" -ForegroundColor Gray
-        Write-Host "  [3] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [4] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [5] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [6] Cancel" -ForegroundColor Gray
+        Write-Host "  [3] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
+        Write-Host "  [4] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [5] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [6] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [7] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-6]"
+        $choice = Read-Host "Enter choice [1-7]"
+    }
+    
+    # Handle "Update Samsung Settings" option - same action for both menus
+    if (($updateCheck.Available -and $choice -eq "4") -or (-not $updateCheck.Available -and $choice -eq "3")) {
+        # Run the UpdateSettings logic inline
+        Write-Host "`n========================================" -ForegroundColor Cyan
+        Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        Write-Host "This will perform a clean reinstall of Samsung Settings:" -ForegroundColor White
+        Write-Host "  1. Stop Samsung processes and services" -ForegroundColor Gray
+        Write-Host "  2. Clean C:\GalaxyBook folder" -ForegroundColor Gray
+        Write-Host "  3. Uninstall Samsung Settings & Settings Runtime" -ForegroundColor Gray
+        Write-Host "  4. Download and patch chosen SSSE version" -ForegroundColor Gray
+        Write-Host "  5. Add driver to DriverStore" -ForegroundColor Gray
+        Write-Host "  6. Install Samsung Settings & Settings Runtime from Store" -ForegroundColor Gray
+        Write-Host ""
+        
+        # Version selection
+        Write-Host "Select SSSE version:" -ForegroundColor Yellow
+        Write-Host "  [1] 6.3.3.0 - Stable, most compatible (recommended)" -ForegroundColor Green
+        Write-Host "  [2] 7.1.2.0 - Latest features" -ForegroundColor Cyan
+        Write-Host "  [3] Other   - Choose from all versions" -ForegroundColor Gray
+        Write-Host ""
+        
+        $versionChoice = Read-Host "Select version [1-3] (default: 1)"
+        $selectedVersion = switch ($versionChoice) {
+            "2" { "7.1.2.0" }
+            "3" { $null }
+            default { "6.3.3.0" }
+        }
+        
+        if ($selectedVersion) {
+            Write-Host "`nSelected version: $selectedVersion" -ForegroundColor Cyan
+        }
+        
+        $proceed = Read-Host "`nProceed with update? (Y/n)"
+        if ($proceed -like "n*") {
+            Write-Host "`nUpdate cancelled." -ForegroundColor Yellow
+            exit
+        }
+        
+        Write-Host ""
+        
+        # Step 1: Stop Samsung processes
+        Write-Host "[1/6] Stopping Samsung processes..." -ForegroundColor Yellow
+        Stop-SamsungProcesses | Out-Null
+        
+        $servicesToStop = @("GBeSupportService", "SamsungSystemSupportService", "SamsungSystemSupportEngine")
+        foreach ($svcName in $servicesToStop) {
+            $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -eq 'Running') {
+                Write-Host "  Stopping $svcName..." -ForegroundColor Gray
+                Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host "  ✓ Processes stopped" -ForegroundColor Green
+        
+        # Step 2: Clean C:\GalaxyBook
+        Write-Host "`n[2/6] Cleaning installation folder..." -ForegroundColor Yellow
+        $ssseInstallPath = "C:\GalaxyBook"
+        if (Test-Path $ssseInstallPath) {
+            Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "  ✓ Cleaned: $ssseInstallPath" -ForegroundColor Green
+        } else {
+            Write-Host "  (folder didn't exist)" -ForegroundColor Gray
+        }
+        
+        # Step 3: Uninstall Samsung Settings packages
+        Write-Host "`n[3/6] Uninstalling Samsung Settings packages..." -ForegroundColor Yellow
+        $settingsPackages = Get-AppxPackage -AllUsers | Where-Object { 
+            $_.Name -like "*SamsungSettings*" -or $_.Name -like "*SettingsRuntime*"
+        }
+        
+        if ($settingsPackages) {
+            foreach ($pkg in $settingsPackages) {
+                Write-Host "  Removing: $($pkg.Name)..." -ForegroundColor Gray
+                try {
+                    $pkg | Remove-AppxPackage -AllUsers -ErrorAction Stop
+                    Write-Host "    ✓ Removed" -ForegroundColor Green
+                }
+                catch {
+                    Write-Host "    ⚠ Failed: $_" -ForegroundColor Yellow
+                }
+            }
+        } else {
+            Write-Host "  (no packages found)" -ForegroundColor Gray
+        }
+        Write-Host "  ✓ Packages uninstalled" -ForegroundColor Green
+        
+        # Step 4: Download and patch SSSE
+        Write-Host "`n[4/6] Downloading and patching SSSE..." -ForegroundColor Yellow
+        
+        $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
+        if (-not (Test-Path $tempDir)) {
+            New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+        }
+        
+        $cabResult = Get-SamsungDriverCab -Version $selectedVersion -OutputPath $tempDir
+        if (-not $cabResult) {
+            Write-Host "  ✗ Failed to download CAB" -ForegroundColor Red
+            pause
+            exit 1
+        }
+        
+        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+        $extractDir = Join-Path $tempDir "CAB_Extract_$timestamp"
+        $level1Dir = Join-Path $extractDir "Level1"
+        $level2Dir = Join-Path $extractDir "Level2_settings_x64"
+        
+        New-Item -Path $level1Dir -ItemType Directory -Force | Out-Null
+        New-Item -Path $level2Dir -ItemType Directory -Force | Out-Null
+        
+        Write-Host "  Extracting outer CAB..." -ForegroundColor Gray
+        & expand.exe "$($cabResult.Path)" -F:* "$level1Dir" | Out-Null
+        
+        $innerCab = Get-ChildItem -Path $level1Dir -Filter "settings_x64.cab" -Recurse | Select-Object -First 1
+        if ($innerCab) {
+            Write-Host "  Extracting inner CAB..." -ForegroundColor Gray
+            & expand.exe "$($innerCab.FullName)" -F:* "$level2Dir" | Out-Null
+        }
+        
+        $infFile = Get-ChildItem -Path $level1Dir -Filter "*.inf" -Recurse | Select-Object -First 1
+        $catFile = Get-ChildItem -Path $level1Dir -Filter "*.cat" -Recurse | Select-Object -First 1
+        
+        New-Item -Path $ssseInstallPath -ItemType Directory -Force | Out-Null
+        
+        $level2AllFiles = Get-ChildItem -Path $level2Dir -File -Recurse
+        foreach ($file in $level2AllFiles) {
+            Copy-Item -Path $file.FullName -Destination $ssseInstallPath -Force -ErrorAction SilentlyContinue
+        }
+        if ($infFile) { Copy-Item -Path $infFile.FullName -Destination $ssseInstallPath -Force }
+        if ($catFile) { Copy-Item -Path $catFile.FullName -Destination $ssseInstallPath -Force }
+        
+        $targetExePath = Join-Path $ssseInstallPath "SamsungSystemSupportEngine.exe"
+        if (Test-Path $targetExePath) {
+            Write-Host "  Patching binary..." -ForegroundColor Gray
+            $fileBytes = [System.IO.File]::ReadAllBytes($targetExePath)
+            
+            $patchCount = 0
+            for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+                if ($fileBytes[$i] -eq 0x48 -and $fileBytes[$i+1] -eq 0x83 -and $fileBytes[$i+2] -eq 0xF8 -and $fileBytes[$i+3] -eq 0xFF) {
+                    if ($fileBytes[$i+4] -eq 0x0F -and $fileBytes[$i+5] -eq 0x85) {
+                        $fileBytes[$i+4] = 0x48
+                        $fileBytes[$i+5] = 0xE9
+                        $patchCount++
+                    }
+                }
+            }
+            
+            if ($selectedVersion -and $selectedVersion -like "6.*") {
+                for ($i = 0; $i -lt ($fileBytes.Length - 6); $i++) {
+                    if ($fileBytes[$i] -eq 0x48 -and $fileBytes[$i+1] -eq 0x83 -and $fileBytes[$i+2] -eq 0xF8 -and $fileBytes[$i+3] -eq 0xFF -and $fileBytes[$i+4] -eq 0x75) {
+                        $fileBytes[$i+4] = 0xEB
+                        $patchCount++
+                    }
+                }
+            }
+            
+            [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
+            Write-Host "  ✓ Applied $patchCount patch(es)" -ForegroundColor Green
+        }
+        
+        Write-Host "  ✓ SSSE prepared" -ForegroundColor Green
+        
+        # Step 5: Add driver to DriverStore
+        Write-Host "`n[5/6] Adding driver to DriverStore..." -ForegroundColor Yellow
+        if ($infFile) {
+            $infPath = Join-Path $ssseInstallPath $infFile.Name
+            Install-SSSEDriverToStore -InfPath $infPath -TestMode $false
+        } else {
+            Write-Host "  ⚠ No INF file found" -ForegroundColor Yellow
+        }
+        
+        $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+        if (-not $gbeSvc) {
+            Write-Host "  Creating GBeSupportService..." -ForegroundColor Gray
+            $binPath = Join-Path $ssseInstallPath "SamsungSystemSupportEngine.exe"
+            & sc.exe create "GBeSupportService" binPath="$binPath" start=auto obj=LocalSystem DisplayName="Galaxy Book Enabler Support Service" | Out-Null
+            & sc.exe description "GBeSupportService" "Patched Samsung System Support Engine for Galaxy Book Enabler" | Out-Null
+        }
+        
+        Start-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+        
+        $origSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+        if ($origSvc) {
+            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+            if ($origSvc.Status -eq 'Running') {
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        
+        # Step 6: Install Samsung Settings from Store
+        Write-Host "`n[6/6] Installing Samsung Settings from Store..." -ForegroundColor Yellow
+        
+        Write-Host "  Installing Samsung Settings..." -ForegroundColor Gray
+        $result = winget install --id 9NWPXQ64JFT9 --accept-package-agreements --accept-source-agreements 2>&1
+        if ($LASTEXITCODE -eq 0 -or $result -match "already installed") {
+            Write-Host "    ✓ Samsung Settings installed" -ForegroundColor Green
+        } else {
+            Write-Host "    ⚠ May need manual install from Store" -ForegroundColor Yellow
+        }
+        
+        Write-Host "  Installing Samsung Settings Runtime..." -ForegroundColor Gray
+        $result = winget install --id 9N1SCD5W2R4P --accept-package-agreements --accept-source-agreements 2>&1
+        if ($LASTEXITCODE -eq 0 -or $result -match "already installed") {
+            Write-Host "    ✓ Samsung Settings Runtime installed" -ForegroundColor Green
+        } else {
+            Write-Host "    ⚠ May need manual install from Store" -ForegroundColor Yellow
+        }
+        
+        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "`n========================================" -ForegroundColor Green
+        Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
+        Write-Host "========================================`n" -ForegroundColor Green
+        
+        Write-Host "Summary:" -ForegroundColor Cyan
+        Write-Host "  • SSSE Version: $($cabResult.Version)" -ForegroundColor White
+        Write-Host "  • Driver: Added to DriverStore" -ForegroundColor White
+        Write-Host "  • Service: GBeSupportService" -ForegroundColor White
+        Write-Host "  • Apps: Samsung Settings, Settings Runtime" -ForegroundColor White
+        
+        Write-Host "`nPlease reboot your PC for changes to take effect." -ForegroundColor Yellow
+        pause
+        exit
+    }
+    
+    # Remap choices for the rest of the switch (shift numbers after SSSE option)
+    if ($updateCheck.Available) {
+        # When update available: 4->SSSE (handled), 5->3, 6->4, 7->5, 8->6
+        if ($choice -eq "5") { $choice = "4" }      # Uninstall all -> was 4
+        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall apps -> was 5
+        elseif ($choice -eq "7") { $choice = "6" }  # Uninstall services -> was 6
+        elseif ($choice -eq "8") { $choice = "7" }  # Cancel -> was 7
+    } else {
+        # When no update: 3->SSSE (handled), 4->3, 5->4, 6->5, 7->6
+        if ($choice -eq "4") { $choice = "3" }      # Uninstall all -> was 3
+        elseif ($choice -eq "5") { $choice = "4" }  # Uninstall apps -> was 4
+        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall services -> was 5
+        elseif ($choice -eq "7") { $choice = "6" }  # Cancel -> was 6
     }
     
     switch ($choice) {
@@ -3892,20 +4137,59 @@ if ($packagesToInstall.Count -gt 0) {
         Write-Host "========================================`n" -ForegroundColor Cyan
 
         Write-Host "AI Select is Samsung's intelligent selection tool." -ForegroundColor White
-        Write-Host "To launch it, you need to create a keyboard shortcut.`n" -ForegroundColor Gray
+        Write-Host "You'll need a keyboard shortcut to launch it quickly.`n" -ForegroundColor Gray
 
-        Write-Host "The launch command is:" -ForegroundColor Yellow
-        Write-Host "  explorer.exe shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
+        # Create launcher scripts in C:\GalaxyBook
+        $aiSelectLauncherDir = "C:\GalaxyBook"
+        if (-not (Test-Path $aiSelectLauncherDir)) {
+            New-Item -Path $aiSelectLauncherDir -ItemType Directory -Force | Out-Null
+        }
+        
+        # Create .bat launcher (fastest, no window)
+        $batLauncherPath = Join-Path $aiSelectLauncherDir "AISelect.bat"
+        $batContent = @"
+@echo off
+start "" shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
+"@
+        $batContent | Set-Content -Path $batLauncherPath -Encoding ASCII
+        
+        # Create .ps1 launcher (nicer, hidden window)
+        $ps1LauncherPath = Join-Path $aiSelectLauncherDir "AISelect.ps1"
+        $ps1Content = @"
+# AI Select Launcher - Galaxy Book Enabler
+# Use with PowerToys Keyboard Manager for fastest launch
+Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
+"@
+        $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
+        
+        Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
+        Write-Host "    $batLauncherPath" -ForegroundColor Gray
+        Write-Host "    $ps1LauncherPath" -ForegroundColor Gray
         Write-Host ""
 
-        Write-Host "How to set up the keyboard shortcut:" -ForegroundColor Yellow
-        Write-Host "  1. Create a shortcut to the above command" -ForegroundColor Gray
-        Write-Host "  2. Right-click shortcut → Properties" -ForegroundColor Gray
-        Write-Host "  3. Set 'Shortcut key' (e.g., Ctrl+Alt+S)" -ForegroundColor Gray
-        Write-Host "  4. Click OK" -ForegroundColor Gray
+        Write-Host "Launch Options (fastest to slowest):" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [1] PowerToys URI Method (Recommended - Fastest)" -ForegroundColor Green
+        Write-Host "      • Install PowerToys from Microsoft Store" -ForegroundColor Gray
+        Write-Host "      • Open PowerToys → Keyboard Manager → Remap a key" -ForegroundColor Gray
+        Write-Host "      • Map a key (e.g., Right Alt) → Win+Ctrl+Alt+S" -ForegroundColor Gray
+        Write-Host "      • Then: Remap a shortcut → Win+Ctrl+Alt+S → Open URI" -ForegroundColor Gray
+        Write-Host "      • URI: shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  [2] PowerToys Run Program (Fast)" -ForegroundColor Cyan
+        Write-Host "      • Remap a shortcut → Action: Run Program" -ForegroundColor Gray
+        Write-Host "      • Program: powershell.exe" -ForegroundColor Gray
+        Write-Host "      • Args: -WindowStyle Hidden -File `"$ps1LauncherPath`"" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [3] AutoHotkey (Alternative)" -ForegroundColor Cyan
+        Write-Host "      • Create AHK script to launch the URI on key press" -ForegroundColor Gray
+        Write-Host "      • See README for example scripts" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [4] Desktop shortcut (Standard)" -ForegroundColor White
+        Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
         Write-Host ""
 
-        $setupShortcut = Read-Host "Would you like to create a shortcut on your Desktop? (Y/N)"
+        $setupShortcut = Read-Host "Create Desktop shortcut? (Y/N)"
 
         if ($setupShortcut -like "y*") {
             $WshShell = New-Object -ComObject WScript.Shell
@@ -3916,13 +4200,16 @@ if ($packagesToInstall.Count -gt 0) {
             $shortcut.IconLocation = "shell32.dll,23"
             $shortcut.Save()
             
-            Write-Host "✓ Shortcut created on Desktop!" -ForegroundColor Green
-            Write-Host "  Right-click it → Properties → Set 'Shortcut key' to assign a keyboard shortcut" -ForegroundColor Gray
+            Write-Host "✓ Desktop shortcut created!" -ForegroundColor Green
+            Write-Host "  Right-click it → Properties → Set 'Shortcut key' (e.g., Ctrl+Alt+S)" -ForegroundColor Gray
         }
         else {
-            Write-Host "✓ Skipped shortcut creation" -ForegroundColor Green
-            Write-Host "  You can manually create it later if needed" -ForegroundColor Gray
+            Write-Host "✓ Skipped desktop shortcut" -ForegroundColor Green
         }
+        
+        Write-Host ""
+        Write-Host "Tip: PowerToys URI method is the fastest - launches AI Select instantly!" -ForegroundColor Cyan
+        Write-Host "     See README for detailed setup instructions." -ForegroundColor Gray
         Write-Host ""
     }
     
@@ -4003,8 +4290,10 @@ if (-not $dummyService) {
     }
 }
 
-Write-Host "`nStopping Samsung processes..." -ForegroundColor Yellow
-Get-Process -Name 'Samsung*' -ErrorAction SilentlyContinue | Stop-Process -Force
+Write-Host "`nStopping all Samsung processes..." -ForegroundColor Yellow
+Stop-SamsungProcesses
+# Also catch any remaining Samsung processes by wildcard
+Get-Process -Name 'Samsung*', 'QuickShare*', 'MultiControl*', 'SmartSelect*', 'AISelect*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Write-Host "✓ Samsung processes stopped" -ForegroundColor Green
 
 # ==================== COMPLETION ====================
@@ -4035,23 +4324,32 @@ else {
     Write-Host "  2. Sign in to Samsung Account in the Samsung apps" -ForegroundColor White
     Write-Host "  3. Configure Quick Share and other Samsung features" -ForegroundColor White
     if ($aiSelectChosen) {
-        if ($setupShortcut -and $setupShortcut -like "y*") {
-            Write-Host "  4. Set keyboard shortcut for AI Select (Desktop shortcut)" -ForegroundColor White
-        }
-        else {
-            Write-Host "  4. Optionally create a keyboard shortcut for AI Select" -ForegroundColor White
-        }
+        Write-Host "  4. Set up AI Select hotkey (see C:\GalaxyBook\AISelect.ps1)" -ForegroundColor White
     }
 
-    Write-Host "`nUpdate/Manage:" -ForegroundColor Cyan
-    Write-Host "  Check for updates: irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor Gray
-    Write-Host "  Upgrade SSSE: .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Gray
-    Write-Host "  Uninstall: .\Install-GalaxyBookEnabler.ps1 -Uninstall" -ForegroundColor Gray
+    Write-Host "`n────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  USAGE GUIDE" -ForegroundColor Cyan
+    Write-Host "────────────────────────────────────────" -ForegroundColor DarkGray
+    
+    Write-Host "`n  Online One-Line Version:" -ForegroundColor Yellow
+    Write-Host "  Run in PowerShell (Admin) - shows menu with all options:" -ForegroundColor Gray
+    Write-Host "    irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex" -ForegroundColor White
+    
+    Write-Host "`n  Downloaded Script Version:" -ForegroundColor Yellow
+    Write-Host "  Download and run with parameters for direct actions:" -ForegroundColor Gray
+    Write-Host "    .\Install-GalaxyBookEnabler.ps1                  # Fresh install / menu" -ForegroundColor White
+    Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE      # Upgrade Samsung Settings (SSSE)" -ForegroundColor White
+    Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpdateSettings  # Clean reinstall Samsung Settings" -ForegroundColor White
+    Write-Host "    .\Install-GalaxyBookEnabler.ps1 -Uninstall       # Full uninstall" -ForegroundColor White
+    Write-Host "    .\Install-GalaxyBookEnabler.ps1 -TestMode        # Dry run (no changes)" -ForegroundColor White
+    
+    Write-Host "`n  Quick Share Requirements:" -ForegroundColor Yellow
+    Write-Host "  • Intel Wi-Fi AX card (not AC) + Intel Bluetooth required" -ForegroundColor Gray
 
     # Launch Galaxy Book Experience to show available Samsung apps
     Write-Host "`nLaunching Galaxy Book Experience..." -ForegroundColor Cyan
     try {
-        Start-Process "explorer.exe shell:AppsFolder\SAMSUNGELECTRONICSCoLtd.GalaxyBookExperience_9P7QF37HPMGX!App"
+         Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g!App"
         Write-Host "  ✓ Galaxy Book Experience opened - explore available Samsung apps!" -ForegroundColor Green
     }
     catch {
