@@ -152,6 +152,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
 | Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
+| Camera Share | ✅ Working |**Yes**| Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
 | Multi Control | ✅ Working | No | - |
 | Samsung Gallery | ✅ Working | No | - |
@@ -175,7 +176,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Pass | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Recovery | ❌ Not Working | No | Requires genuine hardware |
 | Samsung Update | ❌ Not Working | No | Requires genuine hardware |
-| Camera Share | ❌ Not Working | No | Currently not working |
+
 
 ## 💻 System Requirements
 
