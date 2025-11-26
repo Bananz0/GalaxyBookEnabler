@@ -2542,15 +2542,45 @@ function New-RegistrySpoofBatch {
         }
     }
     
-    # Helper function to format registry value
-    function Format-RegValue {
+    # Extract SystemVersion from BIOSVersion (e.g., "P08ALX.400.250306.05" -> "P08ALX")
+    $systemVersion = if ($values.BIOSVersion -match '^([A-Z0-9]+)\.') { $Matches[1] } else { $values.BIOSVersion }
+    
+    # Generate random future BIOS release date (between 2026-2035)
+    $randomYear = Get-Random -Minimum 2026 -Maximum 2036
+    $randomMonth = Get-Random -Minimum 1 -Maximum 13
+    $randomDay = Get-Random -Minimum 1 -Maximum 29  # Safe for all months
+    $biosReleaseDate = "{0:D2}/{1:D2}/{2}" -f $randomMonth, $randomDay, $randomYear
+    
+    # Constants
+    $systemSku = "Samsung Chassis"
+    
+    # Helper function to format registry value for BIOS key
+    function Format-BiosRegValue {
         param($Key, $Value)
         
-        $isDword = $Key -match '(Release|Kind)$'
+        $isDword = $Key -match '(Release|Kind|Type|Flags|^Id$)$'
         $type = if ($isDword) { "REG_DWORD" } else { "REG_SZ" }
         $formattedValue = if ($isDword) { $Value } else { "`"$Value`"" }
         
         return "reg add `"HKLM\HARDWARE\DESCRIPTION\System\BIOS`" /v $Key /t $type /d $formattedValue /f"
+    }
+    
+    # Helper function to format registry value for HardwareConfig\Current key
+    function Format-HwConfigRegValue {
+        param($Key, $Value)
+        
+        $isDword = $Key -match '(Release|Kind|Type|Flags|^Id$)$'
+        $type = if ($isDword) { "REG_DWORD" } else { "REG_SZ" }
+        $formattedValue = if ($isDword) { $Value } else { "`"$Value`"" }
+        
+        return "reg add `"HKLM\SYSTEM\HardwareConfig\Current`" /v $Key /t $type /d $formattedValue /f"
+    }
+    
+    # Helper function to format registry value for SystemInformation key
+    function Format-SysInfoRegValue {
+        param($Key, $Value)
+        
+        return "reg add `"HKLM\SYSTEM\CurrentControlSet\Control\SystemInformation`" /v $Key /t REG_SZ /d `"$Value`" /f"
     }
     
     $batchContent = @"
@@ -2558,22 +2588,58 @@ function New-RegistrySpoofBatch {
 REM ============================================================================
 REM Galaxy Book Enabler - Registry Spoof Script
 REM Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-REM ============================================================================
-
-$(Format-RegValue "BIOSVendor" $values.BIOSVendor)
-$(Format-RegValue "BIOSVersion" $values.BIOSVersion)
-$(Format-RegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
-$(Format-RegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
-$(Format-RegValue "SystemManufacturer" $values.SystemManufacturer)
-$(Format-RegValue "SystemFamily" $values.SystemFamily)
-$(Format-RegValue "SystemProductName" $values.SystemProductName)
-$(Format-RegValue "ProductSku" $values.ProductSku)
-$(Format-RegValue "EnclosureKind" $values.EnclosureKind)
-$(Format-RegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
-$(Format-RegValue "BaseBoardProduct" $values.BaseBoardProduct)
-
-REM ============================================================================
 REM Model: $($values.SystemFamily) ($($values.SystemProductName))
+REM ============================================================================
+
+REM ============================================================================
+REM SECTION 1: HKLM\HARDWARE\DESCRIPTION\System\BIOS
+REM ============================================================================
+$(Format-BiosRegValue "BIOSVendor" $values.BIOSVendor)
+$(Format-BiosRegValue "BIOSVersion" $values.BIOSVersion)
+$(Format-BiosRegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
+$(Format-BiosRegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
+$(Format-BiosRegValue "BIOSReleaseDate" $biosReleaseDate)
+$(Format-BiosRegValue "SystemManufacturer" $values.SystemManufacturer)
+$(Format-BiosRegValue "SystemFamily" $values.SystemFamily)
+$(Format-BiosRegValue "SystemProductName" $values.SystemProductName)
+$(Format-BiosRegValue "SystemSKU" $systemSku)
+$(Format-BiosRegValue "SystemVersion" $systemVersion)
+$(Format-BiosRegValue "ProductSku" $values.ProductSku)
+$(Format-BiosRegValue "EnclosureKind" $values.EnclosureKind)
+$(Format-BiosRegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
+$(Format-BiosRegValue "BaseBoardProduct" $values.BaseBoardProduct)
+
+REM ============================================================================
+REM SECTION 2: HKLM\SYSTEM\HardwareConfig\Current
+REM ============================================================================
+$(Format-HwConfigRegValue "Id" "0x00000001")
+$(Format-HwConfigRegValue "BootDriverFlags" "0x00000000")
+$(Format-HwConfigRegValue "EnclosureType" $values.EnclosureKind)
+$(Format-HwConfigRegValue "EnclosureKind" $values.EnclosureKind)
+$(Format-HwConfigRegValue "SystemManufacturer" $values.SystemManufacturer)
+$(Format-HwConfigRegValue "SystemFamily" $values.SystemFamily)
+$(Format-HwConfigRegValue "SystemProductName" $values.SystemProductName)
+$(Format-HwConfigRegValue "SystemSKU" $systemSku)
+$(Format-HwConfigRegValue "SystemVersion" $systemVersion)
+$(Format-HwConfigRegValue "BIOSVendor" $values.BIOSVendor)
+$(Format-HwConfigRegValue "BIOSVersion" $values.BIOSVersion)
+$(Format-HwConfigRegValue "BIOSReleaseDate" $biosReleaseDate)
+$(Format-HwConfigRegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
+$(Format-HwConfigRegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
+$(Format-HwConfigRegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
+$(Format-HwConfigRegValue "BaseBoardProduct" $values.BaseBoardProduct)
+$(Format-HwConfigRegValue "ProductSku" $values.ProductSku)
+
+REM ============================================================================
+REM SECTION 3: HKLM\SYSTEM\CurrentControlSet\Control\SystemInformation
+REM ============================================================================
+$(Format-SysInfoRegValue "BIOSVersion" $values.BIOSVersion)
+$(Format-SysInfoRegValue "BIOSReleaseDate" $biosReleaseDate)
+$(Format-SysInfoRegValue "SystemManufacturer" $values.SystemManufacturer)
+$(Format-SysInfoRegValue "SystemProductName" $values.SystemProductName)
+
+REM ============================================================================
+REM Registry spoof complete!
 REM ============================================================================
 "@
     
@@ -3651,7 +3717,9 @@ if ($TestMode) {
     Write-Host "[TEST MODE] Skipping registry modification" -ForegroundColor Yellow
     Write-Host "  Would execute: $batchScriptPath" -ForegroundColor Gray
     Write-Host "  Registry keys that would be modified:" -ForegroundColor Gray
-    Write-Host "    HKLM\HARDWARE\DESCRIPTION\System\BIOS (11 values)" -ForegroundColor Gray
+    Write-Host "    HKLM\HARDWARE\DESCRIPTION\System\BIOS (14 values)" -ForegroundColor Gray
+    Write-Host "    HKLM\SYSTEM\HardwareConfig\Current (17 values)" -ForegroundColor Gray
+    Write-Host "    HKLM\SYSTEM\CurrentControlSet\Control\SystemInformation (4 values)" -ForegroundColor Gray
 }
 else {
     Write-Host "Applying Samsung Galaxy Book spoof..." -ForegroundColor Yellow
