@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.2.1-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -16,6 +16,14 @@
 ## Overview
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
+
+## 🎉 What's New in v2.4.0
+
+- **Universal SSSE Binary Patching** - Supports all Samsung System Support Engine versions (6.x and 7.x)
+- **Quick Upgrade Mode** - Use `-UpgradeSSE` parameter for fast SSSE version changes
+- **Version Selection** - Choose specific SSSE version (6.3.3.0 default, 7.1.2.0 for upgrades)
+- **Enhanced Hardware Detection** - Now checks for Intel Wi-Fi AX (not just Intel) AND Intel Bluetooth
+- **Improved Quick Share Warnings** - Clear guidance that AC cards and third-party Bluetooth won't work
 
 ## 🎉 What's New in v2.2.0
 
@@ -156,8 +164,8 @@ Pick individual packages by category with detailed descriptions and warnings.
 
 ## 📋 Package Compatibility Matrix
 
-| Package | Status | Intel Wi-Fi Required | Notes |
-|---------|--------|---------------------|-------|
+| Package | Status | Intel Wi-Fi AX + BT Required | Notes |
+|---------|--------|------------------------------|-------|
 | Samsung Account | ✅ Working | No | Required |
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
@@ -166,7 +174,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
-| Quick Share | ✅ Working | **Yes** | Limited on non-Intel |
+| Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
 | Multi Control | ✅ Working | No | - |
 | Samsung Gallery | ✅ Working | No | - |
@@ -211,23 +219,35 @@ Pick individual packages by category with detailed descriptions and warnings.
 - **Advanced users only** - Involves binary patching and service creation
 - **Experimental** - May cause system instability or trigger antivirus warnings
 
-## ⚠️ Wi-Fi Compatibility
+## ⚠️ Wi-Fi & Bluetooth Compatibility
 
-**Quick Share** is designed to work with Intel Wi-Fi adapters. While the app may install on systems with other Wi-Fi adapters, functionality may be limited or non-existent.
+**Quick Share** requires **Intel Wi-Fi AX** and **Intel Bluetooth** adapters for full functionality. This is a Samsung hardware requirement - the app will fail silently or show errors without proper hardware.
 
-### Intel Wi-Fi (Full Compatibility)
-- Intel Wi-Fi 6/6E adapters
-- Intel Wi-Fi 5 adapters
-- Intel Wireless-AC adapters
+### Intel Wi-Fi AX Cards (Full Compatibility) ✅
+- Intel Wi-Fi 6 AX201/AX200
+- Intel Wi-Fi 6E AX210/AX211
+- Intel Wi-Fi 7 BE200
 
-### Non-Intel Wi-Fi (Limited/No Support) 
+### Intel Wi-Fi AC Cards (NOT Working) ❌
+- Intel Wireless-AC 9260/9560
+- Intel Wireless-AC 8265/8260
+- **Note**: AC cards may show "A software or driver update is required" error in Quick Share
+
+### Non-Intel Wi-Fi (NOT Working) ❌ 
 - Realtek adapters
 - MediaTek adapters
 - Qualcomm adapters
 - Broadcom adapters
 
+### Intel Bluetooth (Required for Quick Share) ✅
+Quick Share also requires an **Intel Bluetooth radio** (not just Wi-Fi). If you're using:
+- A third-party Bluetooth adapter (USB dongles, etc.)
+- A different brand's built-in Bluetooth
+
+Quick Share will fail with unhelpful errors even if you have Intel Wi-Fi.
+
 ### Alternative for Non-Intel Users
-If you don't have an Intel Wi-Fi adapter, consider **Google Nearby Share** as an alternative:
+If you don't have Intel Wi-Fi AX **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative:
 - Works with any Wi-Fi adapter
 - Similar file-sharing functionality
 - Cross-platform support (Windows, Android, ChromeOS)
@@ -400,10 +420,13 @@ Enter model number (1-22): 5
 - **Only for Windows 11**: Feature requires Windows 11 Build 22000 or higher
 
 ### Quick Share Not Working
-- **Check Wi-Fi adapter**: Quick Share requires Intel Wi-Fi
+- **Check Wi-Fi adapter type**: Quick Share requires **Intel Wi-Fi AX** (not AC)
+- **Check Bluetooth adapter**: Quick Share requires **Intel Bluetooth** radio
+- **AC card error**: If you see "A software or driver update is required", your Intel AC card is not supported
+- **Third-party Bluetooth**: USB Bluetooth dongles or non-Intel Bluetooth will cause failures
 - **Verify installation**: Check if app is properly installed
 - **Sign in**: Ensure you're signed into Samsung Account
-- **Alternative**: Use Google Nearby Share for non-Intel adapters
+- **Alternative**: Use Google Nearby Share for non-Intel hardware
 
 ### Apps Not Appearing
 - **Reboot required**: Some apps need a system restart
@@ -438,7 +461,7 @@ A: This doesn't modify hardware or firmware. It only changes registry values.
 A: There's no need - these features already work on genuine Galaxy Books.
 
 **Q: Why does Quick Share need Intel Wi-Fi?**
-A: Samsung designed Quick Share to work specifically with Intel's Wi-Fi Direct implementation.
+A: Samsung designed Quick Share to work specifically with Intel's Wi-Fi Direct implementation. You need both **Intel Wi-Fi AX** (not AC) and **Intel Bluetooth** radios. Third-party Bluetooth adapters or Intel AC cards won't work.
 
 **Q: Can I uninstall specific packages later?**
 A: Yes, uninstall Samsung apps through Windows Settings → Apps like any other app.
@@ -515,7 +538,7 @@ Contributions are welcome! Please:
 
 ## Known Limitations
 
-- **Quick Share**: Requires Intel Wi-Fi adapter for full functionality
+- **Quick Share**: Requires Intel Wi-Fi AX adapter **AND** Intel Bluetooth radio (AC cards don't work)
 - **System Support Engine**: Windows 11 only, experimental, may cause instability
 - **Samsung Recovery**: Will never work (requires genuine Samsung hardware)
 - **Samsung Update**: Will never work (requires genuine Samsung hardware)
