@@ -7,13 +7,13 @@
 
 .DESCRIPTION
     This tool spoofs your device as a Samsung Galaxy Book to enable features like:
-    - Quick Share
+    - Quick Share (requires Intel Wi-Fi AX + Intel Bluetooth)
     - Multi Control
     - Samsung Notes
     - AI Select (with keyboard shortcut setup)
     - System Support Engine (advanced/experimental)
     
-    It handles automatic startup configuration and Wi-Fi compatibility detection.
+    It handles automatic startup configuration and Wi-Fi/Bluetooth compatibility detection.
 
 .PARAMETER Uninstall
     Removes the Galaxy Book Enabler from your system.
@@ -257,7 +257,7 @@ $PackageDatabase = @{
             Description       = "Fast file sharing between devices"
             Status            = "Working"
             RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi adapter for full functionality"
+            Warning           = "Requires Intel Wi-Fi AX (not AC) AND Intel Bluetooth"
         },
         @{
             Name        = "Samsung Notes"
@@ -1886,7 +1886,7 @@ function Show-PackageSelectionMenu {
     Write-Host "  [2] Recommended" -ForegroundColor Green
     Write-Host "      Core + All working Samsung apps (Gallery, Notes, Multi Control, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
-        Write-Host "      ⚠ Note: Quick Share may not work without Intel Wi-Fi" -ForegroundColor Yellow
+        Write-Host "      ⚠ Note: Quick Share requires Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Yellow
     }
     Write-Host ""
     
@@ -2010,7 +2010,7 @@ function Show-CustomPackageSelection {
                     Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
                 }
                 if ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
-                    Write-Host "    ⚠ Your Wi-Fi adapter may not be compatible" -ForegroundColor Red
+                    Write-Host "    ⚠ Requires Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Red
                 }
                 
                 $install = Read-Host "    Install? (Y/N)"
@@ -2356,6 +2356,7 @@ function Test-IntelWiFi {
         return @{
             HasWiFi     = $false
             IsIntel     = $false
+            IsAX        = $false
             AdapterName = "None"
             Model       = "None"
         }
@@ -2364,19 +2365,48 @@ function Test-IntelWiFi {
     $wifiInfo = $wifiAdapters[0].InterfaceDescription
     $isIntel = $wifiInfo -like "*Intel*"
     
-    # Detect specific Intel Wi-Fi models
+    # Detect specific Intel Wi-Fi models and determine if AX (Wi-Fi 6/6E/7) or AC (Wi-Fi 5)
     $model = "Unknown"
+    $isAX = $false
     if ($isIntel) {
-        if ($wifiInfo -match "(AX\d+|AC \d+|Wi-Fi \d+[E]?)") {
+        if ($wifiInfo -match "(AX\d+|BE\d+|Wi-Fi [67][E]?)") {
             $model = $matches[1]
+            $isAX = $true
+        }
+        elseif ($wifiInfo -match "(AC \d+|Wireless-AC|Wi-Fi 5)") {
+            $model = $matches[1]
+            $isAX = $false  # AC cards don't work with Quick Share
         }
     }
     
     return @{
         HasWiFi     = $true
         IsIntel     = $isIntel
+        IsAX        = $isAX
         AdapterName = $wifiInfo
         Model       = $model
+    }
+}
+
+function Test-IntelBluetooth {
+    $btAdapters = Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue | 
+        Where-Object { $_.FriendlyName -notlike "*Enumerator*" }
+    
+    if (-not $btAdapters -or $btAdapters.Count -eq 0) {
+        return @{
+            HasBluetooth     = $false
+            IsIntel          = $false
+            AdapterName      = "None"
+        }
+    }
+    
+    $btInfo = $btAdapters[0].FriendlyName
+    $isIntel = $btInfo -like "*Intel*"
+    
+    return @{
+        HasBluetooth     = $true
+        IsIntel          = $isIntel
+        AdapterName      = $btInfo
     }
 }
 
@@ -3383,12 +3413,17 @@ $wifiCheck = Test-IntelWiFi
 if ($wifiCheck.HasWiFi) {
     Write-Host "Detected: $($wifiCheck.AdapterName)" -ForegroundColor Green
     
-    if ($wifiCheck.IsIntel) {
-        Write-Host "✓ Intel Wi-Fi adapter - Full Samsung Quick Share compatibility!" -ForegroundColor Green
+    if ($wifiCheck.IsIntel -and $wifiCheck.IsAX) {
+        Write-Host "✓ Intel Wi-Fi AX adapter - Full Quick Share compatibility!" -ForegroundColor Green
+    }
+    elseif ($wifiCheck.IsIntel -and -not $wifiCheck.IsAX) {
+        Write-Host "⚠ Intel Wi-Fi AC adapter detected (NOT compatible with Quick Share)" -ForegroundColor Yellow
+        Write-Host "  Quick Share requires Intel Wi-Fi 6 (AX) or newer" -ForegroundColor Gray
+        Write-Host "  AC cards show 'A software or driver update is required' error" -ForegroundColor Gray
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
-        Write-Host "  Quick Share may have limited functionality" -ForegroundColor Gray
+        Write-Host "  Quick Share requires Intel Wi-Fi AX adapters" -ForegroundColor Gray
         Write-Host "  Alternative: Google Nearby Share works with any adapter" -ForegroundColor Cyan
         Write-Host "  https://www.android.com/better-together/nearby-share-app/" -ForegroundColor Gray
     }
@@ -3396,6 +3431,38 @@ if ($wifiCheck.HasWiFi) {
 else {
     Write-Host "⚠ No Wi-Fi adapter detected" -ForegroundColor Yellow
     Write-Host "  Quick Share requires Wi-Fi to function" -ForegroundColor Gray
+}
+
+Write-Host ""
+
+Write-Host "Checking Bluetooth adapter..." -ForegroundColor Yellow
+$btCheck = Test-IntelBluetooth
+
+if ($btCheck.HasBluetooth) {
+    Write-Host "Detected: $($btCheck.AdapterName)" -ForegroundColor Green
+    
+    if ($btCheck.IsIntel) {
+        Write-Host "✓ Intel Bluetooth radio - Full Quick Share compatibility!" -ForegroundColor Green
+    }
+    else {
+        Write-Host "⚠ Non-Intel Bluetooth adapter detected" -ForegroundColor Yellow
+        Write-Host "  Quick Share requires Intel Bluetooth radio" -ForegroundColor Gray
+        Write-Host "  Third-party Bluetooth adapters cause Quick Share to fail" -ForegroundColor Gray
+    }
+}
+else {
+    Write-Host "⚠ No Bluetooth adapter detected" -ForegroundColor Yellow
+    Write-Host "  Quick Share requires Bluetooth to function" -ForegroundColor Gray
+}
+
+# Summary check for Quick Share compatibility
+$quickShareCompatible = $wifiCheck.HasWiFi -and $wifiCheck.IsIntel -and $wifiCheck.IsAX -and $btCheck.HasBluetooth -and $btCheck.IsIntel
+if (-not $quickShareCompatible) {
+    Write-Host ""
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Write-Host "  Quick Share will NOT work on this system" -ForegroundColor Red
+    Write-Host "  Requires: Intel Wi-Fi AX + Intel Bluetooth" -ForegroundColor Red
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
 }
 
 Write-Host ""
