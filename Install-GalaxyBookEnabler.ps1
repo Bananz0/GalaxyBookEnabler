@@ -1021,6 +1021,40 @@ function Install-SystemSupportEngine {
         }
     }
     
+    # Check for and remove existing Samsung Settings packages
+    Write-Host "`nChecking for existing Samsung Settings packages..." -ForegroundColor Cyan
+    $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
+    
+    if ($existingSettings) {
+        Write-Host "  Found existing Samsung Settings packages:" -ForegroundColor Yellow
+        foreach ($app in $existingSettings) {
+            Write-Host "    • $($app.Name) v$($app.Version)" -ForegroundColor Gray
+        }
+        Write-Host ""
+        Write-Host "  These need to be removed to ensure the new driver version" -ForegroundColor Gray
+        Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
+        Write-Host ""
+        
+        $removeChoice = Read-Host "Remove existing Samsung Settings packages? (Y/n)"
+        if ($removeChoice -notlike "n*") {
+            Write-Host "  Removing packages..." -ForegroundColor Yellow
+            $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
+            
+            if ($removalResult.Success.Count -gt 0) {
+                Write-Host "  ✓ Removed: $($removalResult.Success -join ', ')" -ForegroundColor Green
+            }
+            if ($removalResult.Failed.Count -gt 0) {
+                Write-Host "  ⚠ Failed to remove some packages. You may need to remove manually." -ForegroundColor Yellow
+            }
+        }
+        else {
+            Write-Host "  ⚠ Keeping existing packages (may cause version conflicts)" -ForegroundColor Yellow
+        }
+    }
+    else {
+        Write-Host "  ✓ No existing Samsung Settings packages found" -ForegroundColor Green
+    }
+    
     $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
     if (-not (Test-Path $tempDir)) {
         New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
@@ -1610,6 +1644,45 @@ function Install-SystemSupportEngine {
         }
         if ((Get-ChildItem -Path $InstallPath -File).Count -gt 10) {
             Write-Host "  • ... and $((Get-ChildItem -Path $InstallPath -File).Count - 10) more files" -ForegroundColor Gray
+        }
+        
+        # Reinstall Samsung Settings and Settings Runtime from Store
+        Write-Host "`nReinstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
+        
+        $samsungPackages = @(
+            @{
+                Name = "Samsung Settings"
+                StoreId = "9nctpdbqxswr"
+            },
+            @{
+                Name = "Samsung Settings Runtime"
+                StoreId = "9p83lwlbqcmw"
+            }
+        )
+        
+        foreach ($pkg in $samsungPackages) {
+            Write-Host "  Installing $($pkg.Name)..." -ForegroundColor Gray
+            try {
+                # Use winget to install from Store
+                $wingetResult = & winget install --id $pkg.StoreId --source msstore --accept-source-agreements --accept-package-agreements --silent 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
+                }
+                else {
+                    # Check if already installed
+                    $existingPkg = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" -and $_.Name -like "*$($pkg.Name.Replace(' ', ''))*" }
+                    if ($existingPkg) {
+                        Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
+                    }
+                    else {
+                        Write-Host "    ⚠ $($pkg.Name) - winget returned non-zero, may install after reboot" -ForegroundColor Yellow
+                    }
+                }
+            }
+            catch {
+                Write-Host "    ⚠ Could not install $($pkg.Name) automatically" -ForegroundColor Yellow
+                Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
+            }
         }
         
         Write-Host "`nNext Steps:" -ForegroundColor Cyan
