@@ -1652,31 +1652,30 @@ function Install-SystemSupportEngine {
         $samsungPackages = @(
             @{
                 Name = "Samsung Settings"
-                StoreId = "9nctpdbqxswr"
+                Id = "9P2TBWSHK6HJ"
             },
             @{
                 Name = "Samsung Settings Runtime"
-                StoreId = "9p83lwlbqcmw"
+                Id = "9NL68DVFP841"
             }
         )
         
         foreach ($pkg in $samsungPackages) {
             Write-Host "  Installing $($pkg.Name)..." -ForegroundColor Gray
             try {
-                # Use winget to install from Store
-                $wingetResult = & winget install --id $pkg.StoreId --source msstore --accept-source-agreements --accept-package-agreements --silent 2>&1
-                if ($LASTEXITCODE -eq 0) {
+                $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
+                
+                if ($installOutput -match "Successfully installed|Installation completed successfully") {
                     Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
                 }
+                elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
+                    Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
+                }
+                elseif ($installOutput -match "0x80d03805|0x80D03805") {
+                    Write-Host "    ⚠ Store connection error - will install after reboot" -ForegroundColor Yellow
+                }
                 else {
-                    # Check if already installed
-                    $existingPkg = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" -and $_.Name -like "*$($pkg.Name.Replace(' ', ''))*" }
-                    if ($existingPkg) {
-                        Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
-                    }
-                    else {
-                        Write-Host "    ⚠ $($pkg.Name) - winget returned non-zero, may install after reboot" -ForegroundColor Yellow
-                    }
+                    Write-Host "    ⚠ $($pkg.Name) - may install automatically after reboot" -ForegroundColor Yellow
                 }
             }
             catch {
