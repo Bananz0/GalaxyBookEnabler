@@ -11,6 +11,9 @@
 ![View Count](https://komarev.com/ghpvc/?username=Bananz0&repo=GalaxyBookEnabler&color=brightgreen)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/bananz0/GalaxyBookEnabler/total)
 
+<p align="center">
+  <b>🎉 A big thank you to <a href="https://github.com/systemsrethinking">@systemsrethinking</a> and <a href="https://github.com/intini">@intini</a> for sponsoring us! ❤️</b>
+</p>
 
 
 ## Overview
@@ -564,6 +567,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Original script by [@obrobrio2000](https://github.com/obrobrio2000)
 - Enhanced and maintained by [@Bananz0](https://github.com/Bananz0)
 - Inspired by [eGPUae](https://github.com/bananz0/eGPUae) architecture
+
+## Supporters
+
+A huge thanks to the following people for supporting this project ❤️ :
+
+- **@systemsrethinking**
+- **@intini**
 
 ## Disclaimer
 
