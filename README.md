@@ -12,7 +12,7 @@
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/bananz0/GalaxyBookEnabler/total)
 
 <p align="center">
-  <b>🎉 A big thank you to <a href="https://github.com/systemsrethinking">@systemsrethinking</a> and <a href="https://github.com/intini">@intini</a> for sponsoring us! ❤️</b>
+  <b>🎉 A big thank you to <a href="https://github.com/Hydro3ia">@Hydro3ia</a>, <a href="https://github.com/systemsrethinking">@systemsrethinking</a> and <a href="https://github.com/intini">@intini</a> for sponsoring us! ❤️</b>
 </p>
 
 
@@ -572,6 +572,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 A huge thanks to the following people for supporting this project ❤️ :
 
+- **@Hydro3ia**
 - **@systemsrethinking**
 - **@intini**
 
