@@ -3340,7 +3340,11 @@ function Remove-SamsungSettingsPackages {
 Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFullName' } | Remove-AppxPackage -AllUsers -ErrorAction Stop
 "@
                 
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1 | Out-Null
+                $psOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "    ✗ Windows PowerShell 5.1 failed with exit code $LASTEXITCODE. Output:" -ForegroundColor DarkGray
+                    Write-Host $psOutput -ForegroundColor DarkGray
+                }
                 
                 # Verify removal
                 $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
