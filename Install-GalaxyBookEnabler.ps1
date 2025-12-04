@@ -2554,7 +2554,6 @@ function Install-SystemSupportEngine {
         }
     
         $extractDir = $extractResult.ExtractDir
-        # $level1Dir = $extractResult.Level1Dir # Unused
         $level2Dir = $extractResult.Level2Dir
         $infFile = $extractResult.InfFile
         $catFile = $extractResult.CatFile
