@@ -2595,8 +2595,8 @@ function Install-SystemSupportEngine {
         Write-Host "  [3/7] Creating installation directory..." -ForegroundColor Yellow
         if (Test-Path $InstallPath) {
             Write-Host "  ⚠ Directory exists, backing up..." -ForegroundColor Yellow
-            $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-            $backupPath = "$InstallPath`_backup_$timestamp"
+            $backupTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+            $backupPath = "$InstallPath`_backup_$backupTimestamp"
             Copy-Item -Path $InstallPath -Destination $backupPath -Recurse -Force
             Write-Host "  ✓ Backup created: $backupPath" -ForegroundColor Green
         }
