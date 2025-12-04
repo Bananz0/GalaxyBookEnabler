@@ -720,7 +720,7 @@ function Clear-AppCache {
                 $cleared++
             }
             catch {
-                # Silently continue - some files may be locked
+                Write-Debug "Failed to clear cache folder $path (likely locked by running process): $($_.Exception.Message)"
             }
         }
     }
@@ -3494,7 +3494,7 @@ function Get-InstalledSamsungPackages {
         }
     }
     catch {
-        # Return empty set on error - caller will handle
+        Write-Debug "Failed to enumerate installed packages: $($_.Exception.Message)"
     }
     
     return $installed
