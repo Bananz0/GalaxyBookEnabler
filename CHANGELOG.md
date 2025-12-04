@@ -8,10 +8,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Configuration guides for "Extra Steps" apps (Phone, Find, Quick Search, Pass and Camera Share)
-- Differential package updates (only install new packages)
-- Silent installation mode
-- Export/import package selections
+- Configuration guides for "Extra Steps" apps (Phone, Find)
+
+
+## [3.0.0] - 2025-12-04
+
+### Added
+- **Enhanced Installation Detection** - Comprehensive health check at startup
+  - Displays both GBE version and SSSE version
+  - Checks 4 components: config file, scheduled task, C:\GalaxyBook, GBeSupportService
+  - Shows "installation appears BROKEN" warning if partial install detected
+  - Offers repair/reinstall option automatically
+
+- **Standalone SSSE Upgrade Option** - New menu to upgrade Samsung System Support Engine
+  - Auto mode: Downloads latest version automatically
+  - Manual mode: Choose from all SSSE versions
+  - Service stop/restart handled during upgrade
+
+- **Dual-Version SSSE Installation Strategy** - Improved reliability
+  - After Samsung Settings launches, auto-upgrades binary to latest
+  - Full service lifecycle (stop, kill, replace, restart)
+  - Simplified strategy prompt with recommended in-place upgrade option
+
+- **Merged Reset-Samsung Tools** - Comprehensive repair suite
+  - **New Submenu**: "Reset/Repair Samsung Apps (VERY Experimental)"
+  - **Tools**: Diagnostics, Soft/Hard Reset, Clear Authentication, Repair Permissions, Re-register Apps, Factory Reset
+
+- **"Nuke" Uninstall Mode** - Optional destructive uninstall
+  - Prompts to delete ALL app data during uninstall
+  - Wipes ProgramData, AppData, and package LocalState folders if left behind
+  - Triggers Galaxy Buds Bluetooth device cleanup
+
+- **Nuke + Fresh Install Reinstall** - Complete reinstall option
+  - Option 2 now performs full uninstall (preserving BIOS config) then fresh install
+  - Ensures clean state without manual uninstall/reinstall cycle
+
+- **Galaxy Buds Bluetooth Cleanup** - Remove from Windows BT registry
+  - All variants: Buds 2/3/4, Pro, Live, FE
+
+- **Touchpad AI Select Tip** - 4-finger tap customization guidance
+
+### Changed
+- Version 3.0.0 - Major overhaul
+- Uninstall menu redesigned with Reset sub-menu
+- SSSE version selection replaced with dual-version strategy
+- Reinstall option (menu choice 2) now performs full nuke + fresh install
+- Simplified SSSE strategy prompt (removed verbose box UI)
+- `$installedVersion` now consistently tracks actual installed SSSE version throughout installation
+
+### Fixed
+- Bluetooth detection now correctly identifies physical Bluetooth adapters (filters by DeviceID pattern)
+- Fixed null-valued expression errors during package installation with proper scope handling
+- Fixed uninstall menu option 5 not properly mapping to "Uninstall all" action
+- Script-scoped `$PackageDatabase` for consistent access across all functions
+
+### Credits
+- [@Hydro3ia](https://github.com/Hydro3ia) - Sponsor ❤️
+- [@systemsrethinking](https://github.com/systemsrethinking) - Sponsor ❤️
+- [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g) - [powerBTremover fork](https://github.com/m-a-x-s-e-e-l-i-g/powerBTremover)
+- [@RS-DU34](https://github.com/RS-DU34) - [powerBTremover original](https://github.com/RS-DU34/powerBTremover)
 
 ## [2.5.0] - 2025-11-26
 

@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -34,6 +34,8 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Test Mode** - Simulate installation without making changes to your system
 - **Version Management** - Update detection and migration support
 - **Easy Uninstall** - One-command removal with cleanup
+- **Advanced Reset & Repair** - Built-in tools to fix app issues, clear caches, and repair permissions
+- **Nuke Mode** - Optional destructive uninstall to wipe all Samsung app data
 
 ## 📋 Requirements
 
@@ -63,7 +65,9 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 
 ### Uninstall Options
 When running the installer on an existing installation, you have granular uninstall options:
+- **Reinstall (nuke + fresh install)**: Completely removes everything (preserving BIOS config), then performs a clean installation
 - **Uninstall everything**: Removes all Samsung apps, services, scheduled task, and configuration
+  - **Nuke Mode**: Optionally delete ALL Samsung app data (caches, settings, databases) during uninstall
 - **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled task
 - **Uninstall services only**: Removes scheduled task and Samsung services while keeping apps installed
 
@@ -95,6 +99,18 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 ```
 
 Test mode simulates the entire installation without making any actual changes. Perfect for testing or reviewing what the installer will do before committing.
+
+## 🛠️ Reset & Repair Tools
+
+The installer includes a comprehensive suite of tools to fix common issues with Samsung apps. Select **"Reset/Repair Samsung Apps"** from the main menu (or uninstall menu) to access:
+
+- **Diagnostics**: Checks installed packages, device data files, and databases
+- **Soft Reset**: Clears app caches and temporary files (preserves login)
+- **Hard Reset**: Clears caches, device data, and settings (requires re-login)
+- **Clear Authentication**: Removes Samsung Account database and credentials
+- **Repair Permissions**: Fixes ACLs on app folders
+- **Re-register Apps**: Re-registers AppX manifests to fix launch issues
+- **Factory Reset**: Completely wipes ALL Samsung data (credentials, devices, DBs, settings)
 
 ## Package Profiles
 
@@ -205,7 +221,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 **Quick Share** requires **Intel Wi-Fi AX** and **Intel Bluetooth** adapters for full functionality. This is a Samsung hardware requirement - the app will fail silently or show errors without proper hardware.
 
 ### This is a WIP. Your device could be compatible and not present and otherwise
-### Intel Wi-Fi AX Cards (Full Compatibility) ✅
+### Intel Wi-Fi AX Cards (Full Compatibility) ✅ - Multi Control may not work
 - Intel Wi-Fi 6 AX201/AX200
 - Intel Wi-Fi 6E AX210/AX211
 - Intel Wi-Fi 6 AX201/AX200
@@ -575,6 +591,10 @@ A huge thanks to the following people for supporting this project ❤️ :
 - **@Hydro3ia**
 - **@systemsrethinking**
 - **@intini**
+
+### Bluetooth Device Removal
+- [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g) - [powerBTremover (fork)](https://github.com/m-a-x-s-e-e-l-i-g/powerBTremover)
+- [@RS-DU34](https://github.com/RS-DU34) - [powerBTremover (original)](https://github.com/RS-DU34/powerBTremover)
 
 ## Disclaimer
 
