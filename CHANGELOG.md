@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Package Manager** - New menu option for managing Samsung apps
+  - View installation status of all profiles at a glance
+  - Install any profile (Core, Recommended, Recommended Plus, Full, Everything)
+  - Uninstall any profile with confirmation
+  - Uninstall all Samsung apps with optional data deletion
+  - Accessible from existing installation menu via "Manage Packages"
+
+- **Smart Package Detection** - Accurate installed package counting
+  - Name mapping for packages with mismatched AppX names
+  - Handles Camera Share, Storage Share, AI Select, Live Wallpaper, Device Care, etc.
+  - Fast HashSet-based lookup instead of slow winget queries
+  - Fallback detection for all package variants
+
+- **Improved Installation Flow**
+  - Differential install skips already-installed packages
+  - Shows [Installed] or [X/Y Installed] status for each profile
+  - Suppressed verbose AppX deployment output during uninstall
+
 - **Enhanced Installation Detection** - Comprehensive health check at startup
   - Displays both GBE version and SSSE version
   - Checks 4 components: config file, scheduled task, C:\GalaxyBook, GBeSupportService
@@ -60,12 +78,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security: Self-elevation no longer downloads from GitHub** - Uses temp file approach to prevent RCE
+- **Binary patching failure now triggers full cleanup** - Stops services, removes folders on patch failure
+- **Suppressed verbose uninstall output** - No more "Deployment operation progress" spam
+- **Fixed HashSet collection error** - Proper handling with Write-Output -NoEnumerate
+- **Fixed package counter accuracy** - All 34 packages now detected correctly with name mappings
+- **Fixed menu choice [5] Everything** - Was incorrectly showing Custom Selection
 - Bluetooth detection now correctly identifies physical Bluetooth adapters (filters by DeviceID pattern)
 - Fixed null-valued expression errors during package installation with proper scope handling
 - Fixed uninstall menu option 5 not properly mapping to "Uninstall all" action
 - Script-scoped `$PackageDatabase` for consistent access across all functions
 
-**Credits:** [@Hydro3ia](https://github.com/Hydro3ia) ❤️, [@systemsrethinking](https://github.com/systemsrethinking) ❤️, [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g), [@RS-DU34](https://github.com/RS-DU34), [@felipecrs](https://github.com/felipecrs)
+### Documentation
+
+- Updated Multi Control/Second Screen Wi-Fi compatibility (Wi-Fi 5: ❌, Wi-Fi 6/6E: ⚠️ Jittery, Wi-Fi 7: ❓ Unknown)
+
+**Credits:** [@Hydro3ia](https://github.com/Hydro3ia) ❤️, [@systemsrethinking](https://github.com/systemsrethinking) ❤️, [@intini](https://github.com/intini) ❤️, [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g), [@RS-DU34](https://github.com/RS-DU34), [@felipecrs](https://github.com/felipecrs)
 
 ## [2.5.0] - 2025-11-26
 

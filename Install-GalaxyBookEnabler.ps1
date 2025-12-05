@@ -3383,7 +3383,7 @@ function Remove-SamsungSettingsPackages {
         # Method 1: Try PowerShell 7 (current session)
         try {
             Write-Host "    [Method 1] Using PowerShell 7..." -ForegroundColor DarkGray
-            $app | Remove-AppxPackage -AllUsers -ErrorAction Stop
+            $app | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
             Write-Host "    ✓ Successfully removed via PowerShell 7" -ForegroundColor Green
             $removed = $true
             $results.Success += $packageName
@@ -3398,7 +3398,7 @@ function Remove-SamsungSettingsPackages {
                 
                 # Create a script block to run in Windows PowerShell
                 $scriptBlock = @"
-Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFullName' } | Remove-AppxPackage -AllUsers -ErrorAction Stop
+Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFullName' } | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
 "@
                 
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1 | Out-Null
@@ -3431,7 +3431,7 @@ Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFull
                         $provisioned | Remove-AppxProvisionedPackage -Online -ErrorAction Stop
                         
                         # Also try to remove user package again
-                        $app | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+                        $app | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue *>$null
                         
                         # Verify removal
                         $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
@@ -3498,7 +3498,8 @@ function Uninstall-SamsungApps {
     foreach ($pkg in $samsungPackages) {
         Write-Status "Uninstalling: $($pkg.Name)" -Status ACTION
         try {
-            Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction Stop
+            # Suppress verbose AppX deployment output
+            Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction Stop *>$null
             Write-Status "Uninstalled: $($pkg.Name)" -Status OK
         }
         catch {
@@ -3545,6 +3546,271 @@ function Uninstall-SamsungApps {
 }
 
 
+function Show-PackageManager {
+    <#
+    .SYNOPSIS
+        Package Manager for managing Samsung apps (install/uninstall profiles)
+    #>
+    param(
+        [bool]$TestMode = $false
+    )
+    
+    while ($true) {
+        Clear-Host
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Samsung Package Manager" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        # Get installed packages for status display
+        Write-Host "Checking installed packages..." -ForegroundColor DarkGray
+        $installedPkgs = Get-InstalledSamsungPackages
+        
+        # Mapping of our DB names to actual AppX package name patterns
+        $nameMapping = @{
+            "GalaxyBookExperience" = "SamsungWelcome"
+            "AISelect" = "SmartSelect"
+            "CameraShare" = "16297BCCB59BC"
+            "StorageShare" = "4438638898209"
+            "NearbyDevices" = "MyDevices"
+            "SamsungBluetoothSync" = "SamsungCloudBluetoothSync"
+            "SamsungGallery" = "PCGallery"
+            "SamsungIntelligenceService" = "SamsungIntelligence"
+            "SamsungStudioforGallery" = "SamsungStudioForGallery"
+            "SamsungScreenRecorder" = "SamsungScreenRecording"
+            "SamsungFlow" = "SamsungFlux"
+            "SmartThings" = "SmartThingsWindows"
+            "GalaxyBookSmartSwitch" = "SmartSwitchforGalaxyBook"
+            "LiveWallpaper" = "Sidia.LiveWallpaper"
+            "SamsungDeviceCare" = "SamsungPCCleaner"
+        }
+        
+        # Helper to check profile status
+        function Get-ProfileStatus {
+            param($ProfilePackages)
+            $total = $ProfilePackages.Count
+            $installed = 0
+            
+            foreach ($p in $ProfilePackages) {
+                $dbName = $p.Name.Replace(" ", "")
+                $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+                
+                foreach ($installedName in $installedPkgs) {
+                    if ($installedName -like "*$searchName*") {
+                        $installed++
+                        break
+                    }
+                }
+            }
+            return @{ Total = $total; Installed = $installed }
+        }
+        
+        # Calculate status for each profile
+        $coreStatus = Get-ProfileStatus $PackageDatabase.Core
+        $recPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended
+        $recStatus = Get-ProfileStatus $recPkgs
+        $recPlusPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
+        $recPlusStatus = Get-ProfileStatus $recPlusPkgs
+        $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
+        $fullStatus = Get-ProfileStatus $fullPkgs
+        $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+        $allStatus = Get-ProfileStatus $allPkgs
+        
+        Clear-Host
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Samsung Package Manager" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        # Helper to format status
+        function Format-Status($status) {
+            if ($status.Installed -eq $status.Total) { return "[Installed]" }
+            elseif ($status.Installed -eq 0) { return "[Not Installed]" }
+            else { return "[$($status.Installed)/$($status.Total)]" }
+        }
+        
+        function Get-StatusColor($status) {
+            if ($status.Installed -eq $status.Total) { return "Green" }
+            elseif ($status.Installed -eq 0) { return "Gray" }
+            else { return "Yellow" }
+        }
+        
+        Write-Host "Current Installation Status:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Core Only          $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
+        Write-Host "  Recommended        $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
+        Write-Host "  Recommended Plus   $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
+        Write-Host "  Full Experience    $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
+        Write-Host "  Everything         $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
+        Write-Host ""
+        
+        Write-Host "Actions:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [1] Install Profile" -ForegroundColor Green
+        Write-Host "      Add packages from a profile" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [2] Uninstall Profile" -ForegroundColor Red
+        Write-Host "      Remove packages from a profile" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [3] Uninstall All Samsung Apps" -ForegroundColor Red
+        Write-Host "      Remove all Samsung packages" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [4] Back to Main Menu" -ForegroundColor Gray
+        Write-Host ""
+        
+        $managerChoice = Read-Host "Enter choice [1-4]"
+        
+        switch ($managerChoice) {
+            "1" {
+                # Install Profile
+                Clear-Host
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "  Install Profile" -ForegroundColor Cyan
+                Write-Host "========================================`n" -ForegroundColor Cyan
+                
+                Write-Host "Select profile to install:" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  [1] Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
+                Write-Host "  [2] Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
+                Write-Host "  [3] Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
+                Write-Host "  [4] Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
+                Write-Host "  [5] Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
+                Write-Host "  [6] Cancel" -ForegroundColor Gray
+                Write-Host ""
+                
+                $profileChoice = Read-Host "Enter choice [1-6]"
+                
+                if ($profileChoice -in "1","2","3","4","5") {
+                    $packagesToInstall = Get-PackagesByProfile -ProfileName $profileChoice
+                    
+                    if ($packagesToInstall.Count -gt 0) {
+                        Write-Host "`nInstalling profile packages..." -ForegroundColor Cyan
+                        $result = Install-SamsungPackages -Packages $packagesToInstall -TestMode $TestMode
+                        
+                        Write-Host "`n========================================" -ForegroundColor Green
+                        Write-Host "  Installation Summary" -ForegroundColor Green
+                        Write-Host "========================================" -ForegroundColor Green
+                        Write-Host "  Installed: $($result.Installed)" -ForegroundColor Green
+                        Write-Host "  Skipped:   $($result.Skipped) (already installed)" -ForegroundColor Cyan
+                        Write-Host "  Failed:    $($result.Failed)" -ForegroundColor $(if ($result.Failed -gt 0) { "Red" } else { "Gray" })
+                        
+                        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+                        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                    }
+                }
+            }
+            "2" {
+                # Uninstall Profile
+                Clear-Host
+                Write-Host "========================================" -ForegroundColor Red
+                Write-Host "  Uninstall Profile" -ForegroundColor Red
+                Write-Host "========================================`n" -ForegroundColor Red
+                
+                Write-Host "⚠ WARNING: This will uninstall packages from the selected profile!" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Select profile to uninstall:" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  [1] Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
+                Write-Host "  [2] Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
+                Write-Host "  [3] Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
+                Write-Host "  [4] Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
+                Write-Host "  [5] Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
+                Write-Host "  [6] Cancel" -ForegroundColor Gray
+                Write-Host ""
+                
+                $profileChoice = Read-Host "Enter choice [1-6]"
+                
+                if ($profileChoice -in "1","2","3","4","5") {
+                    $packagesToUninstall = Get-PackagesByProfile -ProfileName $profileChoice
+                    $profileNames = @{ "1" = "Core Only"; "2" = "Recommended"; "3" = "Recommended Plus"; "4" = "Full Experience"; "5" = "Everything" }
+                    
+                    Write-Host "`n⚠ This will uninstall $($packagesToUninstall.Count) packages from '$($profileNames[$profileChoice])'!" -ForegroundColor Red
+                    $confirm = Read-Host "Type 'UNINSTALL' to confirm"
+                    
+                    if ($confirm -eq "UNINSTALL") {
+                        Write-Host "`nUninstalling packages..." -ForegroundColor Red
+                        
+                        $uninstalled = 0
+                        $failed = 0
+                        
+                        foreach ($pkg in $packagesToUninstall) {
+                            Write-Host "  Removing $($pkg.Name)..." -ForegroundColor Gray
+                            
+                            # Find the actual AppX package
+                            $dbName = $pkg.Name.Replace(" ", "")
+                            $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+                            
+                            $appxPkg = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*$searchName*" }
+                            
+                            if ($appxPkg) {
+                                try {
+                                    $appxPkg | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
+                                    Write-Host "    ✓ Removed" -ForegroundColor Green
+                                    $uninstalled++
+                                }
+                                catch {
+                                    Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
+                                    $failed++
+                                }
+                            }
+                            else {
+                                Write-Host "    - Not installed" -ForegroundColor DarkGray
+                            }
+                        }
+                        
+                        Write-Host "`n========================================" -ForegroundColor Green
+                        Write-Host "  Uninstall Summary" -ForegroundColor Green
+                        Write-Host "========================================" -ForegroundColor Green
+                        Write-Host "  Removed: $uninstalled" -ForegroundColor Green
+                        Write-Host "  Failed:  $failed" -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Gray" })
+                        
+                        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+                        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                    }
+                    else {
+                        Write-Host "`nCancelled." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 1
+                    }
+                }
+            }
+            "3" {
+                # Uninstall All
+                Clear-Host
+                Write-Host "========================================" -ForegroundColor Red
+                Write-Host "  Uninstall All Samsung Apps" -ForegroundColor Red
+                Write-Host "========================================`n" -ForegroundColor Red
+                
+                Write-Host "⚠ WARNING: This will uninstall ALL Samsung apps!" -ForegroundColor Yellow
+                Write-Host ""
+                
+                $deleteData = Read-Host "Also delete app data? (y/N)"
+                $deleteDataBool = $deleteData -like "y*"
+                
+                Write-Host ""
+                $confirm = Read-Host "Type 'UNINSTALL ALL' to confirm"
+                
+                if ($confirm -eq "UNINSTALL ALL") {
+                    Uninstall-SamsungApps -DeleteData:$deleteDataBool -TestMode $TestMode
+                    
+                    Write-Host "`n✓ All Samsung apps uninstalled." -ForegroundColor Green
+                    Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+                    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                }
+                else {
+                    Write-Host "`nCancelled." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 1
+                }
+            }
+            "4" {
+                # Back to main menu
+                return
+            }
+            default {
+                # Invalid choice, loop again
+            }
+        }
+    }
+}
+
+
 function Get-InstalledSamsungPackages {
     <#
     .SYNOPSIS
@@ -3553,12 +3819,36 @@ function Get-InstalledSamsungPackages {
     $installed = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     
     try {
-        # Get all packages that look like Samsung ones
-        $packages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { 
-            $_.Name -like "*Samsung*" -or 
-            $_.Name -like "*Galaxy*" -or
-            $_.Name -like "*16297BCCB59BC*" -or
-            $_.Name -like "*4438638898209*"
+        # Try -AllUsers first (requires admin), fallback to current user
+        $packages = $null
+        try {
+            $packages = Get-AppxPackage -AllUsers -ErrorAction Stop | Where-Object { 
+                $_.Name -like "*Samsung*" -or 
+                $_.Name -like "*Galaxy*" -or
+                $_.Name -like "*16297BCCB59BC*" -or  # Camera Share
+                $_.Name -like "*4438638898209*" -or  # Storage Share
+                $_.Name -like "*SmartSelect*" -or    # AI Select
+                $_.Name -like "*MultiControl*" -or   # Multi Control
+                $_.Name -like "*SecondScreen*" -or   # Second Screen
+                $_.Name -like "*MyDevices*" -or      # Nearby Devices
+                $_.Name -like "*SmartThings*" -or    # SmartThings
+                $_.Name -like "*Sidia*"              # Live Wallpaper
+            }
+        }
+        catch {
+            # Fallback to current user packages (no admin required)
+            $packages = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { 
+                $_.Name -like "*Samsung*" -or 
+                $_.Name -like "*Galaxy*" -or
+                $_.Name -like "*16297BCCB59BC*" -or
+                $_.Name -like "*4438638898209*" -or
+                $_.Name -like "*SmartSelect*" -or
+                $_.Name -like "*MultiControl*" -or
+                $_.Name -like "*SecondScreen*" -or
+                $_.Name -like "*MyDevices*" -or
+                $_.Name -like "*SmartThings*" -or
+                $_.Name -like "*Sidia*"
+            }
         }
         
         foreach ($pkg in $packages) {
@@ -3570,7 +3860,8 @@ function Get-InstalledSamsungPackages {
         Write-Debug "Failed to enumerate installed packages: $($_.Exception.Message)"
     }
     
-    return $installed
+    # Return the HashSet (use Write-Output to preserve the collection type)
+    Write-Output -NoEnumerate $installed
 }
 
 function Show-PackageSelectionMenu {
@@ -3587,23 +3878,41 @@ function Show-PackageSelectionMenu {
         param($ProfilePackages)
         $total = $ProfilePackages.Count
         $installed = 0
+        
+        # Mapping of our DB names to actual AppX package name patterns
+        # Format: "DBNameWithSpacesRemoved" = "ActualAppXNamePattern"
+        $nameMapping = @{
+            "GalaxyBookExperience" = "SamsungWelcome"
+            "AISelect" = "SmartSelect"
+            "CameraShare" = "16297BCCB59BC"
+            "StorageShare" = "4438638898209"
+            "NearbyDevices" = "MyDevices"
+            "SamsungBluetoothSync" = "SamsungCloudBluetoothSync"
+            "SamsungGallery" = "PCGallery"
+            "SamsungIntelligenceService" = "SamsungIntelligence"
+            "SamsungStudioforGallery" = "SamsungStudioForGallery"
+            "SamsungScreenRecorder" = "SamsungScreenRecording"
+            "SamsungFlow" = "SamsungFlux"
+            "SmartThings" = "SmartThingsWindows"
+            "GalaxyBookSmartSwitch" = "SmartSwitchforGalaxyBook"
+            "LiveWallpaper" = "Sidia.LiveWallpaper"
+            "SamsungDeviceCare" = "SamsungPCCleaner"
+        }
+        
         foreach ($p in $ProfilePackages) {
-            # Check if package is installed (by Name or Family if available, or just assume not if we can't map it easily yet)
-            # For now, we'll try to match loosely against the Name in our DB vs what we found
-            # This is a heuristic since our DB has "Samsung Account" but Appx is "SamsungAccount"
+            $dbName = $p.Name.Replace(" ", "")  # "Samsung Settings" -> "SamsungSettings"
+            $isInstalled = $false
             
-            # Better approach: Check if ANY installed package matches the ID or Name
-            # Since we don't have the exact Appx Name in our DB, we rely on the fact that 
-            # Install-SamsungPackages will do a more precise check.
-            # For the menu, we'll do a best-effort match.
+            # Check if there's a special mapping for this package
+            $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
             
-            # Actually, let's just pass the installed set to the install function and let it handle the precise check.
-            # For the menu, we can't easily know 100% without a mapping table for every single app.
-            # BUT, we can try to match the "Name" from our DB against the installed list loosely.
-            
-            $dbName = $p.Name.Replace(" ", "")
-            $isInstalled = $installedPkgs.Contains($dbName) -or 
-            ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+            foreach ($installedName in $installedPkgs) {
+                # Check if the installed package name contains our search name (case-insensitive)
+                if ($installedName -like "*$searchName*") {
+                    $isInstalled = $true
+                    break
+                }
+            }
             
             if ($isInstalled) { $installed++ }
         }
@@ -3884,10 +4193,36 @@ function Install-SamsungPackages {
                     continue
                 }
                 
+                # Mapping of our DB names to actual AppX package name patterns
+                $nameMapping = @{
+                    "GalaxyBookExperience" = "SamsungWelcome"
+                    "AISelect" = "SmartSelect"
+                    "CameraShare" = "16297BCCB59BC"
+                    "StorageShare" = "4438638898209"
+                    "NearbyDevices" = "MyDevices"
+                    "SamsungBluetoothSync" = "SamsungCloudBluetoothSync"
+                    "SamsungGallery" = "PCGallery"
+                    "SamsungIntelligenceService" = "SamsungIntelligence"
+                    "SamsungStudioforGallery" = "SamsungStudioForGallery"
+                    "SamsungScreenRecorder" = "SamsungScreenRecording"
+                    "SamsungFlow" = "SamsungFlux"
+                    "SmartThings" = "SmartThingsWindows"
+                    "GalaxyBookSmartSwitch" = "SmartSwitchforGalaxyBook"
+                    "LiveWallpaper" = "Sidia.LiveWallpaper"
+                    "SamsungDeviceCare" = "SamsungPCCleaner"
+                }
+                
                 $dbName = $pkg.Name.Replace(" ", "")
+                $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+                
                 $isInstalled = $false
                 if ($installedPkgs) {
-                    $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+                    foreach ($installedName in $installedPkgs) {
+                        if ($installedName -like "*$searchName*") {
+                            $isInstalled = $true
+                            break
+                        }
+                    }
                 }
                 
                 if ($isInstalled) {
@@ -3932,11 +4267,6 @@ function Install-SamsungPackages {
                     elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
                         $installed++
-                        # Add to installed list for tracking (if available)
-                        if ($installedPkgs -and $pkg.Name) {
-                            $dbName = $pkg.Name.Replace(" ", "")
-                            $null = $installedPkgs.Add($dbName)
-                        }
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
@@ -4706,15 +5036,16 @@ if ($alreadyInstalled) {
         Write-Host "  [1] Download and install latest version (v$($updateCheck.LatestVersion))" -ForegroundColor Green
         Write-Host "  [2] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [3] Reinstall current version" -ForegroundColor Gray
-        Write-Host "  [4] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [5] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
-        Write-Host "  [6] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [7] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [8] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [9] Cancel" -ForegroundColor Gray
+        Write-Host "  [4] Manage Packages (Install/Uninstall)" -ForegroundColor Magenta
+        Write-Host "  [5] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
+        Write-Host "  [6] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
+        Write-Host "  [7] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [8] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [9] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [10] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-9]"
+        $choice = Read-Host "Enter choice [1-10]"
         
         if ($choice -eq "1") {
             if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
@@ -4737,19 +5068,26 @@ if ($alreadyInstalled) {
         Write-Host "`nWhat would you like to do?" -ForegroundColor Cyan
         Write-Host "  [1] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [2] Reinstall" -ForegroundColor Gray
-        Write-Host "  [3] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [4] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
-        Write-Host "  [5] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [6] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [7] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [8] Cancel" -ForegroundColor Gray
+        Write-Host "  [3] Manage Packages (Install/Uninstall)" -ForegroundColor Magenta
+        Write-Host "  [4] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
+        Write-Host "  [5] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
+        Write-Host "  [6] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [7] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [8] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [9] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-8]"
+        $choice = Read-Host "Enter choice [1-9]"
+    }
+    
+    # Handle "Manage Packages" option - same action for both menus
+    if (($updateCheck.Available -and $choice -eq "4") -or (-not $updateCheck.Available -and $choice -eq "3")) {
+        Show-PackageManager -TestMode $TestMode
+        exit
     }
     
     # Handle "Update Samsung Settings" option - same action for both menus
-    if (($updateCheck.Available -and $choice -eq "4") -or (-not $updateCheck.Available -and $choice -eq "3")) {
+    if (($updateCheck.Available -and $choice -eq "5") -or (-not $updateCheck.Available -and $choice -eq "4")) {
         Write-Host "`n========================================" -ForegroundColor Cyan
         Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
         Write-Host "========================================`n" -ForegroundColor Cyan
@@ -4786,7 +5124,7 @@ if ($alreadyInstalled) {
     }
     
     # Handle "Reset/Repair Samsung Apps" option - same action for both menus
-    if (($updateCheck.Available -and $choice -eq "5") -or (-not $updateCheck.Available -and $choice -eq "4")) {
+    if (($updateCheck.Available -and $choice -eq "6") -or (-not $updateCheck.Available -and $choice -eq "5")) {
         Write-Host "`n========================================" -ForegroundColor Yellow
         Write-Host "  Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
         Write-Host "========================================`n" -ForegroundColor Yellow
@@ -4854,29 +5192,33 @@ if ($alreadyInstalled) {
         #   [6] Uninstall all -> switch 4
         #   [7] Uninstall apps -> switch 5
         #   [8] Uninstall services -> switch 6
-        #   [9] Cancel -> switch 7
-        if ($choice -eq "2") { $choice = "1" }      # Update to installer version
-        elseif ($choice -eq "3") { $choice = "2" }  # Reinstall current version
-        elseif ($choice -eq "6") { $choice = "4" }  # Uninstall all
-        elseif ($choice -eq "7") { $choice = "5" }  # Uninstall apps only
-        elseif ($choice -eq "8") { $choice = "6" }  # Uninstall services only
-        elseif ($choice -eq "9") { $choice = "7" }  # Cancel
+        #   [10] Cancel -> switch 7
+        if ($choice -eq "2") { $choice = "1" }       # Update to installer version
+        elseif ($choice -eq "3") { $choice = "2" }   # Reinstall current version
+        # [4] Manage Packages -> handled above
+        # [5] Update SSSE -> handled above
+        # [6] Reset/Repair -> handled above
+        elseif ($choice -eq "7") { $choice = "4" }   # Uninstall all
+        elseif ($choice -eq "8") { $choice = "5" }   # Uninstall apps only
+        elseif ($choice -eq "9") { $choice = "6" }   # Uninstall services only
+        elseif ($choice -eq "10") { $choice = "7" }  # Cancel
     }
     else {
         # Menu when no update available:
         #   [1] Update to installer -> switch 1
         #   [2] Reinstall -> switch 2
-        #   [3] Update SSSE -> handled above
-        #   [4] Reset/Repair -> handled above
-        #   [5] Uninstall all -> switch 4
-        #   [6] Uninstall apps -> switch 5
-        #   [7] Uninstall services -> switch 6
-        #   [8] Cancel -> switch 7
+        #   [3] Manage Packages -> handled above
+        #   [4] Update SSSE -> handled above
+        #   [5] Reset/Repair -> handled above
+        #   [6] Uninstall all -> switch 4
+        #   [7] Uninstall apps -> switch 5
+        #   [8] Uninstall services -> switch 6
+        #   [9] Cancel -> switch 7
         # Choices 1 and 2 stay the same
-        if ($choice -eq "5") { $choice = "4" }      # Uninstall all
-        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall apps only
-        elseif ($choice -eq "7") { $choice = "6" }  # Uninstall services only
-        elseif ($choice -eq "8") { $choice = "7" }  # Cancel
+        if ($choice -eq "6") { $choice = "4" }       # Uninstall all
+        elseif ($choice -eq "7") { $choice = "5" }   # Uninstall apps only
+        elseif ($choice -eq "8") { $choice = "6" }   # Uninstall services only
+        elseif ($choice -eq "9") { $choice = "7" }   # Cancel
     }
     
     switch ($choice) {
@@ -5500,11 +5842,11 @@ $installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
 
 $packagesToInstall = @()
 
-if ($installChoice -eq "6") {
+if ($installChoice -eq "7") {
     Write-Host "✓ Skipping package installation" -ForegroundColor Green
     Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
 }
-elseif ($installChoice -eq "5") {
+elseif ($installChoice -eq "6") {
     # Custom selection
     $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
 }

@@ -25,10 +25,12 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app
 - **Auto-Elevation** - Automatically requests admin rights (supports gsudo and Windows 11 native sudo)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
+- **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
 - **System Support Engine (Advanced)** - Optional experimental feature for enhanced Samsung integration (Windows 11 only)
 - **Automated Startup** - Registry spoof runs automatically on every boot
 - **Professional Installer** - Clean, color-coded UI with progress tracking
+- **Differential Install** - Skips already-installed packages for faster re-runs
 - **Test Mode** - Simulate installation without making changes to your system
 - **Version Management** - Update detection and migration support
 - **Easy Uninstall** - One-command removal with cleanup
