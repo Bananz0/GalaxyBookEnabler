@@ -126,7 +126,8 @@ Essential packages for basic Samsung ecosystem functionality:
 
 - Samsung Account
 - Samsung Settings + Runtime
-- Samsung Cloud Assistant
+- Samsung Cloud
+- Knox Matrix for Windows
 - Samsung Continuity Service
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
@@ -152,6 +153,7 @@ Core packages + all fully working Samsung apps:
 - Second Screen
 - Live Wallpaper
 - Galaxy Book Smart Switch
+- Samsung Pass
 
 ### Full Experience
 
@@ -160,7 +162,6 @@ Recommended + apps requiring extra configuration:
 - Samsung Phone (needs additional setup)
 - Samsung Find (needs additional setup)
 - Quick Search (needs additional setup)
-- Samsung Pass (needs additional setup)
 
 ### Everything
 
@@ -203,11 +204,11 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Second Screen | ✅ Working | No | - |
 | Live Wallpaper | ✅ Working | No | - |
 | Galaxy Book Smart Switch | ✅ Working | No | - |
+| Samsung Pass | ✅ Working | No | - |
 | Samsung Device Care | ⚠️ Extra Steps | No | May not function properly |
 | Samsung Phone | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Find | ⚠️ Extra Steps | No | Configuration required |
 | Quick Search | ⚠️ Extra Steps | No | Configuration required |
-| Samsung Pass | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Recovery | ❌ Not Working | No | Requires genuine hardware |
 | Samsung Update | ❌ Not Working | No | Requires genuine hardware |
 

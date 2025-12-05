@@ -1599,7 +1599,7 @@ $script:PackageDatabase = @{
         }
     )
     
-    # RECOMMENDED PACKAGES - Full Samsung experience (everything that works)
+    # RECOMMENDED PACKAGES - Essential Samsung apps 
     Recommended = @(
         @{
             Name              = "Quick Share"
@@ -1611,11 +1611,22 @@ $script:PackageDatabase = @{
             Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
-            Name        = "Samsung Notes"
-            Id          = "9NBLGGH43VHV"
-            Category    = "Productivity"
-            Description = "Note-taking with stylus support"
-            Status      = "Working"
+            Name              = "Camera Share"
+            Id                = "9NPCS7FN6VB9"
+            Category          = "Connectivity"
+            Description       = "Use phone camera with PC apps"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
+        },
+        @{
+            Name              = "Storage Share"
+            Id                = "9MVNW0XH7HS5"
+            Category          = "Utilities"
+            Description       = "Share storage between devices"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
             Name        = "Multi Control"
@@ -1625,12 +1636,60 @@ $script:PackageDatabase = @{
             Status      = "Working"
         },
         @{
+            Name        = "Nearby Devices"
+            Id          = "9PHL04NJNT67"
+            Category    = "Connectivity"
+            Description = "Manage and connect to nearby Samsung devices"
+            Status      = "Working"
+        },
+        @{
+            Name        = "Samsung Notes"
+            Id          = "9NBLGGH43VHV"
+            Category    = "Productivity"
+            Description = "Note-taking with stylus support"
+            Status      = "Working"
+        },
+        @{
+            Name        = "AI Select"
+            Id          = "9PM11FHJQLZ4"
+            Category    = "Productivity"
+            Description = "Smart screenshot tool with text extraction and AI features"
+            Status      = "Working"
+            Tip         = "TIP: If you have a Windows Precision Touchpad, you can configure the 4-finger tap gesture to launch AI Select via Settings > Bluetooth & devices > Touchpad > Advanced gestures"
+        },
+        @{
             Name        = "Samsung Gallery"
             Id          = "9NBLGGH4N9R9"
             Category    = "Media"
             Description = "Photo and video gallery with cloud sync"
             Status      = "Working"
         },
+        @{
+            Name        = "Galaxy Buds"
+            Id          = "9NHTLWTKFZNB"
+            Category    = "Accessories"
+            Description = "Galaxy Buds management and settings"
+            Status      = "Working"
+        },
+        @{
+            Name        = "Samsung Pass"
+            Id          = "9MVWDZ5KX9LH"
+            Category    = "Security"
+            Description = "Password manager with biometric auth"
+            Status      = "Working"
+            Warning     = "Untested on non-Samsung devices - may require additional setup"
+        },
+        @{
+            Name        = "Second Screen"
+            Id          = "9PLTXW5DX5KB"
+            Category    = "Productivity"
+            Description = "Use tablet as secondary display"
+            Status      = "Working"
+        }
+    )
+    
+    # RECOMMENDED PLUS PACKAGES - Additional working apps for full experience
+    RecommendedPlus = @(
         @{
             Name        = "Samsung Studio"
             Id          = "9P312B4TZFFH"
@@ -1668,48 +1727,10 @@ $script:PackageDatabase = @{
             Status      = "Working"
         },
         @{
-            Name        = "Galaxy Buds"
-            Id          = "9NHTLWTKFZNB"
-            Category    = "Accessories"
-            Description = "Galaxy Buds management and settings"
-            Status      = "Working"
-        },
-        @{
             Name        = "Samsung Parental Controls"
             Id          = "9N5GWJTCZKGS"
             Category    = "Security"
             Description = "Manage children's device usage"
-            Status      = "Working"
-        },
-        @{
-            Name        = "AI Select"
-            Id          = "9PM11FHJQLZ4"
-            Category    = "Productivity"
-            Description = "Smart screenshot tool with text extraction and AI features"
-            Status      = "Working"
-            Tip         = "TIP: If you have a Windows Precision Touchpad, you can configure the 4-finger tap gesture to launch AI Select via Settings > Bluetooth & devices > Touchpad > Advanced gestures"
-        },
-        @{
-            Name        = "Nearby Devices"
-            Id          = "9PHL04NJNT67"
-            Category    = "Connectivity"
-            Description = "Manage and connect to nearby Samsung devices"
-            Status      = "Working"
-        },
-        @{
-            Name              = "Storage Share"
-            Id                = "9MVNW0XH7HS5"
-            Category          = "Utilities"
-            Description       = "Share storage between devices"
-            Status            = "Working"
-            RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
-        },
-        @{
-            Name        = "Second Screen"
-            Id          = "9PLTXW5DX5KB"
-            Category    = "Productivity"
-            Description = "Use tablet as secondary display"
             Status      = "Working"
         },
         @{
@@ -1725,14 +1746,6 @@ $script:PackageDatabase = @{
             Category    = "Utilities"
             Description = "Transfer data to new Galaxy Book"
             Status      = "Working"
-        },
-        @{
-            Name        = "Samsung Pass"
-            Id          = "9MVWDZ5KX9LH"
-            Category    = "Security"
-            Description = "Password manager with biometric auth"
-            Status      = "Working"
-            Warning     = "Untested on non-Samsung devices - may require additional setup"
         }
     )
     
@@ -1789,15 +1802,6 @@ $script:PackageDatabase = @{
             Description = "Firmware and driver updates"
             Status      = "NotWorking"
             Warning     = "This app will NOT work on non-Samsung devices (requires genuine hardware)"
-        },
-        @{
-            Name              = "Camera Share"
-            Id                = "9NPCS7FN6VB9"
-            Category          = "Connectivity"
-            Description       = "Use phone camera with PC apps"
-            Status            = "Working"
-            RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         }
     )
     
@@ -3603,44 +3607,54 @@ function Show-PackageSelectionMenu {
     $recText = if ($recStatus.Installed -eq $recStatus.Total) { "[Installed]" } elseif ($recStatus.Installed -gt 0) { "[$($recStatus.Installed)/$($recStatus.Total) Installed]" } else { "" }
 
     Write-Host "  [2] Recommended $recText" -ForegroundColor $recColor
-    Write-Host "      Core + All working Samsung apps (Gallery, Notes, Multi Control, etc.)" -ForegroundColor Gray
+    Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
         Write-Host "      ⚠ Note: Quick Share/Camera Share/Storage Share require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
     }
     Write-Host ""
     
-    # [3] Full Experience
-    $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps
+    # [3] Recommended Plus
+    $recPlusPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
+    $recPlusStatus = Test-ProfileStatus $recPlusPkgs
+    $recPlusColor = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "Green" } elseif ($recPlusStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
+    $recPlusText = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "[Installed]" } elseif ($recPlusStatus.Installed -gt 0) { "[$($recPlusStatus.Installed)/$($recPlusStatus.Total) Installed]" } else { "" }
+
+    Write-Host "  [3] Recommended Plus $recPlusText" -ForegroundColor $recPlusColor
+    Write-Host "      Recommended + Additional working apps (Studio, SmartThings, Screen Recorder, etc.)" -ForegroundColor Gray
+    Write-Host ""
+    
+    # [4] Full Experience
+    $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
     $fullStatus = Test-ProfileStatus $fullPkgs
     $fullColor = if ($fullStatus.Installed -eq $fullStatus.Total) { "Green" } elseif ($fullStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
     $fullText = if ($fullStatus.Installed -eq $fullStatus.Total) { "[Installed]" } elseif ($fullStatus.Installed -gt 0) { "[$($fullStatus.Installed)/$($fullStatus.Total) Installed]" } else { "" }
 
-    Write-Host "  [3] Full Experience $fullText" -ForegroundColor $fullColor
-    Write-Host "      Recommended + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
+    Write-Host "  [4] Full Experience $fullText" -ForegroundColor $fullColor
+    Write-Host "      Recommended Plus + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
     Write-Host "      ⚠ Some apps need additional configuration after install" -ForegroundColor Yellow
     Write-Host ""
     
-    # [4] Everything
-    $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+    # [5] Everything
+    $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
     $allStatus = Test-ProfileStatus $allPkgs
     $allColor = if ($allStatus.Installed -eq $allStatus.Total) { "Green" } elseif ($allStatus.Installed -gt 0) { "Yellow" } else { "Magenta" }
     $allText = if ($allStatus.Installed -eq $allStatus.Total) { "[Installed]" } elseif ($allStatus.Installed -gt 0) { "[$($allStatus.Installed)/$($allStatus.Total) Installed]" } else { "" }
 
-    Write-Host "  [4] Everything $allText" -ForegroundColor $allColor
+    Write-Host "  [5] Everything $allText" -ForegroundColor $allColor
     Write-Host "      All packages including non-working ones (Recovery, Update)" -ForegroundColor Gray
     Write-Host "      ⚠ Some apps will NOT work on non-Samsung devices" -ForegroundColor Red
     Write-Host ""
     
-    Write-Host "  [5] Custom Selection" -ForegroundColor Yellow
+    Write-Host "  [6] Custom Selection" -ForegroundColor Yellow
     Write-Host "      Pick individual packages" -ForegroundColor Gray
     Write-Host ""
     
-    Write-Host "  [6] Skip Package Installation" -ForegroundColor DarkGray
+    Write-Host "  [7] Skip Package Installation" -ForegroundColor DarkGray
     Write-Host ""
     
     do {
-        $choice = Read-Host "Enter choice [1-6]"
-    } while ($choice -notin "1", "2", "3", "4", "5", "6")
+        $choice = Read-Host "Enter choice [1-7]"
+    } while ($choice -notin "1", "2", "3", "4", "5", "6", "7")
     
     return $choice
 }
@@ -3662,12 +3676,16 @@ function Get-PackagesByProfile {
             $packages = $PackageDatabase.Core + $PackageDatabase.Recommended
         }
         "3" {
-            # Full Experience
-            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps
+            # Recommended Plus
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
         }
         "4" {
+            # Full Experience
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
+        }
+        "5" {
             # Everything
-            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
         }
     }
     
