@@ -667,6 +667,12 @@ A huge thanks to the following people for supporting this project ❤️ :
 - Samsung may update their apps to detect or block this method
 - Features may break with future Samsung app updates
 
+## Legal Notice
+
+### Interoperability Notice (EU)
+
+This software is developed for the purpose of achieving interoperability between Samsung software services and third-party hardware platforms (non-Samsung PCs), in accordance with the rights granted under the EU Computer Programs Directive (2009/24/EC). It allows users to exercise their right to use legally obtained software on the hardware of their choice by resolving arbitrary compatibility checks.
+
 ## Links
 
 - [GitHub Repository](https://github.com/Bananz0/GalaxyBookEnabler)
