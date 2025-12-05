@@ -1396,7 +1396,16 @@ function Invoke-Diagnostics {
 # ==================== MODE HANDLERS ====================
 
 function Invoke-SoftReset {
+    param([bool]$TestMode = $false)
+    
     Write-Status "`n=== SOFT RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear app caches without removing credentials" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
     Write-Status "Clearing caches without removing credentials`n" -Status INFO
     
     Stop-SamsungApps
@@ -1412,7 +1421,16 @@ function Invoke-SoftReset {
 }
 
 function Invoke-HardReset {
+    param([bool]$TestMode = $false)
+    
     Write-Status "`n=== HARD RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear ALL data including sign-in credentials" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
     Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
     
     $confirm = Read-Host "Are you sure? (yes/no)"
@@ -1438,7 +1456,17 @@ function Invoke-HardReset {
 }
 
 function Invoke-FactoryReset {
+    param([bool]$TestMode = $false)
+    
     Write-Status "`n=== FACTORY RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would COMPLETELY reset ALL Samsung app data" -Status INFO
+        Write-Status "[TEST MODE] Would wipe: credentials, devices, databases, settings, caches" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
     Write-Status "WARNING: This will COMPLETELY reset ALL Samsung app data!" -Status WARN
     Write-Status "This includes: credentials, devices, databases, settings, caches" -Status WARN
     
@@ -3407,9 +3435,21 @@ Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFull
 }
 
 function Uninstall-SamsungApps {
-    param([switch]$DeleteData)
+    param(
+        [switch]$DeleteData,
+        [bool]$TestMode = $false
+    )
     
     Write-Status "`n=== UNINSTALLING SAMSUNG APPS ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would uninstall all Samsung apps" -Status INFO
+        if ($DeleteData) {
+            Write-Status "[TEST MODE] Would also DELETE all app data" -Status INFO
+        }
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
     
     if ($DeleteData) {
         Write-Status "WARNING: This will also DELETE all app data!" -Status WARN
@@ -4680,7 +4720,7 @@ if ($alreadyInstalled) {
         }
         
         # Call the main Install-SystemSupportEngine function which handles everything properly
-        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $false
+        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode
         
         if ($result) {
             Write-Host "`n========================================" -ForegroundColor Green
@@ -4732,12 +4772,12 @@ if ($alreadyInstalled) {
         
         switch ($resetChoice) {
             "1" { Invoke-Diagnostics }
-            "2" { Invoke-SoftReset }
-            "3" { Invoke-HardReset }
+            "2" { Invoke-SoftReset -TestMode $TestMode }
+            "3" { Invoke-HardReset -TestMode $TestMode }
             "4" { Clear-AuthenticationData }
             "5" { Repair-Permissions }
             "6" { Invoke-AppReRegistration }
-            "7" { Invoke-FactoryReset }
+            "7" { Invoke-FactoryReset -TestMode $TestMode }
             default { Write-Host "`nCancelled." -ForegroundColor Yellow }
         }
         
@@ -4819,15 +4859,27 @@ if ($alreadyInstalled) {
             Write-Host "  Full Reinstall (Nuke + Fresh Install)" -ForegroundColor Yellow
             Write-Host "========================================`n" -ForegroundColor Yellow
             
-            Write-Host "This will:" -ForegroundColor Cyan
-            Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
-            Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
-            Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
-            Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
-            Write-Host "  5. Perform a fresh installation" -ForegroundColor White
-            Write-Host ""
-            
-            $confirmReinstall = Read-Host "Proceed with full reinstall? (Y/n)"
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would perform full reinstall:" -ForegroundColor Magenta
+                Write-Host "  • Backup BIOS configuration" -ForegroundColor Gray
+                Write-Host "  • Uninstall all Samsung apps" -ForegroundColor Gray
+                Write-Host "  • Remove services & scheduled task" -ForegroundColor Gray
+                Write-Host "  • Delete Samsung folders" -ForegroundColor Gray
+                Write-Host "  • Perform fresh installation" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "[TEST MODE] Simulating fresh install instead..." -ForegroundColor Yellow
+                # Fall through to simulated install
+            }
+            else {
+                Write-Host "This will:" -ForegroundColor Cyan
+                Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
+                Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
+                Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
+                Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
+                Write-Host "  5. Perform a fresh installation" -ForegroundColor White
+                Write-Host ""
+                
+                $confirmReinstall = Read-Host "Proceed with full reinstall? (Y/n)"
             if ($confirmReinstall -like "n*") {
                 Write-Host "`nCancelled." -ForegroundColor Yellow
                 exit
@@ -4873,7 +4925,7 @@ if ($alreadyInstalled) {
                 Write-Host "    ⚠ Will delete all Samsung app data" -ForegroundColor Yellow
             }
             
-            Uninstall-SamsungApps -DeleteData:$deleteData
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             
             # Step 3: Remove services
             Write-Host "`n  [3/5] Removing services..." -ForegroundColor Cyan
@@ -4921,6 +4973,7 @@ if ($alreadyInstalled) {
             Write-Host "`n  [5/5] Starting fresh installation..." -ForegroundColor Cyan
             Write-Host "    Continuing with installation process..." -ForegroundColor Gray
             Write-Host ""
+            }  # End of else block for non-TestMode
             
             # Fall through to the main installation flow below
         }
@@ -4933,13 +4986,23 @@ if ($alreadyInstalled) {
             # Uninstall all (apps, services & scheduled task)
             Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
             
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
+                Write-Host "  • All Samsung apps" -ForegroundColor Gray
+                Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
+                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
+                Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
+            
             $deleteData = $false
             $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
             if ($nukeConfirm -like "y*") {
                 $deleteData = $true
             }
             
-            Uninstall-SamsungApps -DeleteData:$deleteData
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             
             # Remove services
             $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
@@ -4992,19 +5055,34 @@ if ($alreadyInstalled) {
             # Uninstall apps only
             Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
             
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall all Samsung apps" -ForegroundColor Magenta
+                Write-Host "[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
+            
             $deleteData = $false
             $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
             if ($nukeConfirm -like "y*") {
                 $deleteData = $true
             }
             
-            Uninstall-SamsungApps -DeleteData:$deleteData
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             Write-Host "`nUninstall complete!" -ForegroundColor Green
             exit
         }
         "6" {
             # Uninstall services & scheduled task only
             Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
+            
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
+                Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
+                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
+                Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
             
             # Remove services
             $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue

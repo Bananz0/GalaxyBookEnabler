@@ -1,137 +1,93 @@
-name: Create Release
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   release:
-    name: Create Release
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main 
 
-      - name: Extract version from tag
-        id: get_version
+      - name: Parse version
+        id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          
+          # Detect prerelease (e.g., v3.0.0-beta.1)
+          [[ "$VERSION" == *-* ]] && PRERELEASE=true || PRERELEASE=false
+          
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          echo "📦 Releasing version: $VERSION"
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
 
-      - name: Validate version format
+      - name: Validate changelog
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Invalid version format: $VERSION"
-            echo "Expected format: X.Y.Z (e.g., 2.0.0)"
-            exit 1
-          fi
-          echo "✅ Version format valid: $VERSION"
+          VERSION=${{ steps.version.outputs.version }}
+          BASE=${VERSION%%-*}
+          grep -qE "## \[($VERSION|$BASE|Unreleased)\]" CHANGELOG.md || {
+            echo "❌ No changelog entry found"; exit 1
+          }
 
-      - name: Check if version exists in CHANGELOG
+      - name: Bump version in files
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
-            echo "⚠️ Warning: Version $VERSION not found in CHANGELOG.md"
-            echo "Please update CHANGELOG.md before releasing"
-            exit 1
-          fi
-          echo "✅ Changelog entry found for version $VERSION"
+          VERSION=${{ steps.version.outputs.version }}
+          sed -i 's/$SCRIPT_VERSION = ".*"/$SCRIPT_VERSION = "'"$VERSION"'"/' Install-GalaxyBookEnabler.ps1
+          sed -i 's/version-[^-]*-blue/version-'"$VERSION"'-blue/' README.md
 
-      - name: Update version in Install script
+      - name: Commit version bump
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          sed -i "s/\$SCRIPT_VERSION = \".*\"/\$SCRIPT_VERSION = \"$VERSION\"/" Install-GalaxyBookEnabler.ps1
-          echo "✅ Updated Install-GalaxyBookEnabler.ps1 to version $VERSION"
-          
-      - name: Update version in README badges
-        run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          sed -i "s/version-.*-blue/version-$VERSION-blue/" README.md
-          echo "✅ Updated README.md badge to version $VERSION"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git diff --staged --quiet || {
+            git commit -m "release: ${{ steps.version.outputs.version }}"
+            git push origin HEAD:main
+          }
 
-      - name: Commit version bump changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add Install-GalaxyBookEnabler.ps1 README.md
-          git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}" || echo "No changes to commit"
-          
-      - name: Push version bump to main
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
-
-      - name: Extract changelog for this version
+      - name: Extract changelog
         id: changelog
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          # Extract the section for this version from CHANGELOG.md
-          CHANGELOG=$(awk "/^## \\[$VERSION\\]/ {flag=1; next} /^## \\[/ {flag=0} flag" CHANGELOG.md)
+          VERSION=${{ steps.version.outputs.version }}
+          BASE=${VERSION%%-*}
           
-          if [ -z "$CHANGELOG" ]; then
-            echo "⚠️ No changelog content found for version $VERSION"
-            CHANGELOG="No changelog entries for this version."
-          fi
+          # Extract version section
+          extract() {
+            awk "/^## \\[$1\\]/{f=1;next}/^## \\[/{f=0}f" CHANGELOG.md
+          }
           
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "✅ Extracted changelog for version $VERSION"
+          CONTENT=$(extract "$VERSION")
+          [ -z "$CONTENT" ] && CONTENT=$(extract "$BASE")
+          [ -z "$CONTENT" ] && [ "${{ steps.version.outputs.prerelease }}" = "true" ] && CONTENT=$(extract "Unreleased")
           
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+          # Trim leading/trailing blank lines
+          CONTENT=$(echo "$CONTENT" | sed '/./,$!d' | sed ':a;/^[[:space:]]*$/{ $d;N;ba;}')
+          
+          {
+            echo "body<<EOF"
+            echo "$CONTENT"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_version.outputs.tag }}
-          draft: false
-          prerelease: false
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
           body: |
-            ## One-Line Install
-            
+            ${{ steps.changelog.outputs.body }}
+
+            ---
             ```powershell
             irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
             ```
-            
-            **Run in PowerShell 7+ as Administrator**
-            
-            ---
-            
-            ## What's Changed
-            
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ---
-            
-            ## Quick Links
-            
-            📖 [README](https://github.com/Bananz0/GalaxyBookEnabler#readme) · 📦 [Packages](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/PACKAGES.md) · 🔧 [Troubleshooting](https://github.com/Bananz0/GalaxyBookEnabler#troubleshooting) · 📋 [Full Changelog](https://github.com/Bananz0/GalaxyBookEnabler/blob/main/CHANGELOG.md)
-            
-            ---
-            
-            ## Requirements
-            
-            - Windows 10/11 (64-bit)
-            - PowerShell 7.0+
-            - Administrator privileges
-            - Intel Wi-Fi AX + Intel Bluetooth (for Quick Share only)
-          files: |
-            Install-GalaxyBookEnabler.ps1
-            README.md
-            CHANGELOG.md
-            PACKAGES.md
-          generate_release_notes: false
-          fail_on_unmatched_files: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: Install-GalaxyBookEnabler.ps1

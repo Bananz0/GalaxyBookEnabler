@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned
-- Configuration guides for "Extra Steps" apps (Phone, Find)
+### Added
 
+- Configuration guides for "Extra Steps" apps (Phone, Find) *(planned)*
 
 ## [3.0.0] - 2025-12-04
 
 ### Added
+
 - **Enhanced Installation Detection** - Comprehensive health check at startup
   - Displays both GBE version and SSSE version
   - Checks 4 components: config file, scheduled task, C:\GalaxyBook, GBeSupportService
@@ -43,13 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Option 2 now performs full uninstall (preserving BIOS config) then fresh install
   - Ensures clean state without manual uninstall/reinstall cycle
 
-- **Galaxy Buds Bluetooth Cleanup** - Remove from Windows BT registry
+- **Galaxy Buds Bluetooth Cleanup** - Remove from Windows BT registry (using methods inspired by @m-a-x-s-e-e-l-i-g and @RS-DU34) (thanks to @felipecrs)
   - All variants: Buds 2/3/4, Pro, Live, FE
 
 - **Touchpad AI Select Tip** - 4-finger tap customization guidance
 
 ### Changed
-- Version 3.0.0 - Major overhaul
+
+- Version 3.0.0 - Major revision
 - Uninstall menu redesigned with Reset sub-menu
 - SSSE version selection replaced with dual-version strategy
 - Reinstall option (menu choice 2) now performs full nuke + fresh install
@@ -57,20 +59,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `$installedVersion` now consistently tracks actual installed SSSE version throughout installation
 
 ### Fixed
+
 - Bluetooth detection now correctly identifies physical Bluetooth adapters (filters by DeviceID pattern)
 - Fixed null-valued expression errors during package installation with proper scope handling
 - Fixed uninstall menu option 5 not properly mapping to "Uninstall all" action
 - Script-scoped `$PackageDatabase` for consistent access across all functions
 
-### Credits
-- [@Hydro3ia](https://github.com/Hydro3ia) - Sponsor ❤️
-- [@systemsrethinking](https://github.com/systemsrethinking) - Sponsor ❤️
-- [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g) - [powerBTremover fork](https://github.com/m-a-x-s-e-e-l-i-g/powerBTremover)
-- [@RS-DU34](https://github.com/RS-DU34) - [powerBTremover original](https://github.com/RS-DU34/powerBTremover)
+**Credits:** [@Hydro3ia](https://github.com/Hydro3ia) ❤️, [@systemsrethinking](https://github.com/systemsrethinking) ❤️, [@m-a-x-s-e-e-l-i-g](https://github.com/m-a-x-s-e-e-l-i-g), [@RS-DU34](https://github.com/RS-DU34), [@felipecrs](https://github.com/felipecrs)
 
 ## [2.5.0] - 2025-11-26
 
 ### Added
+
 - **`-UpdateSettings` parameter** - One-command Samsung Settings reinstall
   - Stops all Samsung processes and services
   - Cleans C:\GalaxyBook installation folder
@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detailed setup guide for PowerToys URI method, Run Program.
 
 ### Changed
+
 - **Simplified driver installation** - Driver now added to DriverStore automatically via `pnputil`
   - Removed manual Device Manager binding prompts
   - No more interactive driver installation steps
@@ -101,12 +102,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Updated README** - Wi-Fi/Bluetooth requirements section rewritten for clarity
 
 ### Removed
+
 - `Install-SSSEDriverInteractive` function - Replaced with simpler `Install-SSSEDriverToStore`
 - Manual driver binding instructions during SSSE setup
 
 ## [2.4.0] - 2025-11-25 (unreleased)
 
 ### Added
+
 - **Universal SSSE binary patching** - Supports all Samsung System Support Engine versions
   - Version 6.x series: 6.1.8.0, 6.3.3.0 (requires 2 patches)
   - Version 7.x series: 7.0.10.0, 7.0.14.0, 7.0.16.0, 7.1.2.0 (requires 1 patch)
@@ -117,17 +120,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Secondary patch detection** - Automatically applies additional patch for 6.x versions
 
 ### Changed
+
 - **SSSE version 6.3.3.0 now default** - More compatible than 7.x for fresh installs
 - **Improved patching logic** - Pattern matching handles all known SSSE versions
 
 ## [2.2.0] - 2025-11-15
 
 ### Added
-- **Samsung MultiPoint Support** - Galaxy Buds multipoint connectivity
-  - Works through Samsung Settings app (included in Core packages)
-  - Connect your Galaxy Buds to multiple devices simultaneously
-  - Seamless switching between PC and phone
-  - No additional configuration needed - automatic with proper BIOS spoofing
+
+- Connect your Galaxy Buds to multiple devices simultaneously
+- Seamless switching between PC and phone
+- No additional configuration needed - automatic with proper BIOS spoofing
 - **21 Authentic Galaxy Book Models** - Complete hardware profile database
   - Galaxy Book5 series (2025): 960XHA, 940XHA, 960QHA, 750QHA
   - Galaxy Book4 series (2024): 960XGL, 960XGK, 940XGK, 960QGK, 750XGK, 750XGL, 750QGK
@@ -158,8 +161,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Recommendations for different use cases
   - Technical details on naming patterns
   - Migration guidance for legacy users
-
-### Changed
 - **Installation flow updated to 8 steps** (was 7)
   - Step 2 is now Model Selection (new)
   - All subsequent steps renumbered (3-8)
@@ -176,7 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated Core package count
   - Renumbered all subsequent steps
 
-### Technical
+### Changed
+
 - Model database embedded directly in installer (no external files needed)
 - Pattern analysis confirmed no algorithmic generation possible
 - BIOS versions contain unpredictable build dates
@@ -186,11 +188,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2025-11-14
 
 ### Added
-- **GitHub Actions workflow** - Automated release system
-  - Automatic version number updates on release
-  - Changelog extraction for release notes
-  - Release artifact creation
-  - One-line installer hosting
+
+- Changelog extraction for release notes
+- Release artifact creation
+- One-line installer hosting
 - **Auto-update checker** - Checks GitHub for latest version
   - Compares current version with latest release
   - Downloads and launches updated installer automatically
@@ -245,6 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Intel Wi-Fi requirement flag
 
 ### Changed
+
 - **BREAKING:** Wi-Fi compatibility check no longer blocks installation
 - **BREAKING:** Package installation completely redesigned with new UI
 - **Samsung Pass moved to Extra Steps** - Requires additional configuration
@@ -253,14 +255,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All package IDs updated to match Microsoft Store
 - Removed simple "core/optional" split in favor of profile system
 
-### Improved
+### Changed
+
 - Installation summary shows detailed package list with status colors
 - User confirms package list before installation begins
 - Better error handling for individual package failures
 - Clearer distinction between working and non-working apps
 - Help text explains what each profile includes
-
-### Technical Improvements
 - `Show-PackageSelectionMenu()` - Main selection interface with 6 options
 - `Get-PackagesByProfile()` - Returns packages based on selected profile
 - `Show-CustomPackageSelection()` - Interactive custom package picker
@@ -272,6 +273,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package objects include all necessary metadata for smart filtering
 
 ### Fixed
+
 - Quick Share no longer requires Intel Wi-Fi to proceed with installation
 - Galaxy Book Experience properly marked as optional
 - Package IDs corrected for Samsung Account and other core apps
@@ -282,6 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.5] - 2024-04-09 (Legacy)
 
 ### Added
+
 - Basic registry spoof functionality
 - Manual package installation support
 - Scheduled task for startup execution
@@ -291,6 +294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2023-11-05
 
 ### Added
+
 - Initial release of Galaxy Book Enabler
 - Basic registry spoofing to identify as Samsung Galaxy Book3 Ultra
 - Batch file for BIOS registry modifications
@@ -304,16 +308,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Samsung Notes
   - Multi Control
 
-### Known Issues
-- No version tracking
-- No Wi-Fi compatibility detection
-- Manual keyboard shortcut setup for AI Select
-- No update mechanism
-- Installation path in user folder root
+**Known Issues:** No version tracking, no Wi-Fi compatibility detection, manual keyboard shortcut setup for AI Select, no update mechanism, installation path in user folder root.
 
 ---
 
-## Planned Features (Roadmap)
+## Roadmap
 
 Here's what's planned for future versions:
 
@@ -344,11 +343,13 @@ Here's what's planned for future versions:
 ### Upgrading from v1.x to v2.x
 
 **What changes:**
+
 - New installation directory: `.galaxy-book-enabler` in your user folder
 - Configuration now in JSON format
 - New scheduled task name (same: "GalaxyBookEnabler")
 
 **How to upgrade:**
+
 1. Run the new installer - it will detect your v1.x installation
 2. If you customized BIOS values in QS.bat, you'll be asked to preserve them
 3. Choose option [1] to update
@@ -357,6 +358,7 @@ Here's what's planned for future versions:
 
 **Custom BIOS values:**
 If you modified QS.bat with custom device names (e.g., different Galaxy Book model), the installer will:
+
 - Detect your custom values automatically
 - Ask if you want to preserve them
 - Apply your custom values to the new installation
@@ -369,6 +371,7 @@ If you modified QS.bat with custom device names (e.g., different Galaxy Book mod
 ## Breaking Changes
 
 ### v2.0.0
+
 - Installation path changed from `GalaxyBookEnablerScript` to `.galaxy-book-enabler`
 - Configuration format changed from none to JSON
 - Batch file renamed from `QS.bat` to `GalaxyBookSpoof.bat`
@@ -386,4 +389,13 @@ If you modified QS.bat with custom device names (e.g., different Galaxy Book mod
 
 ---
 
-**Last Updated:** 2025-11-14
+**Last Updated:** 2025-12-04
+
+[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.5.0...v3.0.0
+[2.5.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.2.0...v2.4.0
+[2.2.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.0.0...v2.2.0
+[2.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v1.1.5...v2.0.0
+[1.1.5]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v1.0.0...v1.1.5
+[1.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/releases/tag/v1.0.0
