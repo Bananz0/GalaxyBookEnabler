@@ -10,7 +10,8 @@
     - Quick Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Camera Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Storage Share (requires Intel Wi-Fi + Intel Bluetooth)
-    - Multi Control
+    - Multi Control (requires Intel Wi-Fi 6/6E/7 - jittery on AX, doesn't work on AC)
+    - Second Screen (requires Intel Wi-Fi 6/6E/7 - doesn't work on AC)
     - Samsung Notes
     - AI Select (with keyboard shortcut setup)
     - System Support Engine (advanced/experimental)
@@ -3610,6 +3611,7 @@ function Show-PackageSelectionMenu {
     Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
         Write-Host "      ⚠ Note: Quick Share/Camera Share/Storage Share require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
+        Write-Host "      ⚠ Note: Multi Control/Second Screen require Wi-Fi 6/6E/7 (not Wi-Fi 5)" -ForegroundColor Yellow
     }
     Write-Host ""
     
@@ -4017,7 +4019,7 @@ function Test-IntelWiFi {
         }
         elseif ($wifiInfo -match "(AC \d+|Wireless-AC|Wi-Fi 5)") {
             $model = $matches[1]
-            $isAX = $false  # AC cards don't work with Quick Share
+            $isAX = $false  # AC (Wi-Fi 5) cards: Multi Control doesn't work, Second Screen doesn't work
         }
     }
     
@@ -5172,7 +5174,16 @@ if ($wifiCheck.HasWiFi) {
     Write-Host "Detected: $($wifiCheck.AdapterName)" -ForegroundColor Green
     
     if ($wifiCheck.IsIntel) {
-        Write-Host "✓ Intel Wi-Fi adapter - Full* compatibility with Quick Share, Camera Share, Storage Share!" -ForegroundColor Green
+        if ($wifiCheck.IsAX) {
+            Write-Host "✓ Intel Wi-Fi 6/6E/7 adapter - Full compatibility!" -ForegroundColor Green
+            Write-Host "  Note: Multi Control may be jittery on Wi-Fi 6/6E" -ForegroundColor Gray
+        }
+        else {
+            Write-Host "⚠ Intel Wi-Fi 5 (AC) adapter detected" -ForegroundColor Yellow
+            Write-Host "  Quick Share, Camera Share, Storage Share: ✓ Work" -ForegroundColor Green
+            Write-Host "  Multi Control: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
+            Write-Host "  Second Screen: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
+        }
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow

@@ -22,16 +22,25 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 
 ---
 
-## Recommended Packages (Essential Working Apps)
+## Recommended Packages (Most Working)
 
 ### Connectivity
+
 | Package | Store ID | Intel Wi-Fi Required | Description |
 |---------|----------|---------------------|-------------|
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
 | Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
 | Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
-| Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse (works best with Intel Wi-Fi) |
+| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. Jittery on Wi-Fi 6/6E, not working on Wi-Fi 5 |
+| Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
+| Second Screen | 9PLTXW5DX5KB | ✅ Yes | Use tablet as secondary display. Works on Wi-Fi 6/6E/7, not on Wi-Fi 5 |
+
+> **Wi-Fi Compatibility Note:**
+> - **Wi-Fi 7 (BE200, BE201, BE202)**: Full compatibility (Multi Control untested)
+> - **Wi-Fi 6/6E (AX210, AX211, AX201, AX200)**: Full compatibility, Multi Control may be jittery  
+> - **Wi-Fi 5 (AC 9260, AC 9560, AC 8265, AC 8260)**: Quick Share, Camera Share, Storage Share work. Multi Control and Second Screen do not work.
+> - All wireless features also require **Intel Bluetooth**", "oldString": "## Recommended Packages (Fully Working)\n\n### Connectivity\n| Package | Store ID | Intel Wi-Fi Required | Description |\n|---------|----------|---------------------|-------------|\n| Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |\n| Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse |\n| Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |\n| Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |\n| Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display |
 
 ### Productivity
 | Package | Store ID | Description | Notes |

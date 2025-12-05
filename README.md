@@ -189,7 +189,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Camera Share | ✅ Working |**Yes**| Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
-| Multi Control | ✅ Working | No | - |
+| Multi Control | ⚠️ Limited | **Yes** | Jittery on Wi-Fi 6/6E, not working on Wi-Fi 5 |
 | Samsung Gallery | ✅ Working | No | - |
 | Samsung Studio | ✅ Working | No | - |
 | Samsung Studio for Gallery | ✅ Working | No | - |
@@ -201,7 +201,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | AI Select | ✅ Working | No | - |
 | Nearby Devices | ✅ Working | No | - |
 | Storage Share | ✅ Working | No | - |
-| Second Screen | ✅ Working | No | - |
+| Second Screen | ⚠️ Limited | **Yes** | Works on Wi-Fi 6/6E/7 (AX/BE), not on Wi-Fi 5 (AC) |
 | Live Wallpaper | ✅ Working | No | - |
 | Galaxy Book Smart Switch | ✅ Working | No | - |
 | Samsung Pass | ✅ Working | No | - |
@@ -236,23 +236,38 @@ Pick individual packages by category with detailed descriptions and warnings.
 
 ## ⚠️ Wi-Fi & Bluetooth Compatibility
 
-**Quick Share** requires **Intel Wi-Fi AX** and **Intel Bluetooth** adapters for full functionality. This is a Samsung hardware requirement - the app will fail silently or show errors without proper hardware.
+Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full wireless features. Compatibility varies by Wi-Fi generation:
 
-### This is a WIP. Your device could be compatible and not present and otherwise
+### Wi-Fi Compatibility by Generation
 
-### Intel Wi-Fi AX Cards (Full Compatibility) ✅ - Multi Control may not work
+| Generation | Adapters | Quick Share | Multi Control | Second Screen | Camera Share | Storage Share |
+|------------|----------|-------------|---------------|---------------|--------------|---------------|
+| **Wi-Fi 7 (BE)** | BE200, BE201, BE202 | ✅ Full | ❓ Unknown | ✅ Full | ✅ Full | ✅ Full |
+| **Wi-Fi 6/6E (AX)** | AX210, AX211, AX201, AX200 | ✅ Full | ⚠️ Jittery | ✅ Full | ✅ Full | ✅ Full |
+| **Wi-Fi 5 (AC)** | AC 9260, AC 9560, AC 8265, AC 8260 | ✅ Works | ❌ Not Working | ❌ Not Working | ✅ Works | ✅ Works |
+| **Non-Intel** | Realtek, MediaTek, Qualcomm, Broadcom | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-- Intel Wi-Fi 6 AX201/AX200
+### Wi-Fi 7 (BE) - Full Compatibility ✅
+
+- Intel Wi-Fi 7 BE200
+- Intel Wi-Fi 7 BE201  
+- Intel Wi-Fi 7 BE202
+
+### Wi-Fi 6/6E (AX) - Full Compatibility ✅
+
 - Intel Wi-Fi 6E AX210/AX211
 - Intel Wi-Fi 6 AX201/AX200
+
+### Wi-Fi 5 (AC) - Limited Compatibility ⚠️
+
 - Intel Wireless-AC 9260/9560
-
-### Intel Wi-Fi Cards (Not Tested) ✅
-
-- Intel Wi-Fi 7 BE200/BE201/BE202
 - Intel Wireless-AC 8265/8260
 
-- **Note**: AC cards may show "A software or driver update is required" error in Quick Share
+**AC Limitations:**
+
+- Multi Control does not work
+- Second Screen does not work (WiFi Direct uses 802.11n - Samsung limitation)
+- May show "A software or driver update is required" error in Quick Share
 
 ### Non-Intel Wi-Fi (Not Working) ❌
 
@@ -261,14 +276,9 @@ Pick individual packages by category with detailed descriptions and warnings.
 - Qualcomm adapters
 - Broadcom adapters
 
-### Intel Bluetooth (Required for Quick Share) ✅
+### Intel Bluetooth (Required) ✅
 
-Quick Share also requires an **Intel Bluetooth radio** (not just Wi-Fi). If you're using:
-
-- A third-party Bluetooth adapter (USB dongles, etc.)
-- A different brand's built-in Bluetooth
-
-Quick Share will fail with unhelpful errors even if you have Intel Wi-Fi.
+All wireless features also require an **Intel Bluetooth radio** (not just Wi-Fi). Third-party Bluetooth adapters (USB dongles, etc.) will cause features to fail with unhelpful errors.
 
 ### Alternative for Non-Intel Users
 
@@ -476,6 +486,7 @@ Enter model number (1-22): 5
 - **Check Wi-Fi adapter type**: Quick Share requires **Intel Wi-Fi AX** (not AC)
 - **Check Bluetooth adapter**: Quick Share requires **Intel Bluetooth** radio
 - **AC card error**: If you see "A software or driver update is required", your Intel AC card is not supported
+- **AC9560 confirmed working**: Intel AC9560 has been tested and works with Quick Share
 - **Third-party Bluetooth**: USB Bluetooth dongles or non-Intel Bluetooth will cause failures
 - **Verify installation**: Check if app is properly installed
 - **Sign in**: Ensure you're signed into Samsung Account
