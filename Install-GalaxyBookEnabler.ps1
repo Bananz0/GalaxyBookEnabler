@@ -2715,9 +2715,36 @@ function Install-SystemSupportEngine {
         
         $targetExePath = Join-Path $InstallPath "SamsungSystemSupportEngine.exe"
         $patchResult = Update-SSSEBinary -ExePath $targetExePath
-        
+
         if (-not $patchResult) {
-            Write-Warning "Patching failed or pattern not found"
+            Write-Host "  ✗ Patching failed - cleaning up installation..." -ForegroundColor Red
+            
+            # Stop and remove any services that may have been partially configured
+            $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
+            foreach ($svcName in $serviceNames) {
+                $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                if ($svc) {
+                    Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+                    & sc.exe delete $svcName 2>&1 | Out-Null
+                    Write-Host "    ✓ Service '$svcName' removed" -ForegroundColor Green
+                }
+            }
+            
+            # Remove installation folder
+            if (Test-Path $InstallPath) {
+                Remove-Item -Path $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ Installation folder removed" -ForegroundColor Green
+            }
+            
+            # Remove user folder (.galaxy-book-enabler)
+            $userFolder = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
+            if (Test-Path $userFolder) {
+                Remove-Item -Path $userFolder -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ User folder removed" -ForegroundColor Green
+            }
+            
+            Write-Error "Binary patching failed - cannot continue with unpatched Samsung System Support Engine"
+            throw "Binary patching failed"
         }
         
         # Handle conflicting services
