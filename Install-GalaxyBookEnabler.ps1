@@ -93,9 +93,10 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) {
     Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
     
-    # Build the command to re-run this script
-    $scriptUrl = "https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1"
-    $rerunCommand = "irm '$scriptUrl' | iex"
+    # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
+    $tempScript = Join-Path $env:TEMP "GBE_Elevated_$([System.IO.Path]::GetRandomFileName()).ps1"
+    $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
+    $rerunCommand = "& '$tempScript'; Remove-Item -LiteralPath '$tempScript' -Force -ErrorAction SilentlyContinue"
     
     # Try gsudo first (faster, preserves console context)
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
