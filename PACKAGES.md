@@ -40,7 +40,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 > - **Wi-Fi 7 (BE200, BE201, BE202)**: Full compatibility (Multi Control untested)
 > - **Wi-Fi 6/6E (AX210, AX211, AX201, AX200)**: Full compatibility, Multi Control may be jittery  
 > - **Wi-Fi 5 (AC 9260, AC 9560, AC 8265, AC 8260)**: Quick Share, Camera Share, Storage Share work. Multi Control and Second Screen do not work.
-> - All wireless features also require **Intel Bluetooth**", "oldString": "## Recommended Packages (Fully Working)\n\n### Connectivity\n| Package | Store ID | Intel Wi-Fi Required | Description |\n|---------|----------|---------------------|-------------|\n| Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |\n| Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse |\n| Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |\n| Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |\n| Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display |
+> - All wireless features also require **Intel Bluetooth**
 
 ### Productivity
 | Package | Store ID | Description | Notes |

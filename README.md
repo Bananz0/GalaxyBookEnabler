@@ -189,7 +189,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Camera Share | ✅ Working |**Yes**| Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
-| Multi Control | ⚠️ Limited | **Yes** | Jittery on Wi-Fi 6/6E, not working on Wi-Fi 5 |
+| Multi Control | ⚠️ Limited | **Yes** | Jittery on Wi-Fi 6/6E, untested on Wi-Fi 7, not working on Wi-Fi 5 |
 | Samsung Gallery | ✅ Working | No | - |
 | Samsung Studio | ✅ Working | No | - |
 | Samsung Studio for Gallery | ✅ Working | No | - |
