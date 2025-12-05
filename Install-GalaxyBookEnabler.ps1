@@ -10,7 +10,8 @@
     - Quick Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Camera Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Storage Share (requires Intel Wi-Fi + Intel Bluetooth)
-    - Multi Control
+    - Multi Control (requires Intel Wi-Fi 6/6E/7 - jittery on AX, doesn't work on AC)
+    - Second Screen (requires Intel Wi-Fi 6/6E/7 - doesn't work on AC)
     - Samsung Notes
     - AI Select (with keyboard shortcut setup)
     - System Support Engine (advanced/experimental)
@@ -49,7 +50,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 2.5.0
+    Version        : 3.0.0
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -86,8 +87,41 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     exit 1
 }
 
+# Self-elevation: Try gsudo first (preserves console), fallback to native UAC
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+    Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+    
+    # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
+    $tempScript = Join-Path $env:TEMP "GBE_Elevated_$([System.IO.Path]::GetRandomFileName()).ps1"
+    $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
+    $rerunCommand = "& '$tempScript'; Remove-Item -LiteralPath '$tempScript' -Force -ErrorAction SilentlyContinue"
+    
+    # Try gsudo first (faster, preserves console context)
+    $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
+    if ($gsudoPath) {
+        Write-Host "  Using gsudo for elevation..." -ForegroundColor Gray
+        & gsudo pwsh -NoProfile -ExecutionPolicy Bypass -Command $rerunCommand
+        exit $LASTEXITCODE
+    }
+    
+    # Try sudo (Windows 11 24H2+ native sudo)
+    $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
+    if ($sudoPath) {
+        Write-Host "  Using Windows sudo for elevation..." -ForegroundColor Gray
+        & sudo pwsh -NoProfile -ExecutionPolicy Bypass -Command $rerunCommand
+        exit $LASTEXITCODE
+    }
+    
+    # Fallback to native UAC (Start-Process -Verb RunAs)
+    Write-Host "  Using UAC elevation..." -ForegroundColor Gray
+    Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$rerunCommand`"" -Wait
+    exit
+}
+
 # VERSION CONSTANT
-$SCRIPT_VERSION = "2.5.0"
+$SCRIPT_VERSION = "3.0.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -182,8 +216,1315 @@ function Update-GalaxyBookEnabler {
     }
 }
 
+function Test-InstallationHealth {
+    <#
+    .SYNOPSIS
+        Checks the health of GalaxyBookEnabler installation.
+    .DESCRIPTION
+        Validates 4 components: config file, scheduled task, C:\GalaxyBook folder, and GBeSupportService.
+        Returns version info and component status for enhanced detection.
+    #>
+    param(
+        [string]$ConfigPath = "$env:USERPROFILE\GalaxyBookEnablerData\gbe-config.json",
+        [string]$TaskName = "GalaxyBookEnabler",
+        [string]$SssePath = "C:\GalaxyBook"
+    )
+    
+    $health = @{
+        IsHealthy      = $false
+        IsBroken       = $false
+        ComponentCount = 0
+        Components     = @{
+            Config     = $false
+            Task       = $false
+            SsseFolder = $false
+            Service    = $false
+        }
+        GbeVersion     = "Unknown"
+        SsseVersion    = "Unknown"
+        SsseExePath    = $null
+    }
+    
+    # Check 1: Config file
+    if (Test-Path $ConfigPath) {
+        $health.Components.Config = $true
+        $health.ComponentCount++
+        try {
+            $config = Get-Content $ConfigPath | ConvertFrom-Json
+            $health.GbeVersion = if ($config.InstalledVersion) { $config.InstalledVersion } else { "1.0.0" }
+        }
+        catch {
+            Write-Verbose "Failed to read config: $_"
+        }
+    }
+    
+    # Check 2: Scheduled task
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        $health.Components.Task = $true
+        $health.ComponentCount++
+    }
+    
+    # Check 3: SSSE installation folder
+    if (Test-Path $SssePath) {
+        $health.Components.SsseFolder = $true
+        $health.ComponentCount++
+        
+        # Try to get SSSE version from exe
+        $exePath = Join-Path $SssePath "SamsungSystemSupportEngine.exe"
+        if (Test-Path $exePath) {
+            $health.SsseExePath = $exePath
+            try {
+                $version = (Get-Item $exePath).VersionInfo.FileVersion
+                if ($version) {
+                    $health.SsseVersion = $version
+                }
+            }
+            catch {
+                Write-Verbose "Failed to read SSSE version: $_"
+            }
+        }
+    }
+    
+    # Check 4: GBeSupportService
+    $service = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+    if ($service) {
+        $health.Components.Service = $true
+        $health.ComponentCount++
+    }
+    
+    # Determine installation state
+    if ($health.ComponentCount -eq 4) {
+        $health.IsHealthy = $true
+    }
+    elseif ($health.ComponentCount -gt 0 -and $health.ComponentCount -lt 4) {
+        $health.IsBroken = $true
+    }
+    
+    return $health
+}
+
+function Remove-GalaxyBudsFromBluetooth {
+    <#
+    .SYNOPSIS
+        Removes Galaxy Buds from Windows Bluetooth using BluetoothRemoveDevice P/Invoke.
+    .DESCRIPTION
+        Uses BluetoothAPIs.dll to enumerate and remove paired Galaxy Buds devices.
+        Detects all variants: Buds, Buds+, Buds Live, Buds Pro, Buds FE, Buds2, Buds3, Buds4.
+        
+        Credits:
+        - powerBTremover (fork): https://github.com/m-a-x-s-e-e-l-i-g/powerBTremover
+        - powerBTremover (original): https://github.com/RS-DU34/powerBTremover
+    #>
+    
+    $btApiSignature = @"
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern IntPtr BluetoothFindFirstRadio(ref BLUETOOTH_FIND_RADIO_PARAMS pbtfrp, out IntPtr phRadio);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern bool BluetoothFindNextRadio(IntPtr hFind, out IntPtr phRadio);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern bool BluetoothFindRadioClose(IntPtr hFind);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern IntPtr BluetoothFindFirstDevice(ref BLUETOOTH_DEVICE_SEARCH_PARAMS pbtsd, ref BLUETOOTH_DEVICE_INFO pbtdi);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern bool BluetoothFindNextDevice(IntPtr hFind, ref BLUETOOTH_DEVICE_INFO pbtdi);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern bool BluetoothFindDeviceClose(IntPtr hFind);
+    
+    [DllImport("BluetoothAPIs.dll", SetLastError = true)]
+    public static extern int BluetoothRemoveDevice(ref ulong pAddress);
+    
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BLUETOOTH_FIND_RADIO_PARAMS {
+        public int dwSize;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BLUETOOTH_DEVICE_SEARCH_PARAMS {
+        public int dwSize;
+        public bool fReturnAuthenticated;
+        public bool fReturnRemembered;
+        public bool fReturnUnknown;
+        public bool fReturnConnected;
+        public bool fIssueInquiry;
+        public byte cTimeoutMultiplier;
+        public IntPtr hRadio;
+    }
+    
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct BLUETOOTH_DEVICE_INFO {
+        public int dwSize;
+        public ulong Address;
+        public uint ulClassofDevice;
+        public bool fConnected;
+        public bool fRemembered;
+        public bool fAuthenticated;
+        public SYSTEMTIME stLastSeen;
+        public SYSTEMTIME stLastUsed;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 248)]
+        public string szName;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SYSTEMTIME {
+        public ushort wYear;
+        public ushort wMonth;
+        public ushort wDayOfWeek;
+        public ushort wDay;
+        public ushort wHour;
+        public ushort wMinute;
+        public ushort wSecond;
+        public ushort wMilliseconds;
+    }
+"@
+    
+    # Galaxy Buds name patterns
+    $budsPatterns = @(
+        "*Galaxy Buds*",
+        "*Buds Pro*",
+        "*Buds Live*",
+        "*Buds FE*",
+        "*Buds2*",
+        "*Buds3*",
+        "*Buds4*"
+    )
+    
+    try {
+        # Add the Bluetooth API type
+        Add-Type -MemberDefinition $btApiSignature -Namespace "BluetoothAPI" -Name "NativeMethods" -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-Verbose "Bluetooth API type already loaded or error: $_"
+    }
+    
+    $removedDevices = @()
+    $failedDevices = @()
+    
+    try {
+        # Find Bluetooth radio
+        $radioParams = New-Object BluetoothAPI.NativeMethods+BLUETOOTH_FIND_RADIO_PARAMS
+        $radioParams.dwSize = [System.Runtime.InteropServices.Marshal]::SizeOf($radioParams)
+        
+        $radioHandle = [IntPtr]::Zero
+        $findRadioHandle = [BluetoothAPI.NativeMethods]::BluetoothFindFirstRadio([ref]$radioParams, [ref]$radioHandle)
+        
+        if ($findRadioHandle -eq [IntPtr]::Zero) {
+            Write-Host "  No Bluetooth radio found" -ForegroundColor Yellow
+            return @{ Removed = @(); Failed = @() }
+        }
+        
+        # Set up device search
+        $searchParams = New-Object BluetoothAPI.NativeMethods+BLUETOOTH_DEVICE_SEARCH_PARAMS
+        $searchParams.dwSize = [System.Runtime.InteropServices.Marshal]::SizeOf($searchParams)
+        $searchParams.fReturnAuthenticated = $true
+        $searchParams.fReturnRemembered = $true
+        $searchParams.fReturnUnknown = $false
+        $searchParams.fReturnConnected = $true
+        $searchParams.fIssueInquiry = $false
+        $searchParams.cTimeoutMultiplier = 0
+        $searchParams.hRadio = $radioHandle
+        
+        $deviceInfo = New-Object BluetoothAPI.NativeMethods+BLUETOOTH_DEVICE_INFO
+        $deviceInfo.dwSize = [System.Runtime.InteropServices.Marshal]::SizeOf($deviceInfo)
+        
+        $findDeviceHandle = [BluetoothAPI.NativeMethods]::BluetoothFindFirstDevice([ref]$searchParams, [ref]$deviceInfo)
+        
+        if ($findDeviceHandle -ne [IntPtr]::Zero) {
+            do {
+                $deviceName = $deviceInfo.szName
+                $isGalaxyBuds = $false
+                
+                foreach ($pattern in $budsPatterns) {
+                    if ($deviceName -like $pattern) {
+                        $isGalaxyBuds = $true
+                        break
+                    }
+                }
+                
+                if ($isGalaxyBuds) {
+                    Write-Host "    Found: $deviceName" -ForegroundColor Cyan
+                    
+                    $address = $deviceInfo.Address
+                    $result = [BluetoothAPI.NativeMethods]::BluetoothRemoveDevice([ref]$address)
+                    
+                    if ($result -eq 0) {
+                        Write-Host "    ✓ Removed: $deviceName" -ForegroundColor Green
+                        $removedDevices += $deviceName
+                    }
+                    else {
+                        Write-Host "    ✗ Failed to remove: $deviceName (Error: $result)" -ForegroundColor Red
+                        $failedDevices += $deviceName
+                    }
+                }
+            } while ([BluetoothAPI.NativeMethods]::BluetoothFindNextDevice($findDeviceHandle, [ref]$deviceInfo))
+            
+            [BluetoothAPI.NativeMethods]::BluetoothFindDeviceClose($findDeviceHandle) | Out-Null
+        }
+        
+        [BluetoothAPI.NativeMethods]::BluetoothFindRadioClose($findRadioHandle) | Out-Null
+        [BluetoothAPI.NativeMethods]::CloseHandle($radioHandle) | Out-Null
+    }
+    catch {
+        Write-Host "  ✗ Bluetooth API error: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    
+    return @{
+        Removed = $removedDevices
+        Failed  = $failedDevices
+    }
+}
+
+
+# ==================== RESET/REPAIR DEFINITIONS ====================
+
+$SamsungPackages = @{
+    "Account"         = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungAccount_3c1yjt4zspk6g"
+        Name     = "Samsung Account"
+        Critical = $true
+    }
+    "AccountPlugin"   = @{
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungAccountPluginforSa_3c1yjt4zspk6g"
+        Name     = "Samsung Account Plugin"
+        Critical = $true
+    }
+    "Settings"        = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g"
+        Name     = "Samsung Settings"
+        Critical = $false
+    }
+    "SettingsRuntime" = @{
+        Family      = "SAMSUNGELECTRONICSCO.LTD.SamsungSettingsRuntime_3c1yjt4zspk6g"
+        Name        = "Samsung Settings Runtime"
+        Critical    = $false
+        DeviceFiles = @("GalaxyBLESettings.BLE", "GalaxyBTSettings.BT")
+    }
+    "Buds"            = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.GalaxyBuds_3c1yjt4zspk6g"
+        Name     = "Galaxy Buds"
+        Critical = $false
+    }
+    "QuickShare"      = @{ 
+        Family   = "SAMSUNGELECTRONICSCoLtd.SamsungQuickShare_wyx1vj98g3asy"
+        Name     = "Samsung Quick Share"
+        Critical = $false
+    }
+    "Notes"           = @{ 
+        Family   = "SAMSUNGELECTRONICSCoLtd.SamsungNotes_wyx1vj98g3asy"
+        Name     = "Samsung Notes"
+        Critical = $false
+    }
+    "Continuity"      = @{ 
+        Family    = "SAMSUNGELECTRONICSCoLtd.SamsungContinuityService_wyx1vj98g3asy"
+        Name      = "Samsung Continuity Service"
+        Critical  = $false
+        Databases = @("PCMCFCoreDB.db", "PCMCFRsDB.db")
+    }
+    "SmartThings"     = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SmartThingsWindows_3c1yjt4zspk6g"
+        Name     = "SmartThings"
+        Critical = $false
+    }
+    "CameraShare"     = @{ 
+        Family   = "SAMSUNGELECTRONICSCoLtd.16297BCCB59BC_wyx1vj98g3asy"
+        Name     = "Camera Share"
+        Critical = $false
+    }
+    "MultiControl"    = @{ 
+        Family   = "SAMSUNGELECTRONICSCoLtd.MultiControl_wyx1vj98g3asy"
+        Name     = "Multi Control"
+        Critical = $false
+    }
+    "Gallery"         = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.PCGallery_3c1yjt4zspk6g"
+        Name     = "PC Gallery"
+        Critical = $false
+    }
+    "Pass"            = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungPass_3c1yjt4zspk6g"
+        Name     = "Samsung Pass"
+        Critical = $true
+    }
+    "SecondScreen"    = @{ 
+        Family   = "SAMSUNGELECTRONICSCoLtd.SecondScreen_wyx1vj98g3asy"
+        Name     = "Second Screen"
+        Critical = $false
+    }
+    "MyDevices"       = @{ 
+        Family    = "SAMSUNGELECTRONICSCoLtd.SamsungMyDevices_wyx1vj98g3asy"
+        Name      = "Samsung My Devices"
+        Critical  = $false
+        Databases = @("ND.sqlite3")
+    }
+    "Welcome"         = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g"
+        Name     = "Samsung Welcome"
+        Critical = $false
+    }
+    "Bixby"           = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.Bixby_3c1yjt4zspk6g"
+        Name     = "Bixby"
+        Critical = $false
+    }
+    "KnoxMatrix"      = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.KnoxMatrixforWindows_3c1yjt4zspk6g"
+        Name     = "Knox Matrix"
+        Critical = $true
+    }
+    "CloudSync"       = @{ 
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungCloudBluetoothSync_3c1yjt4zspk6g"
+        Name     = "Samsung Cloud Bluetooth Sync"
+        Critical = $false
+    }
+    "CloudPlatform"   = @{
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungCloudPlatformManag_3c1yjt4zspk6g"
+        Name     = "Samsung Cloud Platform Manager"
+        Critical = $false
+    }
+    "VoiceService"    = @{
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SamsungIntelligenceVoiceS_3c1yjt4zspk6g"
+        Name     = "Samsung Voice Service"
+        Critical = $false
+    }
+    "SmartSelect"     = @{
+        Family   = "SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g"
+        Name     = "Smart Select"
+        Critical = $false
+    }
+    "PhoneLink"       = @{
+        Family   = "SAMSUNGELECTRONICSCoLtd.4438638898209_wyx1vj98g3asy"
+        Name     = "Samsung Phone Link Integration"
+        Critical = $false
+    }
+}
+
+# ==================== RESET/REPAIR HELPER FUNCTIONS ====================
+
+function Write-Status {
+    param([string]$Message, [string]$Status = "INFO")
+    $colors = @{"OK" = "Green"; "WARN" = "Yellow"; "ERROR" = "Red"; "INFO" = "White"; "ACTION" = "Cyan"; "SKIP" = "DarkGray" }
+    $symbols = @{"OK" = "[+]"; "WARN" = "[!]"; "ERROR" = "[-]"; "INFO" = "[*]"; "ACTION" = "[>]"; "SKIP" = "[~]" }
+    Write-Host "  $($symbols[$Status]) " -ForegroundColor $colors[$Status] -NoNewline
+    Write-Host $Message
+}
+
+function Get-TargetPackages {
+    return $SamsungPackages.Keys
+}
+
+function Get-PackagePath {
+    param([string]$PackageFamily)
+    return "$env:LOCALAPPDATA\Packages\$PackageFamily"
+}
+
+function Test-PackageExists {
+    param([string]$PackageFamily)
+    return Test-Path (Get-PackagePath $PackageFamily)
+}
+
+function Backup-PackageData {
+    param([string]$PackageFamily, [string]$AppName)
+    
+    $sourcePath = Get-PackagePath $PackageFamily
+    if (-not (Test-Path $sourcePath)) { return }
+    
+    $backupRoot = "$env:LOCALAPPDATA\SamsungBackup\$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+    $backupPath = Join-Path $backupRoot $PackageFamily
+    
+    try {
+        New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+        Copy-Item "$sourcePath\*" -Destination $backupPath -Recurse -Force -ErrorAction Stop
+        Write-Status "Backed up $AppName to: $backupPath" -Status OK
+        return $backupPath
+    }
+    catch {
+        Write-Status "Backup failed for $AppName`: $($_.Exception.Message)" -Status WARN
+        return $null
+    }
+}
+
+# ==================== STOP SAMSUNG APPS ====================
+
+function Stop-SamsungApps {
+    param([switch]$All)
+    
+    Write-Status "Stopping Samsung apps..." -Status ACTION
+    
+    $processPatterns = @(
+        "Samsung*",
+        "Galaxy*",
+        "SmartThings*",
+        "Bixby*",
+        "Knox*",
+        "*16297BCCB59BC*",
+        "*4438638898209*"
+    )
+    
+    $stoppedCount = 0
+    foreach ($pattern in $processPatterns) {
+        $processes = Get-Process -Name $pattern -ErrorAction SilentlyContinue
+        foreach ($proc in $processes) {
+            try {
+                $proc | Stop-Process -Force -ErrorAction Stop
+                Write-Status "Stopped: $($proc.ProcessName)" -Status OK
+                $stoppedCount++
+            }
+            catch {
+                Write-Status "Could not stop: $($proc.ProcessName)" -Status WARN
+            }
+        }
+    }
+    
+    if ($stoppedCount -eq 0) {
+        Write-Status "No Samsung processes were running" -Status INFO
+    }
+    
+    # Give apps time to fully stop
+    Start-Sleep -Seconds 2
+}
+
+# ==================== CACHE CLEARING ====================
+
+function Clear-AppCache {
+    param([string]$PackageFamily, [string]$AppName)
+    
+    $basePath = Get-PackagePath $PackageFamily
+    if (-not (Test-Path $basePath)) {
+        Write-Status "Package not found: $AppName" -Status SKIP
+        return
+    }
+    
+    Write-Status "Clearing cache for $AppName..." -Status ACTION
+    
+    $cacheFolders = @(
+        "LocalCache",
+        "TempState",
+        "AC\INetCache",
+        "AC\INetCookies",
+        "AC\INetHistory",
+        "AC\Temp"
+    )
+    
+    $cleared = 0
+    foreach ($folder in $cacheFolders) {
+        $path = Join-Path $basePath $folder
+        if (Test-Path $path) {
+            try {
+                Remove-Item "$path\*" -Recurse -Force -ErrorAction Stop
+                $cleared++
+            }
+            catch {
+                Write-Debug "Failed to clear cache folder $path (likely locked by running process): $($_.Exception.Message)"
+            }
+        }
+    }
+    
+    if ($cleared -gt 0) {
+        Write-Status "Cleared $cleared cache folders for $AppName" -Status OK
+    }
+}
+
+# ==================== DEVICE DATA CLEARING ====================
+
+function Clear-DeviceData {
+    Write-Status "`n=== CLEARING DEVICE DATA ===" -Status ACTION
+    
+    # 1. Clear BLE/BT Settings files in Samsung Settings Runtime
+    $settingsRuntimePath = Get-PackagePath $SamsungPackages["SettingsRuntime"].Family
+    $localStatePath = Join-Path $settingsRuntimePath "LocalState"
+    
+    if (Test-Path $localStatePath) {
+        $deviceFiles = @("GalaxyBLESettings.BLE", "GalaxyBTSettings.BT")
+        foreach ($file in $deviceFiles) {
+            $filePath = Join-Path $localStatePath $file
+            if (Test-Path $filePath) {
+                try {
+                    # Backup original
+                    $backupPath = "$filePath.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                    Copy-Item $filePath $backupPath -Force
+                    
+                    # Write empty JSON array
+                    [System.IO.File]::WriteAllText($filePath, "[]")
+                    Write-Status "Cleared: $file" -Status OK
+                }
+                catch {
+                    Write-Status "Could not clear $file`: $($_.Exception.Message)" -Status ERROR
+                }
+            }
+        }
+    }
+    
+    # 2. Clear Galaxy Buds app data
+    $budsPath = Get-PackagePath $SamsungPackages["Buds"].Family
+    if (Test-Path $budsPath) {
+        $budsLocalState = Join-Path $budsPath "LocalState"
+        if (Test-Path $budsLocalState) {
+            try {
+                Get-ChildItem $budsLocalState -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared Galaxy Buds LocalState" -Status OK
+            }
+            catch {
+                Write-Status "Could not fully clear Galaxy Buds data" -Status WARN
+            }
+        }
+    }
+    
+    # 3. Clear Samsung My Devices database
+    $myDevicesPath = Get-PackagePath $SamsungPackages["MyDevices"].Family
+    $ndDatabase = Join-Path $myDevicesPath "LocalState\ND.sqlite3"
+    if (Test-Path $ndDatabase) {
+        try {
+            $backupPath = "$ndDatabase.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+            Copy-Item $ndDatabase $backupPath -Force
+            Remove-Item $ndDatabase -Force
+            Write-Status "Cleared My Devices database (ND.sqlite3)" -Status OK
+        }
+        catch {
+            Write-Status "Could not clear My Devices database: $($_.Exception.Message)" -Status WARN
+        }
+    }
+    
+    # 4. Clear Samsung Cloud Bluetooth Sync data
+    $cloudSyncPath = Get-PackagePath $SamsungPackages["CloudSync"].Family
+    if (Test-Path $cloudSyncPath) {
+        $cloudLocalState = Join-Path $cloudSyncPath "LocalState"
+        if (Test-Path $cloudLocalState) {
+            try {
+                Get-ChildItem $cloudLocalState -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared Cloud Bluetooth Sync data" -Status OK
+            }
+            catch {
+                Write-Status "Could not fully clear Cloud Sync data" -Status WARN
+            }
+        }
+    }
+    
+    # 5. Clear Continuity Service device databases
+    $continuityPath = Get-PackagePath $SamsungPackages["Continuity"].Family
+    $continuityLocalState = Join-Path $continuityPath "LocalState"
+    if (Test-Path $continuityLocalState) {
+        $databases = @("PCMCFCoreDB.db", "PCMCFRsDB.db")
+        foreach ($db in $databases) {
+            $dbPath = Join-Path $continuityLocalState $db
+            if (Test-Path $dbPath) {
+                try {
+                    $backupPath = "$dbPath.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                    Copy-Item $dbPath $backupPath -Force
+                    Remove-Item $dbPath -Force
+                    Write-Status "Cleared: $db" -Status OK
+                }
+                catch {
+                    Write-Status "Could not clear $db`: $($_.Exception.Message)" -Status WARN
+                }
+            }
+        }
+    }
+    
+    # 6. Clear ProgramData Samsung Settings device files (V2 format)
+    $programDataSettingsPath = "$env:PROGRAMDATA\Samsung\SamsungSettings"
+    if (Test-Path $programDataSettingsPath) {
+        Write-Status "Clearing ProgramData Samsung Settings device files..." -Status ACTION
+        
+        Get-ChildItem $programDataSettingsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $userFolder = $_.FullName
+            $userName = $_.Name
+            
+            # Clear BLE V2 file
+            $bleV2Path = Join-Path $userFolder "GalaxyBLESettingsV2.BLE"
+            if (Test-Path $bleV2Path) {
+                try {
+                    $backupPath = "$bleV2Path.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                    Copy-Item $bleV2Path $backupPath -Force
+                    [System.IO.File]::WriteAllText($bleV2Path, "[]")
+                    Write-Status "Cleared: GalaxyBLESettingsV2.BLE ($userName)" -Status OK
+                }
+                catch {
+                    Write-Status "Could not clear GalaxyBLESettingsV2.BLE: $($_.Exception.Message)" -Status WARN
+                }
+            }
+            
+            # Clear BT V2 file
+            $btV2Path = Join-Path $userFolder "GalaxyBTSettingsV2.BT"
+            if (Test-Path $btV2Path) {
+                try {
+                    $backupPath = "$btV2Path.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                    Copy-Item $btV2Path $backupPath -Force
+                    [System.IO.File]::WriteAllText($btV2Path, "[]")
+                    Write-Status "Cleared: GalaxyBTSettingsV2.BT ($userName)" -Status OK
+                }
+                catch {
+                    Write-Status "Could not clear GalaxyBTSettingsV2.BT: $($_.Exception.Message)" -Status WARN
+                }
+            }
+            
+            # Remove device battery images
+            Get-ChildItem $userFolder -Filter "*_BudsBattery.png" -ErrorAction SilentlyContinue | ForEach-Object {
+                try {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed: $($_.Name)" -Status OK
+                }
+                catch {
+                    Write-Status "Could not remove $($_.Name): $($_.Exception.Message)" -Status WARN
+                }
+            }
+        }
+    }
+    
+    Write-Status "Device data clearing complete" -Status OK
+}
+
+# ==================== DATABASE CLEARING ====================
+
+function Clear-AllDatabases {
+    Write-Status "`n=== CLEARING ALL DATABASES ===" -Status ACTION
+    
+    $targetPackages = Get-TargetPackages
+    
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        $basePath = Get-PackagePath $pkg.Family
+        
+        if (-not (Test-Path $basePath)) { continue }
+        
+        $dbFiles = Get-ChildItem $basePath -Recurse -Include "*.db", "*.sqlite", "*.sqlite3" -ErrorAction SilentlyContinue
+        
+        foreach ($db in $dbFiles) {
+            try {
+                $backupPath = "$($db.FullName).backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                Copy-Item $db.FullName $backupPath -Force
+                Remove-Item $db.FullName -Force
+                Write-Status "Cleared database: $($db.Name) ($($pkg.Name))" -Status OK
+            }
+            catch {
+                Write-Status "Could not clear $($db.Name): $($_.Exception.Message)" -Status WARN
+            }
+        }
+    }
+}
+
+# ==================== SETTINGS.DAT CLEARING ====================
+
+function Reset-SettingsDat {
+    param([string]$PackageFamily, [string]$AppName)
+    
+    $settingsPath = Join-Path (Get-PackagePath $PackageFamily) "Settings\settings.dat"
+    
+    if (-not (Test-Path $settingsPath)) {
+        Write-Status "No settings.dat for $AppName" -Status SKIP
+        return
+    }
+    
+    Write-Status "Resetting settings.dat for $AppName..." -Status ACTION
+    
+    try {
+        $backupPath = "$settingsPath.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Copy-Item $settingsPath $backupPath -Force
+        Write-Status "Backed up settings.dat" -Status OK
+        
+        Remove-Item $settingsPath -Force
+        Remove-Item "$settingsPath.LOG*" -Force -ErrorAction SilentlyContinue
+        
+        Write-Status "Removed settings.dat (will be recreated on app launch)" -Status OK
+    }
+    catch {
+        Write-Status "Could not reset settings.dat: $($_.Exception.Message)" -Status ERROR
+    }
+}
+
+function Reset-AllSettingsDat {
+    Write-Status "`n=== RESETTING ALL SETTINGS.DAT FILES ===" -Status ACTION
+    
+    $targetPackages = Get-TargetPackages
+    
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        Reset-SettingsDat -PackageFamily $pkg.Family -AppName $pkg.Name
+    }
+}
+
+# ==================== AUTHENTICATION DATA ====================
+
+function Clear-AuthenticationData {
+    param([switch]$KeepCredentials)
+    
+    Write-Status "`n=== CLEARING AUTHENTICATION DATA ===" -Status ACTION
+    
+    # Samsung Account data
+    $saPath = Get-PackagePath $SamsungPackages["Account"].Family
+    
+    if (-not (Test-Path $saPath)) {
+        Write-Status "Samsung Account package not found" -Status SKIP
+        return
+    }
+    
+    # Database (contains account info)
+    if (-not $KeepCredentials) {
+        $dbPath = "$saPath\LocalState\SamsungAccountInfo.db"
+        if (Test-Path $dbPath) {
+            try {
+                $backupPath = "$dbPath.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                Copy-Item $dbPath $backupPath -Force
+                Remove-Item $dbPath -Force
+                Write-Status "Removed SamsungAccountInfo.db" -Status OK
+            }
+            catch {
+                Write-Status "Could not remove database: $($_.Exception.Message)" -Status ERROR
+            }
+        }
+    }
+    
+    # WebView cache (authentication cookies/sessions)
+    $webviewPath = "$saPath\LocalState\EBWebView"
+    if (Test-Path $webviewPath) {
+        $webviewClear = @(
+            "Default\Cookies",
+            "Default\Cookies-journal",
+            "Default\Login Data",
+            "Default\Login Data-journal",
+            "Default\Session Storage",
+            "Default\Local Storage",
+            "Default\IndexedDB"
+        )
+        foreach ($item in $webviewClear) {
+            $itemPath = Join-Path $webviewPath $item
+            if (Test-Path $itemPath) {
+                try {
+                    Remove-Item $itemPath -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Status "Cleared WebView: $item" -Status OK
+                }
+                catch {
+                    Write-Status "Could not clear $item" -Status WARN
+                }
+            }
+        }
+    }
+    
+    # Clear Windows Credential Manager Samsung entries
+    if (-not $KeepCredentials) {
+        Write-Status "Checking Credential Manager..." -Status ACTION
+        $credList = cmdkey /list 2>$null
+        $samsungCreds = $credList | Select-String "Samsung|saclient" -CaseSensitive:$false
+        if ($samsungCreds) {
+            Write-Status "Found Samsung credentials in Windows Credential Manager" -Status WARN
+            Write-Status "Manual removal may be needed: cmdkey /delete:<credential_name>" -Status INFO
+        }
+    }
+}
+
+# ==================== APP REGISTRATION ====================
+
+function Invoke-AppReRegistration {
+    Write-Status "`n=== RE-REGISTERING SAMSUNG APPS ===" -Status ACTION
+    
+    $samsungPackages = Get-AppxPackage | Where-Object { 
+        $_.Name -like "*Samsung*" -or 
+        $_.Name -like "*Galaxy*" -or
+        $_.Name -like "*16297BCCB59BC*" -or
+        $_.Name -like "*4438638898209*"
+    }
+    
+    foreach ($pkg in $samsungPackages) {
+        Write-Status "Re-registering: $($pkg.Name)" -Status ACTION
+        try {
+            $manifestPath = Join-Path $pkg.InstallLocation "AppxManifest.xml"
+            if (Test-Path $manifestPath) {
+                Add-AppxPackage -Register $manifestPath -DisableDevelopmentMode -ForceApplicationShutdown -ErrorAction Stop
+                Write-Status "Re-registered: $($pkg.Name)" -Status OK
+            }
+            else {
+                Write-Status "Manifest not found for $($pkg.Name)" -Status WARN
+            }
+        }
+        catch {
+            Write-Status "Failed to re-register $($pkg.Name)`: $($_.Exception.Message)" -Status ERROR
+        }
+    }
+}
+
+# ==================== PERMISSIONS ====================
+
+function Repair-Permissions {
+    Write-Status "`n=== REPAIRING PERMISSIONS ===" -Status ACTION
+    
+    $targetPackages = Get-TargetPackages
+    
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        $folder = Get-PackagePath $pkg.Family
+        
+        if (-not (Test-Path $folder)) { continue }
+        
+        try {
+            # Reset ACL to inherited
+            $acl = Get-Acl $folder
+            $acl.SetAccessRuleProtection($false, $true)
+            Set-Acl $folder $acl
+            
+            # Ensure current user has full control
+            $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $identity.Name,
+                "FullControl",
+                "ContainerInherit,ObjectInherit",
+                "None",
+                "Allow"
+            )
+            $acl.AddAccessRule($rule)
+            Set-Acl $folder $acl
+            Write-Status "Fixed permissions for $($pkg.Name)" -Status OK
+        }
+        catch {
+            Write-Status "Permission repair failed for $($pkg.Name): $($_.Exception.Message)" -Status WARN
+        }
+    }
+}
+
+# ==================== SYSTEM DATA CLEARING ====================
+
+function Clear-SamsungSystemData {
+    Write-Status "`n=== CLEARING SAMSUNG SYSTEM DATA ===" -Status ACTION
+    
+    # ProgramData Samsung folders
+    $programDataFolders = @{
+        "SamsungSettings"            = @{ ClearAll = $false; DeviceFilesOnly = $true }
+        "SamsungContinuityService"   = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "SamsungMultiControl"        = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "QuickShare"                 = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "StorageShare"               = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "CameraSharing"              = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "GBExperienceSvc"            = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "AISelectService"            = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "Intelligence Voice Service" = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "MSSCS"                      = @{ ClearAll = $true; DeviceFilesOnly = $false }
+        "ParentalControls"           = @{ ClearAll = $true; DeviceFilesOnly = $false }
+    }
+    
+    $programDataBase = "$env:PROGRAMDATA\Samsung"
+    if (Test-Path $programDataBase) {
+        foreach ($folderName in $programDataFolders.Keys) {
+            $folderPath = Join-Path $programDataBase $folderName
+            if (Test-Path $folderPath) {
+                $config = $programDataFolders[$folderName]
+                
+                if ($config.ClearAll) {
+                    try {
+                        Get-ChildItem $folderPath -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                        }
+                        Write-Status "Cleared: ProgramData\Samsung\$folderName" -Status OK
+                    }
+                    catch {
+                        Write-Status "Could not fully clear ${folderName}: $($_.Exception.Message)" -Status WARN
+                    }
+                }
+                elseif ($config.DeviceFilesOnly) {
+                    Get-ChildItem $folderPath -Recurse -ErrorAction SilentlyContinue | Where-Object {
+                        $_.Name -match "\.BLE$|\.BT$|BudsBattery\.png$"
+                    } | ForEach-Object {
+                        try {
+                            if ($_.Name -match "\.BLE$|\.BT$") {
+                                [System.IO.File]::WriteAllText($_.FullName, "[]")
+                                Write-Status "Cleared device file: $($_.Name)" -Status OK
+                            }
+                            else {
+                                Remove-Item $_.FullName -Force
+                                Write-Status "Removed: $($_.Name)" -Status OK
+                            }
+                        }
+                        catch {
+                            Write-Status "Could not clear $($_.Name): $($_.Exception.Message)" -Status WARN
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    # LocalAppData Samsung folders (non-package)
+    $localAppDataSamsung = "$env:LOCALAPPDATA\Samsung"
+    if (Test-Path $localAppDataSamsung) {
+        Write-Status "Clearing LocalAppData Samsung folder..." -Status ACTION
+        try {
+            $passExtPath = Join-Path $localAppDataSamsung "Samsung Pass Extension"
+            if (Test-Path $passExtPath) {
+                Get-ChildItem $passExtPath -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared: Samsung Pass Extension" -Status OK
+            }
+            
+            $internetPath = Join-Path $localAppDataSamsung "Internet"
+            if (Test-Path $internetPath) {
+                Get-ChildItem $internetPath -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared: Samsung Internet" -Status OK
+            }
+        }
+        catch {
+            Write-Status "Could not fully clear LocalAppData Samsung: $($_.Exception.Message)" -Status WARN
+        }
+    }
+    
+    # Roaming AppData Samsung folders
+    $roamingAppDataSamsung = "$env:APPDATA\Samsung"
+    if (Test-Path $roamingAppDataSamsung) {
+        Write-Status "Clearing Roaming AppData Samsung folder..." -Status ACTION
+        try {
+            Get-ChildItem $roamingAppDataSamsung -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+            Write-Status "Cleared: Roaming AppData Samsung" -Status OK
+        }
+        catch {
+            Write-Status "Could not fully clear Roaming AppData Samsung: $($_.Exception.Message)" -Status WARN
+        }
+    }
+}
+
+function Clear-AllSamsungData {
+    Write-Status "`n=== CLEARING ALL SAMSUNG DATA ===" -Status ACTION
+    
+    # Clear ProgramData Samsung folder completely
+    $programDataSamsung = "$env:PROGRAMDATA\Samsung"
+    if (Test-Path $programDataSamsung) {
+        try {
+            Remove-Item $programDataSamsung -Recurse -Force -ErrorAction Stop
+            Write-Status "Deleted: ProgramData\Samsung" -Status OK
+        }
+        catch {
+            Write-Status "Could not delete ProgramData\Samsung: $($_.Exception.Message)" -Status WARN
+            try {
+                Get-ChildItem $programDataSamsung -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared all files in ProgramData\Samsung" -Status OK
+            }
+            catch {
+                Write-Status "Could not fully clear ProgramData\Samsung" -Status WARN
+            }
+        }
+    }
+    
+    # Clear ALL Samsung package folders in LocalAppData\Packages
+    $packagesPath = "$env:LOCALAPPDATA\Packages"
+    if (Test-Path $packagesPath) {
+        $samsungPackageFolders = Get-ChildItem $packagesPath -Directory -ErrorAction SilentlyContinue | 
+        Where-Object { $_.Name -match "SAMSUNG|Galaxy" }
+        
+        foreach ($folder in $samsungPackageFolders) {
+            try {
+                Remove-Item $folder.FullName -Recurse -Force -ErrorAction Stop
+                Write-Status "Deleted: Packages\$($folder.Name)" -Status OK
+            }
+            catch {
+                Write-Status "Could not delete $($folder.Name): $($_.Exception.Message)" -Status WARN
+            }
+        }
+    }
+    
+    # Clear LocalAppData Samsung (non-package)
+    $localAppDataSamsung = "$env:LOCALAPPDATA\Samsung"
+    if (Test-Path $localAppDataSamsung) {
+        try {
+            Remove-Item $localAppDataSamsung -Recurse -Force -ErrorAction Stop
+            Write-Status "Deleted: LocalAppData\Samsung" -Status OK
+        }
+        catch {
+            Write-Status "Could not delete LocalAppData\Samsung: $($_.Exception.Message)" -Status WARN
+        }
+    }
+    
+    # Clear Roaming AppData Samsung
+    $roamingAppDataSamsung = "$env:APPDATA\Samsung"
+    if (Test-Path $roamingAppDataSamsung) {
+        try {
+            Remove-Item $roamingAppDataSamsung -Recurse -Force -ErrorAction Stop
+            Write-Status "Deleted: Roaming AppData\Samsung" -Status OK
+        }
+        catch {
+            Write-Status "Could not delete Roaming AppData\Samsung: $($_.Exception.Message)" -Status WARN
+        }
+    }
+    
+    # Clear Samsung backup folder if it exists
+    $samsungBackup = "$env:LOCALAPPDATA\SamsungBackup"
+    if (Test-Path $samsungBackup) {
+        try {
+            Remove-Item $samsungBackup -Recurse -Force -ErrorAction Stop
+            Write-Status "Deleted: SamsungBackup folder" -Status OK
+        }
+        catch {
+            Write-Status "Could not delete SamsungBackup folder" -Status WARN
+        }
+    }
+}
+
+# ==================== DIAGNOSTICS ====================
+
+function Invoke-Diagnostics {
+    Write-Status "`n=== SAMSUNG DIAGNOSTICS ===" -Status ACTION
+    
+    # Check installed packages
+    Write-Status "`nInstalled Samsung packages:" -Status INFO
+    $installed = Get-AppxPackage | Where-Object { 
+        $_.Name -like "*Samsung*" -or 
+        $_.Name -like "*Galaxy*" -or
+        $_.Name -like "*16297BCCB59BC*" -or
+        $_.Name -like "*4438638898209*"
+    }
+    
+    foreach ($pkg in $installed) {
+        Write-Status "  $($pkg.Name) v$($pkg.Version)" -Status OK
+    }
+    
+    # Check device files
+    Write-Status "`nDevice data files:" -Status INFO
+    $blePath = Join-Path (Get-PackagePath $SamsungPackages["SettingsRuntime"].Family) "LocalState\GalaxyBLESettings.BLE"
+    $btPath = Join-Path (Get-PackagePath $SamsungPackages["SettingsRuntime"].Family) "LocalState\GalaxyBTSettings.BT"
+    
+    if (Test-Path $blePath) {
+        $bleContent = Get-Content $blePath -Raw -ErrorAction SilentlyContinue
+        $bleSize = (Get-Item $blePath).Length
+        if ($bleContent -match "Buds|Galaxy") {
+            Write-Status "  BLE file: Contains device data ($bleSize bytes)" -Status WARN
+        }
+        else {
+            Write-Status "  BLE file: Empty or no devices ($bleSize bytes)" -Status OK
+        }
+    }
+    
+    if (Test-Path $btPath) {
+        $btContent = Get-Content $btPath -Raw -ErrorAction SilentlyContinue
+        $btSize = (Get-Item $btPath).Length
+        if ($btContent -match "Buds|Galaxy") {
+            Write-Status "  BT file: Contains device data ($btSize bytes)" -Status WARN
+        }
+        else {
+            Write-Status "  BT file: Empty or no devices ($btSize bytes)" -Status OK
+        }
+    }
+    
+    # Check ProgramData device files (V2 format)
+    Write-Status "`nProgramData device files (V2):" -Status INFO
+    $programDataSettingsPath = "$env:PROGRAMDATA\Samsung\SamsungSettings"
+    if (Test-Path $programDataSettingsPath) {
+        Get-ChildItem $programDataSettingsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $userFolder = $_.FullName
+            $userName = $_.Name
+            
+            $bleV2Path = Join-Path $userFolder "GalaxyBLESettingsV2.BLE"
+            $btV2Path = Join-Path $userFolder "GalaxyBTSettingsV2.BT"
+            
+            if (Test-Path $bleV2Path) {
+                $bleContent = Get-Content $bleV2Path -Raw -ErrorAction SilentlyContinue
+                $bleSize = (Get-Item $bleV2Path).Length
+                if ($bleContent -match "Buds|Galaxy") {
+                    Write-Status "  BLE V2 ($userName): Contains device data ($bleSize bytes)" -Status WARN
+                }
+                else {
+                    Write-Status "  BLE V2 ($userName): Empty or no devices ($bleSize bytes)" -Status OK
+                }
+            }
+            
+            if (Test-Path $btV2Path) {
+                $btContent = Get-Content $btV2Path -Raw -ErrorAction SilentlyContinue
+                $btSize = (Get-Item $btV2Path).Length
+                if ($btContent -match "Buds|Galaxy") {
+                    Write-Status "  BT V2 ($userName): Contains device data ($btSize bytes)" -Status WARN
+                }
+                else {
+                    Write-Status "  BT V2 ($userName): Empty or no devices ($btSize bytes)" -Status OK
+                }
+            }
+            
+            $batteryImages = Get-ChildItem $userFolder -Filter "*_BudsBattery.png" -ErrorAction SilentlyContinue
+            if ($batteryImages) {
+                foreach ($img in $batteryImages) {
+                    Write-Status "  Battery image: $($img.Name)" -Status WARN
+                }
+            }
+        }
+    }
+    else {
+        Write-Status "  ProgramData Samsung Settings folder not found" -Status OK
+    }
+    
+    # Check databases
+    Write-Status "`nDatabases:" -Status INFO
+    $targetPackages = Get-TargetPackages
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        $basePath = Get-PackagePath $pkg.Family
+        
+        if (-not (Test-Path $basePath)) { continue }
+        
+        $dbFiles = Get-ChildItem $basePath -Recurse -Include "*.db", "*.sqlite", "*.sqlite3" -ErrorAction SilentlyContinue
+        foreach ($db in $dbFiles) {
+            Write-Status "  $($pkg.Name): $($db.Name) ($($db.Length) bytes)" -Status INFO
+        }
+    }
+    
+    # Check protocol handlers
+    Write-Status "`nProtocol handlers:" -Status INFO
+    $protocols = @("saclient.winui")
+    foreach ($protocol in $protocols) {
+        $protoRegPath = "HKLM:\SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\PackageRepository\Extensions\windows.protocol\$protocol"
+        if (Test-Path $protoRegPath) {
+            Write-Status "  $protocol`: Registered" -Status OK
+        }
+        else {
+            Write-Status "  $protocol`: Not found" -Status WARN
+        }
+    }
+}
+
+# ==================== MODE HANDLERS ====================
+
+function Invoke-SoftReset {
+    param([bool]$TestMode = $false)
+    
+    Write-Status "`n=== SOFT RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear app caches without removing credentials" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
+    Write-Status "Clearing caches without removing credentials`n" -Status INFO
+    
+    Stop-SamsungApps
+    
+    $targetPackages = Get-TargetPackages
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        Clear-AppCache -PackageFamily $pkg.Family -AppName $pkg.Name
+    }
+    
+    Write-Status "`nSoft reset complete. Try launching Samsung apps again." -Status OK
+}
+
+function Invoke-HardReset {
+    param([bool]$TestMode = $false)
+    
+    Write-Status "`n=== HARD RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear ALL data including sign-in credentials" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
+    Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
+    
+    $confirm = Read-Host "Are you sure? (yes/no)"
+    if ($confirm -ne "yes") {
+        Write-Status "Aborted by user" -Status INFO
+        return
+    }
+    
+    Stop-SamsungApps
+    
+    $targetPackages = Get-TargetPackages
+    foreach ($pkgKey in $targetPackages) {
+        if (-not $SamsungPackages.ContainsKey($pkgKey)) { continue }
+        $pkg = $SamsungPackages[$pkgKey]
+        
+        Clear-AppCache -PackageFamily $pkg.Family -AppName $pkg.Name
+        Reset-SettingsDat -PackageFamily $pkg.Family -AppName $pkg.Name
+    }
+    
+    Clear-AuthenticationData -KeepCredentials:$false
+    
+    Write-Status "`nHard reset complete. You will need to sign in again to Samsung Account." -Status OK
+}
+
+function Invoke-FactoryReset {
+    param([bool]$TestMode = $false)
+    
+    Write-Status "`n=== FACTORY RESET ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would COMPLETELY reset ALL Samsung app data" -Status INFO
+        Write-Status "[TEST MODE] Would wipe: credentials, devices, databases, settings, caches" -Status INFO
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
+    }
+    
+    Write-Status "WARNING: This will COMPLETELY reset ALL Samsung app data!" -Status WARN
+    Write-Status "This includes: credentials, devices, databases, settings, caches" -Status WARN
+    
+    $confirm = Read-Host "Type 'FACTORY RESET' to confirm"
+    if ($confirm -ne "FACTORY RESET") {
+        Write-Status "Aborted by user" -Status INFO
+        return
+    }
+    
+    Stop-SamsungApps
+    
+    Write-Status "`nCreating backups..." -Status ACTION
+    foreach ($pkgKey in $SamsungPackages.Keys) {
+        $pkg = $SamsungPackages[$pkgKey]
+        Backup-PackageData -PackageFamily $pkg.Family -AppName $pkg.Name
+    }
+    
+    # Clear everything
+    Clear-DeviceData
+    Clear-AllDatabases
+    Reset-AllSettingsDat
+    Clear-AuthenticationData -KeepCredentials:$false
+    
+    # Clear all caches
+    foreach ($pkgKey in $SamsungPackages.Keys) {
+        $pkg = $SamsungPackages[$pkgKey]
+        Clear-AppCache -PackageFamily $pkg.Family -AppName $pkg.Name
+    }
+    
+    # Clear LocalState folders
+    Write-Status "`nClearing LocalState folders..." -Status ACTION
+    foreach ($pkgKey in $SamsungPackages.Keys) {
+        $pkg = $SamsungPackages[$pkgKey]
+        $localStatePath = Join-Path (Get-PackagePath $pkg.Family) "LocalState"
+        if (Test-Path $localStatePath) {
+            try {
+                Get-ChildItem $localStatePath -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                Write-Status "Cleared LocalState for $($pkg.Name)" -Status OK
+            }
+            catch {
+                Write-Status "Could not fully clear LocalState for $($pkg.Name)" -Status WARN
+            }
+        }
+    }
+    
+    # Clear ProgramData and LocalAppData Samsung folders
+    Clear-AllSamsungData
+    
+    Write-Status "`nFactory reset complete." -Status OK
+    Write-Status "Restart your computer, then sign in to Samsung Account." -Status INFO
+}
+
 # ==================== PACKAGE DEFINITIONS ====================
-$PackageDatabase = @{
+$script:PackageDatabase = @{
     # CORE PACKAGES - Required for basic functionality
     Core        = @(
         @{
@@ -260,7 +1601,7 @@ $PackageDatabase = @{
         }
     )
     
-    # RECOMMENDED PACKAGES - Full Samsung experience (everything that works)
+    # RECOMMENDED PACKAGES - Essential Samsung apps 
     Recommended = @(
         @{
             Name              = "Quick Share"
@@ -272,11 +1613,22 @@ $PackageDatabase = @{
             Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
-            Name        = "Samsung Notes"
-            Id          = "9NBLGGH43VHV"
-            Category    = "Productivity"
-            Description = "Note-taking with stylus support"
-            Status      = "Working"
+            Name              = "Camera Share"
+            Id                = "9NPCS7FN6VB9"
+            Category          = "Connectivity"
+            Description       = "Use phone camera with PC apps"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
+        },
+        @{
+            Name              = "Storage Share"
+            Id                = "9MVNW0XH7HS5"
+            Category          = "Utilities"
+            Description       = "Share storage between devices"
+            Status            = "Working"
+            RequiresIntelWiFi = $true
+            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         },
         @{
             Name        = "Multi Control"
@@ -286,12 +1638,60 @@ $PackageDatabase = @{
             Status      = "Working"
         },
         @{
+            Name        = "Nearby Devices"
+            Id          = "9PHL04NJNT67"
+            Category    = "Connectivity"
+            Description = "Manage and connect to nearby Samsung devices"
+            Status      = "Working"
+        },
+        @{
+            Name        = "Samsung Notes"
+            Id          = "9NBLGGH43VHV"
+            Category    = "Productivity"
+            Description = "Note-taking with stylus support"
+            Status      = "Working"
+        },
+        @{
+            Name        = "AI Select"
+            Id          = "9PM11FHJQLZ4"
+            Category    = "Productivity"
+            Description = "Smart screenshot tool with text extraction and AI features"
+            Status      = "Working"
+            Tip         = "TIP: If you have a Windows Precision Touchpad, you can configure the 4-finger tap gesture to launch AI Select via Settings > Bluetooth & devices > Touchpad > Advanced gestures"
+        },
+        @{
             Name        = "Samsung Gallery"
             Id          = "9NBLGGH4N9R9"
             Category    = "Media"
             Description = "Photo and video gallery with cloud sync"
             Status      = "Working"
         },
+        @{
+            Name        = "Galaxy Buds"
+            Id          = "9NHTLWTKFZNB"
+            Category    = "Accessories"
+            Description = "Galaxy Buds management and settings"
+            Status      = "Working"
+        },
+        @{
+            Name        = "Samsung Pass"
+            Id          = "9MVWDZ5KX9LH"
+            Category    = "Security"
+            Description = "Password manager with biometric auth"
+            Status      = "Working"
+            Warning     = "Untested on non-Samsung devices - may require additional setup"
+        },
+        @{
+            Name        = "Second Screen"
+            Id          = "9PLTXW5DX5KB"
+            Category    = "Productivity"
+            Description = "Use tablet as secondary display"
+            Status      = "Working"
+        }
+    )
+    
+    # RECOMMENDED PLUS PACKAGES - Additional working apps for full experience
+    RecommendedPlus = @(
         @{
             Name        = "Samsung Studio"
             Id          = "9P312B4TZFFH"
@@ -329,47 +1729,10 @@ $PackageDatabase = @{
             Status      = "Working"
         },
         @{
-            Name        = "Galaxy Buds"
-            Id          = "9NHTLWTKFZNB"
-            Category    = "Accessories"
-            Description = "Galaxy Buds management and settings"
-            Status      = "Working"
-        },
-        @{
             Name        = "Samsung Parental Controls"
             Id          = "9N5GWJTCZKGS"
             Category    = "Security"
             Description = "Manage children's device usage"
-            Status      = "Working"
-        },
-        @{
-            Name        = "AI Select"
-            Id          = "9PM11FHJQLZ4"
-            Category    = "Productivity"
-            Description = "Smart screenshot tool with text extraction and AI features"
-            Status      = "Working"
-        },
-        @{
-            Name        = "Nearby Devices"
-            Id          = "9PHL04NJNT67"
-            Category    = "Connectivity"
-            Description = "Manage and connect to nearby Samsung devices"
-            Status      = "Working"
-        },
-        @{
-            Name              = "Storage Share"
-            Id                = "9MVNW0XH7HS5"
-            Category          = "Utilities"
-            Description       = "Share storage between devices"
-            Status            = "Working"
-            RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
-        },
-        @{
-            Name        = "Second Screen"
-            Id          = "9PLTXW5DX5KB"
-            Category    = "Productivity"
-            Description = "Use tablet as secondary display"
             Status      = "Working"
         },
         @{
@@ -385,14 +1748,6 @@ $PackageDatabase = @{
             Category    = "Utilities"
             Description = "Transfer data to new Galaxy Book"
             Status      = "Working"
-        },
-        @{
-            Name        = "Samsung Pass"
-            Id          = "9MVWDZ5KX9LH"
-            Category    = "Security"
-            Description = "Password manager with biometric auth"
-            Status      = "Working"
-            Warning     = "Untested on non-Samsung devices - may require additional setup"
         }
     )
     
@@ -449,15 +1804,6 @@ $PackageDatabase = @{
             Description = "Firmware and driver updates"
             Status      = "NotWorking"
             Warning     = "This app will NOT work on non-Samsung devices (requires genuine hardware)"
-        },
-        @{
-            Name              = "Camera Share"
-            Id                = "9NPCS7FN6VB9"
-            Category          = "Connectivity"
-            Description       = "Use phone camera with PC apps"
-            Status            = "Working"
-            RequiresIntelWiFi = $true
-            Warning           = "Requires Intel Wi-Fi (some AC/AX/BE) AND Intel Bluetooth"
         }
     )
     
@@ -691,6 +2037,142 @@ function Get-SamsungDriverCab {
     catch {
         Write-Error "Failed to download CAB: $($_.Exception.Message)"
         return $null
+    }
+}
+
+function Expand-SSSECab {
+    param(
+        [string]$CabPath,
+        [string]$ExtractRoot
+    )
+    
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $extractDir = Join-Path $ExtractRoot "CAB_Extract_$timestamp"
+    $level1Dir = Join-Path $extractDir "Level1"
+    $level2Dir = Join-Path $extractDir "Level2_settings_x64"
+    
+    try {
+        # Create extraction directories
+        New-Item -Path $level1Dir -ItemType Directory -Force | Out-Null
+        New-Item -Path $level2Dir -ItemType Directory -Force | Out-Null
+        
+        # LEVEL 1: Extract main CAB
+        Write-Host "  Extracting main CAB..." -ForegroundColor Yellow
+        $expandResult = & expand.exe "$CabPath" -F:* "$level1Dir" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to extract main CAB: $expandResult"
+        }
+        
+        # Find the .inf and .cat files (driver files)
+        $infFile = Get-ChildItem -Path $level1Dir -Filter "*.inf" -File | Select-Object -First 1
+        $catFile = Get-ChildItem -Path $level1Dir -Filter "*.cat" -File | Select-Object -First 1
+        
+        # LEVEL 2: Extract inner settings_x64.cab
+        $settingsCab = Get-ChildItem -Path $level1Dir -Filter "settings_x64.cab" -File
+        if (-not $settingsCab) {
+            throw "settings_x64.cab not found in main CAB"
+        }
+        
+        Write-Host "  Extracting inner CAB..." -ForegroundColor Yellow
+        $expandResult = & expand.exe "$($settingsCab.FullName)" -F:* "$level2Dir" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to extract settings_x64.cab: $expandResult"
+        }
+        
+        return @{
+            ExtractDir = $extractDir
+            Level1Dir  = $level1Dir
+            Level2Dir  = $level2Dir
+            InfFile    = $infFile
+            CatFile    = $catFile
+        }
+    }
+    catch {
+        Write-Error "Extraction failed: $_"
+        return $null
+    }
+}
+
+function Update-SSSEBinary {
+    param(
+        [string]$ExePath
+    )
+    
+    if (-not (Test-Path $ExePath)) {
+        Write-Error "Binary not found: $ExePath"
+        return $false
+    }
+    
+    $backupExePath = "$ExePath.backup"
+    Copy-Item $ExePath $backupExePath -Force
+    Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
+    
+    $fileBytes = [System.IO.File]::ReadAllBytes($ExePath)
+    
+    $patchCount = 0
+    
+    for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+        if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
+            ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
+            $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
+            $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
+            $fileBytes[$i + 7] -eq 0x0F -and $fileBytes[$i + 8] -eq 0x85) {
+            
+            $reg = if ($fileBytes[$i + 2] -eq 0xF0) { "R14" } else { "R15" }
+            $patchOffset = $i + 7
+            
+            $fileBytes[$patchOffset] = 0x48
+            $fileBytes[$patchOffset + 1] = 0xE9
+            
+            Write-Host "    Primary patch @ 0x$($patchOffset.ToString('X5')): 0F 85 -> 48 E9 (MOV $reg pattern)" -ForegroundColor Green
+            $patchCount++
+            $searchEnd = [Math]::Min($i + 512, $fileBytes.Length - 10)
+            for ($j = $i + 12; $j -lt $searchEnd; $j++) {
+                if ($fileBytes[$j] -eq 0xE8 -and
+                    $fileBytes[$j + 5] -eq 0x48 -and $fileBytes[$j + 6] -eq 0x83 -and
+                    $fileBytes[$j + 7] -eq 0xF8 -and $fileBytes[$j + 8] -eq 0xFF -and
+                    $fileBytes[$j + 9] -eq 0x75) {
+                    
+                    $secPatchOffset = $j + 9
+                    $fileBytes[$secPatchOffset] = 0xEB
+                    
+                    Write-Host "    Secondary patch @ 0x$($secPatchOffset.ToString('X5')): 75 -> EB (6.x compatibility)" -ForegroundColor Green
+                    $patchCount++
+                    break
+                }
+            }
+            break  
+        }
+    }
+    
+    if ($patchCount -eq 0) {
+        $alreadyPatched = $false
+        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
+            if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
+                ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
+                $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
+                $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
+                $fileBytes[$i + 7] -eq 0x48 -and $fileBytes[$i + 8] -eq 0xE9) {
+                $alreadyPatched = $true
+                break
+            }
+        }
+        
+        if ($alreadyPatched) {
+            Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
+            return $true
+        }
+        else {
+            Write-Host "    ⚠ Pattern not found - unknown SSSE version" -ForegroundColor Yellow
+            Write-Host "    Please report this version for analysis" -ForegroundColor Gray
+            return $false
+        }
+    }
+    else {
+        # Write patched bytes back to file
+        [System.IO.File]::WriteAllBytes($ExePath, $fileBytes)
+        Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+        return $true
     }
 }
 
@@ -995,36 +2477,57 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Download CAB - Version Selection
-    Write-Host "`nDownloading Samsung System Support Service CAB..." -ForegroundColor Cyan
+    # Download CAB - Dual Version Strategy for Fresh Install
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "  SSSE Installation Strategy" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
     
-    # Use ForceVersion if provided (for quick upgrades), otherwise show menu
+    # Use ForceVersion if provided (for quick upgrades), otherwise use dual-version strategy
     if ($ForceVersion) {
         $cabVersion = $ForceVersion
+        $installedVersion = $ForceVersion  # Track installed version
         Write-Host "  Using specified version: $cabVersion" -ForegroundColor Cyan
-    } else {
+        $useDualVersionStrategy = $false
+    }
+    else {
         Write-Host ""
-        Write-Host "Available versions:" -ForegroundColor Yellow
-        Write-Host "  [1] 6.3.3.0 - RECOMMENDED for first install (most compatible)" -ForegroundColor Green
-        Write-Host "  [2] 7.1.2.0 - Latest version (requires 6.3.3.0 first)" -ForegroundColor Cyan
-        Write-Host "  [3] Other   - Choose from all available versions" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "⚠️  IMPORTANT: You MUST install 6.3.3.0 first and run Samsung Settings" -ForegroundColor Yellow
-        Write-Host "   at least once before upgrading to 7.1.2.0!" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "   Upgrade path: 6.3.3.0 → Run Samsung Settings → Reboot → 7.1.2.0" -ForegroundColor Gray
+        Write-Host "  Recommended: In-place upgrade strategy" -ForegroundColor Green
+        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest 7.1.2.0" -ForegroundColor Gray
+        Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
         Write-Host ""
         
-        $versionChoice = Read-Host "Select version [1-3] (default: 1)"
+        $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
         
-        $cabVersion = switch ($versionChoice) {
-            "2" { "7.1.2.0" }
-            "3" { $null }  # Will show interactive menu
-            default { "6.3.3.0" }  # Default to 6.3.3.0
+        if ($strategyChoice -like "n*") {
+            # Fallback to manual version selection
+            Write-Host ""
+            Write-Host "  Available versions:" -ForegroundColor Yellow
+            Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
+            Write-Host "    [2] 7.1.2.0 - Latest" -ForegroundColor White
+            Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
+            Write-Host ""
+            
+            $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
+            
+            $cabVersion = switch ($versionChoice) {
+                "2" { "7.1.2.0" }
+                "3" { $null }  # Will show interactive menu
+                default { "6.3.3.0" }
+            }
+            
+            if ($cabVersion) {
+                Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
+            }
+            $installedVersion = $cabVersion  # Track installed version for single-version install
+            $useDualVersionStrategy = $false
         }
-        
-        if ($cabVersion) {
-            Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
+        else {
+            # Use dual-version strategy
+            $cabVersion = "6.1.8.0"  # Primary version for patched exe
+            $driverVersion = "7.1.2.0"  # Driver version for DriverStore
+            $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
+            $useDualVersionStrategy = $true
+            Write-Host "  ✓ Will install 6.1.8.0 then upgrade to 7.1.2.0" -ForegroundColor Green
         }
     }
     
@@ -1077,45 +2580,19 @@ function Install-SystemSupportEngine {
     # Extract and patch
     Write-Host "`nExtracting and patching binary..." -ForegroundColor Cyan
     
-    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $extractDir = Join-Path $tempDir "CAB_Extract_$timestamp"
-    $level1Dir = Join-Path $extractDir "Level1"
-    $level2Dir = Join-Path $extractDir "Level2_settings_x64"
+    $extractResult = Expand-SSSECab -CabPath $cabResult.FilePath -ExtractRoot $tempDir
     
     try {
-        # Create extraction directories
-        New-Item -Path $level1Dir -ItemType Directory -Force | Out-Null
-        New-Item -Path $level2Dir -ItemType Directory -Force | Out-Null
-        
-        # LEVEL 1: Extract main CAB
-        Write-Host "  [1/7] Extracting main CAB..." -ForegroundColor Yellow
-        $expandResult = & expand.exe "$($cabResult.FilePath)" -F:* "$level1Dir" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract main CAB: $expandResult"
+        if (-not $extractResult) {
+            throw "Extraction failed"
         }
-        Write-Host "  ✓ Main CAB extracted" -ForegroundColor Green
-        
-        # Find the .inf and .cat files (driver files)
-        $infFile = Get-ChildItem -Path $level1Dir -Filter "*.inf" -File | Select-Object -First 1
-        $catFile = Get-ChildItem -Path $level1Dir -Filter "*.cat" -File | Select-Object -First 1
-        
-        if (-not $infFile -or -not $catFile) {
-            Write-Warning "Driver files (.inf/.cat) not found in main CAB"
-        }
-        
-        # LEVEL 2: Extract inner settings_x64.cab
-        $settingsCab = Get-ChildItem -Path $level1Dir -Filter "settings_x64.cab" -File
-        if (-not $settingsCab) {
-            throw "settings_x64.cab not found in main CAB"
-        }
-        
-        Write-Host "  [2/7] Extracting inner CAB..." -ForegroundColor Yellow
-        $expandResult = & expand.exe "$($settingsCab.FullName)" -F:* "$level2Dir" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract settings_x64.cab: $expandResult"
-        }
-        Write-Host "  ✓ Inner CAB extracted" -ForegroundColor Green
-        
+    
+        $extractDir = $extractResult.ExtractDir
+        # $level1Dir = $extractResult.Level1Dir # Unused
+        $level2Dir = $extractResult.Level2Dir
+        $infFile = $extractResult.InfFile
+        $catFile = $extractResult.CatFile
+    
         # List all files extracted
         Write-Host "`n  Extracted files:" -ForegroundColor Cyan
         $level2Files = Get-ChildItem -Path $level2Dir -Recurse -File
@@ -1123,11 +2600,11 @@ function Install-SystemSupportEngine {
             Write-Host "    → $($file.Name)" -ForegroundColor Gray
         }
         Write-Host ""
-        
+    
         # Find the executables (search recursively in case they're in subdirectories)
         $ssseExe = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
         $ssseService = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportService.exe" -File -Recurse
-        
+    
         if (-not $ssseExe) {
             Write-Host "  ✗ SamsungSystemSupportEngine.exe not found in extracted files!" -ForegroundColor Red
             Write-Host "  Available .exe files:" -ForegroundColor Yellow
@@ -1142,27 +2619,28 @@ function Install-SystemSupportEngine {
             }
             throw "SamsungSystemSupportEngine.exe not found"
         }
-        
+    
         Write-Host "  ✓ Found executable: $($ssseExe.Name)" -ForegroundColor Green
         if ($ssseService) {
             Write-Host "  ✓ Found service: $($ssseService.Name)" -ForegroundColor Green
         }
-        
+    
         # Create C:\SamSysSupSvc directory
         Write-Host "  [3/7] Creating installation directory..." -ForegroundColor Yellow
         if (Test-Path $InstallPath) {
             Write-Host "  ⚠ Directory exists, backing up..." -ForegroundColor Yellow
+            $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
             $backupPath = "$InstallPath`_backup_$timestamp"
             Copy-Item -Path $InstallPath -Destination $backupPath -Recurse -Force
             Write-Host "  ✓ Backup created: $backupPath" -ForegroundColor Green
         }
-        
+    
         New-Item -Path $InstallPath -ItemType Directory -Force | Out-Null
         Write-Host "  ✓ Created: $InstallPath" -ForegroundColor Green
-        
+    
         # Kill any running Samsung processes before copying
         Write-Host "  [4/7] Stopping Samsung processes..." -ForegroundColor Yellow
-        
+    
         $samsungProcesses = @(
             "SamsungSystemSupportEngine",
             "SamsungSystemSupportService", 
@@ -1172,7 +2650,7 @@ function Install-SystemSupportEngine {
             "SettingsEngineTest",
             "SettingsExtensionLauncher"
         )
-        
+    
         $killedProcesses = @()
         foreach ($procName in $samsungProcesses) {
             $processes = Get-Process -Name $procName -ErrorAction SilentlyContinue
@@ -1188,7 +2666,7 @@ function Install-SystemSupportEngine {
                 }
             }
         }
-        
+    
         if ($killedProcesses.Count -gt 0) {
             Write-Host "    ✓ Stopped $($killedProcesses.Count) process(es)" -ForegroundColor Green
             Start-Sleep -Seconds 2  # Give processes time to fully exit
@@ -1236,91 +2714,37 @@ function Install-SystemSupportEngine {
         Write-Host "  [6/7] Patching binary..." -ForegroundColor Yellow
         
         $targetExePath = Join-Path $InstallPath "SamsungSystemSupportEngine.exe"
-        $backupExePath = "$targetExePath.backup"
-        
-        # Create backup
-        Copy-Item $targetExePath $backupExePath -Force
-        Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
-        
-        $fileBytes = [System.IO.File]::ReadAllBytes($targetExePath)
-        
-        # Function to find byte pattern
-        function Find-Pattern {
-            param([byte[]]$Bytes, [byte[]]$Pattern)
-            for ($i = 0; $i -le ($Bytes.Length - $Pattern.Length); $i++) {
-                $match = $true
-                for ($j = 0; $j -lt $Pattern.Length; $j++) {
-                    if ($Bytes[$i + $j] -ne $Pattern[$j]) {
-                        $match = $false
-                        break
-                    }
-                }
-                if ($match) { return $i }
-            }
-            return -1
-        }
-        
-        $patchCount = 0
-        $needsSecondaryPatch = $false
-        
+        $patchResult = Update-SSSEBinary -ExePath $targetExePath
 
-        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-            if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i+1] -eq 0x8B -and 
-                ($fileBytes[$i+2] -eq 0xF0 -or $fileBytes[$i+2] -eq 0xF8) -and
-                $fileBytes[$i+3] -eq 0x48 -and $fileBytes[$i+4] -eq 0x83 -and
-                $fileBytes[$i+5] -eq 0xF8 -and $fileBytes[$i+6] -eq 0xFF -and
-                $fileBytes[$i+7] -eq 0x0F -and $fileBytes[$i+8] -eq 0x85) {
-                
-                $reg = if ($fileBytes[$i+2] -eq 0xF0) { "R14" } else { "R15" }
-                $patchOffset = $i + 7
-                
-                $fileBytes[$patchOffset] = 0x48
-                $fileBytes[$patchOffset + 1] = 0xE9
-                
-                Write-Host "    Primary patch @ 0x$($patchOffset.ToString('X5')): 0F 85 -> 48 E9 (MOV $reg pattern)" -ForegroundColor Green
-                $patchCount++
-                $searchEnd = [Math]::Min($i + 512, $fileBytes.Length - 10)
-                for ($j = $i + 12; $j -lt $searchEnd; $j++) {
-                    if ($fileBytes[$j] -eq 0xE8 -and
-                        $fileBytes[$j+5] -eq 0x48 -and $fileBytes[$j+6] -eq 0x83 -and
-                        $fileBytes[$j+7] -eq 0xF8 -and $fileBytes[$j+8] -eq 0xFF -and
-                        $fileBytes[$j+9] -eq 0x75) {
-                        
-                        $secPatchOffset = $j + 9
-                        $fileBytes[$secPatchOffset] = 0xEB
-                        
-                        Write-Host "    Secondary patch @ 0x$($secPatchOffset.ToString('X5')): 75 -> EB (6.x compatibility)" -ForegroundColor Green
-                        $patchCount++
-                        break
-                    }
-                }
-                break  
-            }
-        }
-        
-        if ($patchCount -eq 0) {
-            $alreadyPatched = $false
-            for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-                if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i+1] -eq 0x8B -and 
-                    ($fileBytes[$i+2] -eq 0xF0 -or $fileBytes[$i+2] -eq 0xF8) -and
-                    $fileBytes[$i+3] -eq 0x48 -and $fileBytes[$i+4] -eq 0x83 -and
-                    $fileBytes[$i+5] -eq 0xF8 -and $fileBytes[$i+6] -eq 0xFF -and
-                    $fileBytes[$i+7] -eq 0x48 -and $fileBytes[$i+8] -eq 0xE9) {
-                    $alreadyPatched = $true
-                    break
+        if (-not $patchResult) {
+            Write-Host "  ✗ Patching failed - cleaning up installation..." -ForegroundColor Red
+            
+            # Stop and remove any services that may have been partially configured
+            $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
+            foreach ($svcName in $serviceNames) {
+                $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                if ($svc) {
+                    Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+                    & sc.exe delete $svcName 2>&1 | Out-Null
+                    Write-Host "    ✓ Service '$svcName' removed" -ForegroundColor Green
                 }
             }
             
-            if ($alreadyPatched) {
-                Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
-            } else {
-                Write-Host "    ⚠ Pattern not found - unknown SSSE version" -ForegroundColor Yellow
-                Write-Host "    Please report this version for analysis" -ForegroundColor Gray
+            # Remove installation folder
+            if (Test-Path $InstallPath) {
+                Remove-Item -Path $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ Installation folder removed" -ForegroundColor Green
             }
-        } else {
-            # Write patched bytes back to file
-            [System.IO.File]::WriteAllBytes($targetExePath, $fileBytes)
-            Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+            
+            # Remove user folder (.galaxy-book-enabler)
+            $userFolder = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
+            if (Test-Path $userFolder) {
+                Remove-Item -Path $userFolder -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ User folder removed" -ForegroundColor Green
+            }
+            
+            Write-Error "Binary patching failed - cannot continue with unpatched Samsung System Support Engine"
+            throw "Binary patching failed"
         }
         
         # Handle conflicting services
@@ -1597,6 +3021,134 @@ function Install-SystemSupportEngine {
             }
         }
         
+        # DUAL-VERSION STRATEGY: Download and install 7.1.2.0 driver-only
+        if ($useDualVersionStrategy) {
+            Write-Host "`n  [DUAL-VERSION] Downloading 7.1.2.0 driver..." -ForegroundColor Cyan
+            
+            $driverCabResult = Get-SamsungDriverCab -Version $driverVersion -OutputPath $tempDir
+            
+            if ($driverCabResult) {
+                # Extract just the driver files from 7.1.2.0
+                $driverExtractDir = Join-Path $extractDir "Driver_7120"
+                New-Item -Path $driverExtractDir -ItemType Directory -Force | Out-Null
+                
+                $expandResult = & expand.exe "$($driverCabResult.FilePath)" -F:* "$driverExtractDir" 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $driverInfFile = Get-ChildItem -Path $driverExtractDir -Filter "*.inf" -File | Select-Object -First 1
+                    
+                    if ($driverInfFile) {
+                        Write-Host "    Installing 7.1.2.0 driver to DriverStore..." -ForegroundColor Yellow
+                        
+                        if (-not $TestMode) {
+                            $pnputilResult = & pnputil /add-driver "$($driverInfFile.FullName)" /install 2>&1
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host "    ✓ 7.1.2.0 driver added to DriverStore" -ForegroundColor Green
+                            }
+                            else {
+                                Write-Host "    ⚠ Driver add had issues: $pnputilResult" -ForegroundColor Yellow
+                            }
+                        }
+                        else {
+                            Write-Host "    [TEST] Would add 7.1.2.0 driver to DriverStore" -ForegroundColor Gray
+                        }
+                    }
+                    else {
+                        Write-Host "    ⚠ No .inf file found in 7.1.2.0 CAB" -ForegroundColor Yellow
+                    }
+                }
+                else {
+                    Write-Host "    ⚠ Failed to extract 7.1.2.0 CAB: $expandResult" -ForegroundColor Yellow
+                }
+                
+                # Cleanup
+                Remove-Item $driverExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+
+                # ==============================================================================
+                # DUAL-VERSION PHASE 2: Core Apps & Binary Replacement
+                # ==============================================================================
+                
+                # 1. Install Core Packages (Samsung Settings, etc.)
+                Write-Host "`n  [DUAL-VERSION] Installing Core Packages..." -ForegroundColor Cyan
+                Install-SamsungPackages -Packages $script:PackageDatabase.Core -TestMode $TestMode
+                
+                # 2. Launch Samsung Settings to trigger Store update
+                Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
+                try {
+                    # Samsung Settings AppID
+                    $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
+                    Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+                    Write-Host "  ✓ Samsung Settings launched" -ForegroundColor Green
+                    
+                    # Wait for user confirmation or delay
+                    Write-Host "`n  IMPORTANT: Check if Samsung Settings opened." -ForegroundColor Yellow
+                    Write-Host "  Please follow these steps to sync your devices:" -ForegroundColor Cyan
+                    Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
+                    Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
+                    Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
+                    Write-Host "    4. Click on it to open Samsung Cloud" -ForegroundColor White
+                    Write-Host "    5. Click 'Sync now'" -ForegroundColor White
+                    Write-Host "    6. Verify it shows your paired Samsung devices" -ForegroundColor White
+                    Write-Host "       (Note: Buds2/3 (Pro/Non-Pro) may not appear if they don't support multipoint)" -ForegroundColor Gray
+                    Write-Host ""
+                    Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
+                    Read-Host
+                }
+                catch {
+                    Write-Warning "Failed to launch Samsung Settings: $_"
+                    Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
+                    Write-Host "  Then follow the sync instructions above." -ForegroundColor Gray
+                    Read-Host "  Press Enter when ready..."
+                }
+                
+                # 3. Stop Services & Processes
+                Write-Host "`n  [DUAL-VERSION] Stopping services for binary replacement..." -ForegroundColor Cyan
+                Stop-SamsungProcesses
+                Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+                
+                # 4. Extract 7.1.2.0 Binary
+                Write-Host "`n  [DUAL-VERSION] Extracting 7.1.2.0 binary..." -ForegroundColor Cyan
+                $extract7Result = Expand-SSSECab -CabPath $driverCabResult.FilePath -ExtractRoot $tempDir
+                
+                if ($extract7Result) {
+                    $ssseExe7 = Get-ChildItem -Path $extract7Result.Level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
+                    
+                    if ($ssseExe7) {
+                        # 5. Patch 7.1.2.0 Binary
+                        Write-Host "    Patching 7.1.2.0 binary..." -ForegroundColor Yellow
+                        $patch7Result = Update-SSSEBinary -ExePath $ssseExe7.FullName
+                        
+                        if ($patch7Result) {
+                            # 6. Replace Binary
+                            Write-Host "    Replacing binary in $InstallPath..." -ForegroundColor Yellow
+                            Copy-Item -Path $ssseExe7.FullName -Destination $InstallPath -Force
+                            Write-Host "    ✓ Binary replaced with 7.1.2.0 version" -ForegroundColor Green
+                            
+                            # Update installed version tracker
+                            $installedVersion = $driverVersion
+                            
+                            # 7. Restart Service
+                            Write-Host "    Restarting service..." -ForegroundColor Yellow
+                            Start-Service -Name "GBeSupportService"
+                            Write-Host "    ✓ Service restarted" -ForegroundColor Green
+                        }
+                        else {
+                            Write-Error "Failed to patch 7.1.2.0 binary"
+                        }
+                    }
+                    else {
+                        Write-Error "SamsungSystemSupportEngine.exe not found in 7.1.2.0 CAB"
+                    }
+                }
+                else {
+                    Write-Error "Failed to extract 7.1.2.0 CAB"
+                }
+            }
+            else {
+                Write-Host "    ⚠ Failed to download 7.1.2.0 driver CAB" -ForegroundColor Yellow
+            }
+        }
+        
         # Cleanup temp extraction
         Write-Host "`n  Cleaning up temporary files..." -ForegroundColor Gray
         Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -1638,8 +3190,12 @@ function Install-SystemSupportEngine {
         Write-Host "  ✓ SSSE Installation Complete!" -ForegroundColor Green
         Write-Host "========================================`n" -ForegroundColor Green
         
+        # Determine final installed version for display
+        $finalVersion = if ($installedVersion) { $installedVersion } else { $cabVersion }
+        
         Write-Host "Installation Summary:" -ForegroundColor Cyan
         Write-Host "  Location: $InstallPath" -ForegroundColor White
+        Write-Host "  Version: $finalVersion" -ForegroundColor White
         Write-Host "  Service: GBeSupportService" -ForegroundColor White
         Write-Host "  Binary: Patched ✓" -ForegroundColor Green
         Write-Host "  Driver: Added to DriverStore ✓" -ForegroundColor Green
@@ -1659,11 +3215,11 @@ function Install-SystemSupportEngine {
         $samsungPackages = @(
             @{
                 Name = "Samsung Settings"
-                Id = "9P2TBWSHK6HJ"
+                Id   = "9P2TBWSHK6HJ"
             },
             @{
                 Name = "Samsung Settings Runtime"
-                Id = "9NL68DVFP841"
+                Id   = "9NL68DVFP841"
             }
         )
         
@@ -1707,12 +3263,15 @@ function Install-SystemSupportEngine {
         Write-Host "    • Check Event Viewer for errors" -ForegroundColor Gray
         Write-Host "    • Ensure antivirus isn't blocking the patched executable" -ForegroundColor Gray
         
-        # Show upgrade notice for 6.x versions
-        if ($cabVersion -and $cabVersion -like "6.*") {
+        # Show upgrade notice only if not on latest version
+        if ($finalVersion -and $finalVersion -like "6.*") {
             Write-Host "`n💡 UPGRADE TIP:" -ForegroundColor Cyan
-            Write-Host "  You installed SSSE version $cabVersion (stable, compatible)" -ForegroundColor White
+            Write-Host "  You installed SSSE version $finalVersion (stable, compatible)" -ForegroundColor White
             Write-Host "  Later, you can upgrade to 7.1.2.0 for new features:" -ForegroundColor White
             Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Yellow
+        }
+        elseif ($finalVersion) {
+            Write-Host "`n✓ You are running the latest SSSE version ($finalVersion)" -ForegroundColor Green
         }
         
         Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
@@ -1842,7 +3401,7 @@ function Remove-SamsungSettingsPackages {
 Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFullName' } | Remove-AppxPackage -AllUsers -ErrorAction Stop
 "@
                 
-                $result = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock 2>&1 | Out-Null
                 
                 # Verify removal
                 $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
@@ -1899,7 +3458,7 @@ Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFull
         if (-not $removed) {
             Write-Host "  ✗ Failed to remove $packageName after trying all methods" -ForegroundColor Red
             $results.Failed += @{
-                Name    = $packageName
+                Name     = $packageName
                 FullName = $packageFullName
             }
         }
@@ -1909,55 +3468,147 @@ Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFull
 }
 
 function Uninstall-SamsungApps {
-    <#
-    .SYNOPSIS
-        Uninstalls all Samsung AppX packages from the system
+    param(
+        [switch]$DeleteData,
+        [bool]$TestMode = $false
+    )
     
-    .DESCRIPTION
-        Uses Get-AppxPackage and Remove-AppxPackage to properly remove Samsung apps.
-        This is more reliable than winget for AppX packages.
-    #>
+    Write-Status "`n=== UNINSTALLING SAMSUNG APPS ===" -Status ACTION
     
-    Write-Host "Removing Samsung apps..." -ForegroundColor Cyan
-    
-    # Get all Samsung packages
-    $samsungPackages = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*Samsung*" }
-    
-    if ($samsungPackages.Count -eq 0) {
-        Write-Host "  No Samsung packages found" -ForegroundColor Gray
-        return 0
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would uninstall all Samsung apps" -Status INFO
+        if ($DeleteData) {
+            Write-Status "[TEST MODE] Would also DELETE all app data" -Status INFO
+        }
+        Write-Status "[TEST MODE] No changes applied" -Status OK
+        return
     }
     
-    Write-Host "  Found $($samsungPackages.Count) Samsung package(s)" -ForegroundColor Gray
+    if ($DeleteData) {
+        Write-Status "WARNING: This will also DELETE all app data!" -Status WARN
+    }
     
-    $removedCount = 0
-    $failedCount = 0
+    $samsungPackages = Get-AppxPackage | Where-Object { 
+        $_.Name -like "*Samsung*" -or 
+        $_.Name -like "*Galaxy*" -or
+        $_.Name -like "*16297BCCB59BC*" -or
+        $_.Name -like "*4438638898209*"
+    }
     
     foreach ($pkg in $samsungPackages) {
-        Write-Host "  Removing: $($pkg.Name)..." -ForegroundColor Gray
+        Write-Status "Uninstalling: $($pkg.Name)" -Status ACTION
         try {
-            $pkg | Remove-AppxPackage -AllUsers -ErrorAction Stop
-            Write-Host "    ✓ Uninstalled" -ForegroundColor Green
-            $removedCount++
+            Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction Stop
+            Write-Status "Uninstalled: $($pkg.Name)" -Status OK
         }
         catch {
-            Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
-            $failedCount++
+            Write-Status "Failed to uninstall $($pkg.Name)`: $($_.Exception.Message)" -Status ERROR
         }
     }
     
-    Write-Host "  ✓ Removed $removedCount package(s)" -ForegroundColor Green
-    if ($failedCount -gt 0) {
-        Write-Host "  ✗ Failed to remove $failedCount package(s)" -ForegroundColor Yellow
+    if ($DeleteData) {
+        Write-Status "`nDeleting app data folders..." -Status ACTION
+        
+        # Remove Galaxy Buds from Bluetooth
+        Write-Status "Removing Galaxy Buds from Bluetooth..." -Status ACTION
+        try {
+            $btResult = Remove-GalaxyBudsFromBluetooth
+            if ($btResult.Removed.Count -gt 0) {
+                foreach ($device in $btResult.Removed) {
+                    Write-Status "Removed Bluetooth device: $device" -Status OK
+                }
+            }
+            else {
+                Write-Status "No Galaxy Buds devices found in Bluetooth registry" -Status OK
+            }
+        }
+        catch {
+            Write-Status "Failed to remove Bluetooth devices: $($_.Exception.Message)" -Status WARN
+        }
+        
+        $packageFolders = Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory | 
+        Where-Object { $_.Name -match "Samsung|Galaxy" }
+        
+        foreach ($folder in $packageFolders) {
+            try {
+                Remove-Item $folder.FullName -Recurse -Force -ErrorAction Stop
+                Write-Status "Deleted: $($folder.Name)" -Status OK
+            }
+            catch {
+                Write-Status "Could not delete $($folder.Name): $($_.Exception.Message)" -Status WARN
+            }
+        }
+        
+        # Also clear ProgramData and LocalAppData Samsung folders
+        Clear-SamsungSystemData
+    }
+}
+
+
+function Get-InstalledSamsungPackages {
+    <#
+    .SYNOPSIS
+        Returns a HashSet of installed Samsung package names/IDs for fast lookup
+    #>
+    $installed = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    
+    try {
+        # Get all packages that look like Samsung ones
+        $packages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { 
+            $_.Name -like "*Samsung*" -or 
+            $_.Name -like "*Galaxy*" -or
+            $_.Name -like "*16297BCCB59BC*" -or
+            $_.Name -like "*4438638898209*"
+        }
+        
+        foreach ($pkg in $packages) {
+            if ($pkg.Name) { $null = $installed.Add($pkg.Name) }
+            if ($pkg.PackageFamilyName) { $null = $installed.Add($pkg.PackageFamilyName) }
+        }
+    }
+    catch {
+        Write-Debug "Failed to enumerate installed packages: $($_.Exception.Message)"
     }
     
-    return $removedCount
+    return $installed
 }
 
 function Show-PackageSelectionMenu {
     param (
         [bool]$HasIntelWiFi
     )
+    
+    # Pre-calculate installed status
+    Write-Host "Checking installed packages..." -ForegroundColor DarkGray
+    $installedPkgs = Get-InstalledSamsungPackages
+    
+    # Helper to check if a profile is fully installed
+    function Test-ProfileStatus {
+        param($ProfilePackages)
+        $total = $ProfilePackages.Count
+        $installed = 0
+        foreach ($p in $ProfilePackages) {
+            # Check if package is installed (by Name or Family if available, or just assume not if we can't map it easily yet)
+            # For now, we'll try to match loosely against the Name in our DB vs what we found
+            # This is a heuristic since our DB has "Samsung Account" but Appx is "SamsungAccount"
+            
+            # Better approach: Check if ANY installed package matches the ID or Name
+            # Since we don't have the exact Appx Name in our DB, we rely on the fact that 
+            # Install-SamsungPackages will do a more precise check.
+            # For the menu, we'll do a best-effort match.
+            
+            # Actually, let's just pass the installed set to the install function and let it handle the precise check.
+            # For the menu, we can't easily know 100% without a mapping table for every single app.
+            # BUT, we can try to match the "Name" from our DB against the installed list loosely.
+            
+            $dbName = $p.Name.Replace(" ", "")
+            $isInstalled = $installedPkgs.Contains($dbName) -or 
+            ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+            
+            if ($isInstalled) { $installed++ }
+        }
+        return @{ Total = $total; Installed = $installed }
+    }
     
     Clear-Host
     Write-Host "========================================" -ForegroundColor Cyan
@@ -1969,37 +3620,71 @@ function Show-PackageSelectionMenu {
 
     Write-Host "Select installation profile:`n" -ForegroundColor Yellow
     
-    Write-Host "  [1] Core Only" -ForegroundColor White
+    # [1] Core Only
+    $coreStatus = Test-ProfileStatus $PackageDatabase.Core
+    $coreColor = if ($coreStatus.Installed -eq $coreStatus.Total) { "Green" } elseif ($coreStatus.Installed -gt 0) { "Yellow" } else { "White" }
+    $coreText = if ($coreStatus.Installed -eq $coreStatus.Total) { "[Installed]" } elseif ($coreStatus.Installed -gt 0) { "[$($coreStatus.Installed)/$($coreStatus.Total) Installed]" } else { "" }
+    
+    Write-Host "  [1] Core Only $coreText" -ForegroundColor $coreColor
     Write-Host "      Essential packages only (Account, Settings, Cloud)" -ForegroundColor Gray
     Write-Host ""
     
-    Write-Host "  [2] Recommended" -ForegroundColor Green
-    Write-Host "      Core + All working Samsung apps (Gallery, Notes, Multi Control, etc.)" -ForegroundColor Gray
+    # [2] Recommended
+    $recPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended
+    $recStatus = Test-ProfileStatus $recPkgs
+    $recColor = if ($recStatus.Installed -eq $recStatus.Total) { "Green" } elseif ($recStatus.Installed -gt 0) { "Yellow" } else { "Green" }
+    $recText = if ($recStatus.Installed -eq $recStatus.Total) { "[Installed]" } elseif ($recStatus.Installed -gt 0) { "[$($recStatus.Installed)/$($recStatus.Total) Installed]" } else { "" }
+
+    Write-Host "  [2] Recommended $recText" -ForegroundColor $recColor
+    Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
         Write-Host "      ⚠ Note: Quick Share/Camera Share/Storage Share require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
+        Write-Host "      ⚠ Note: Multi Control/Second Screen require Wi-Fi 6/6E/7 (not Wi-Fi 5)" -ForegroundColor Yellow
     }
     Write-Host ""
     
-    Write-Host "  [3] Full Experience" -ForegroundColor Cyan
-    Write-Host "      Recommended + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
+    # [3] Recommended Plus
+    $recPlusPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
+    $recPlusStatus = Test-ProfileStatus $recPlusPkgs
+    $recPlusColor = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "Green" } elseif ($recPlusStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
+    $recPlusText = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "[Installed]" } elseif ($recPlusStatus.Installed -gt 0) { "[$($recPlusStatus.Installed)/$($recPlusStatus.Total) Installed]" } else { "" }
+
+    Write-Host "  [3] Recommended Plus $recPlusText" -ForegroundColor $recPlusColor
+    Write-Host "      Recommended + Additional working apps (Studio, SmartThings, Screen Recorder, etc.)" -ForegroundColor Gray
+    Write-Host ""
+    
+    # [4] Full Experience
+    $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
+    $fullStatus = Test-ProfileStatus $fullPkgs
+    $fullColor = if ($fullStatus.Installed -eq $fullStatus.Total) { "Green" } elseif ($fullStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
+    $fullText = if ($fullStatus.Installed -eq $fullStatus.Total) { "[Installed]" } elseif ($fullStatus.Installed -gt 0) { "[$($fullStatus.Installed)/$($fullStatus.Total) Installed]" } else { "" }
+
+    Write-Host "  [4] Full Experience $fullText" -ForegroundColor $fullColor
+    Write-Host "      Recommended Plus + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
     Write-Host "      ⚠ Some apps need additional configuration after install" -ForegroundColor Yellow
     Write-Host ""
     
-    Write-Host "  [4] Everything" -ForegroundColor Magenta
+    # [5] Everything
+    $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+    $allStatus = Test-ProfileStatus $allPkgs
+    $allColor = if ($allStatus.Installed -eq $allStatus.Total) { "Green" } elseif ($allStatus.Installed -gt 0) { "Yellow" } else { "Magenta" }
+    $allText = if ($allStatus.Installed -eq $allStatus.Total) { "[Installed]" } elseif ($allStatus.Installed -gt 0) { "[$($allStatus.Installed)/$($allStatus.Total) Installed]" } else { "" }
+
+    Write-Host "  [5] Everything $allText" -ForegroundColor $allColor
     Write-Host "      All packages including non-working ones (Recovery, Update)" -ForegroundColor Gray
     Write-Host "      ⚠ Some apps will NOT work on non-Samsung devices" -ForegroundColor Red
     Write-Host ""
     
-    Write-Host "  [5] Custom Selection" -ForegroundColor Yellow
+    Write-Host "  [6] Custom Selection" -ForegroundColor Yellow
     Write-Host "      Pick individual packages" -ForegroundColor Gray
     Write-Host ""
     
-    Write-Host "  [6] Skip Package Installation" -ForegroundColor DarkGray
+    Write-Host "  [7] Skip Package Installation" -ForegroundColor DarkGray
     Write-Host ""
     
     do {
-        $choice = Read-Host "Enter choice [1-6]"
-    } while ($choice -notin "1", "2", "3", "4", "5", "6")
+        $choice = Read-Host "Enter choice [1-7]"
+    } while ($choice -notin "1", "2", "3", "4", "5", "6", "7")
     
     return $choice
 }
@@ -2021,12 +3706,16 @@ function Get-PackagesByProfile {
             $packages = $PackageDatabase.Core + $PackageDatabase.Recommended
         }
         "3" {
-            # Full Experience
-            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps
+            # Recommended Plus
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
         }
         "4" {
+            # Full Experience
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
+        }
+        "5" {
             # Everything
-            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+            $packages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
         }
     }
     
@@ -2039,6 +3728,7 @@ function Show-CustomPackageSelection {
     )
     
     $selectedPackages = @()
+    $installedPkgs = Get-InstalledSamsungPackages
     
     Clear-Host
     Write-Host "========================================" -ForegroundColor Cyan
@@ -2069,7 +3759,11 @@ function Show-CustomPackageSelection {
     # Core packages (required)
     Write-Host "CORE PACKAGES (Auto-selected):" -ForegroundColor Green
     foreach ($pkg in $PackageDatabase.Core) {
-        Write-Host "  ✓ $($pkg.Name)" -ForegroundColor Gray
+        $dbName = $pkg.Name.Replace(" ", "")
+        $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+        $status = if ($isInstalled) { " [Installed]" } else { "" }
+        
+        Write-Host "  ✓ $($pkg.Name)$status" -ForegroundColor Gray
         $selectedPackages += $pkg
     }
     Write-Host ""
@@ -2092,21 +3786,39 @@ function Show-CustomPackageSelection {
         }
         elseif ($selectAll -eq "I" -or $selectAll -eq "i") {
             foreach ($pkg in $catPackages) {
+                $dbName = $pkg.Name.Replace(" ", "")
+                $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+                $statusTag = if ($isInstalled) { " [Installed]" } else { "" }
+                $statusColor = if ($isInstalled) { "Green" } else { "White" }
+                
                 Write-Host ""
-                Write-Host "  $($pkg.Name)" -ForegroundColor White
+                Write-Host "  $($pkg.Name)$statusTag" -ForegroundColor $statusColor
                 Write-Host "    $($pkg.Description)" -ForegroundColor Gray
                 
                 if ($pkg.Warning) {
                     Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
                 }
+                if ($pkg.Tip) {
+                    Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+                }
                 if ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
                     Write-Host "    ⚠ Requires Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
                 }
                 
-                $install = Read-Host "    Install? (Y/N)"
-                if ($install -eq "Y" -or $install -eq "y") {
-                    Write-Host "    ✓ Added" -ForegroundColor Green
-                    $selectedPackages += $pkg
+                $prompt = if ($isInstalled) { "    Reinstall? (y/N)" } else { "    Install? (Y/N)" }
+                $install = Read-Host $prompt
+                
+                if ($isInstalled) {
+                    if ($install -eq "Y" -or $install -eq "y") {
+                        Write-Host "    ✓ Added for reinstall" -ForegroundColor Green
+                        $selectedPackages += $pkg
+                    }
+                }
+                else {
+                    if ($install -eq "Y" -or $install -eq "y") {
+                        Write-Host "    ✓ Added" -ForegroundColor Green
+                        $selectedPackages += $pkg
+                    }
                 }
             }
         }
@@ -2126,6 +3838,16 @@ function Install-SamsungPackages {
     $failed = 0
     $skipped = 0
     
+    # Get installed packages for differential install (with fallback for irm|iex scenarios)
+    $installedPkgs = $null
+    try {
+        $installedPkgs = Get-InstalledSamsungPackages
+    }
+    catch {
+        Write-Host "  Note: Could not check existing packages, will install all" -ForegroundColor Gray
+        $installedPkgs = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    }
+    
     if ($TestMode) {
         Write-Host "`n[TEST MODE] Simulating installation of $($Packages.Count) package(s)...`n" -ForegroundColor Yellow
     }
@@ -2140,6 +3862,9 @@ function Install-SamsungPackages {
         if ($pkg.Warning) {
             Write-Host "  ⚠ $($pkg.Warning)" -ForegroundColor Yellow
         }
+        if ($pkg.Tip) {
+            Write-Host "  💡 $($pkg.Tip)" -ForegroundColor Cyan
+        }
         
         if ($TestMode) {
             Write-Host "  [TEST] Would check: winget list --id $($pkg.Id)" -ForegroundColor Gray
@@ -2149,8 +3874,29 @@ function Install-SamsungPackages {
         }
         else {
             try {
-                # Check if package is already installed
+                # Check if package is already installed (Differential Install)
                 Write-Host "  Checking installation status..." -ForegroundColor Gray
+                
+                # Safety check for null package name
+                if (-not $pkg.Name) {
+                    Write-Host "  ✗ Package has no name defined, skipping" -ForegroundColor Red
+                    $failed++
+                    continue
+                }
+                
+                $dbName = $pkg.Name.Replace(" ", "")
+                $isInstalled = $false
+                if ($installedPkgs) {
+                    $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
+                }
+                
+                if ($isInstalled) {
+                    Write-Host "  ✓ Already installed (skipping)" -ForegroundColor Cyan
+                    $skipped++
+                    continue
+                }
+                
+                # Fallback to winget check if not found in our quick check (just to be safe)
                 $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
                 
                 $pkgIdPattern = [regex]::Escape($pkg.Id)
@@ -2186,6 +3932,11 @@ function Install-SamsungPackages {
                     elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
                         $installed++
+                        # Add to installed list for tracking (if available)
+                        if ($installedPkgs -and $pkg.Name) {
+                            $dbName = $pkg.Name.Replace(" ", "")
+                            $null = $installedPkgs.Add($dbName)
+                        }
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
@@ -2296,7 +4047,7 @@ function Test-IntelWiFi {
         }
         elseif ($wifiInfo -match "(AC \d+|Wireless-AC|Wi-Fi 5)") {
             $model = $matches[1]
-            $isAX = $false  # AC cards don't work with Quick Share
+            $isAX = $false  # AC (Wi-Fi 5) cards: Multi Control doesn't work, Second Screen doesn't work
         }
     }
     
@@ -2312,13 +4063,13 @@ function Test-IntelWiFi {
 function Test-IntelBluetooth {
     # Filter for actual Bluetooth radio hardware (USB or PCI devices), not paired devices or services
     $btAdapters = Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue | 
-        Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
+    Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
     
     if (-not $btAdapters -or $btAdapters.Count -eq 0) {
         return @{
-            HasBluetooth     = $false
-            IsIntel          = $false
-            AdapterName      = "None"
+            HasBluetooth = $false
+            IsIntel      = $false
+            AdapterName  = "None"
         }
     }
     
@@ -2326,9 +4077,9 @@ function Test-IntelBluetooth {
     $isIntel = $btInfo -like "*Intel*"
     
     return @{
-        HasBluetooth     = $true
-        IsIntel          = $isIntel
-        AdapterName      = $btInfo
+        HasBluetooth = $true
+        IsIntel      = $isIntel
+        AdapterName  = $btInfo
     }
 }
 
@@ -2763,7 +4514,8 @@ if ($UpdateSettings) {
         Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
         Write-Host "========================================`n" -ForegroundColor Green
         Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "`n⚠ Update may have encountered issues." -ForegroundColor Yellow
         Write-Host "  Check the output above for details." -ForegroundColor Gray
     }
@@ -2854,7 +4606,8 @@ if ($UpgradeSSE) {
         Write-Host "========================================`n" -ForegroundColor Green
         Write-Host "SSSE has been upgraded to version 7.1.2.0" -ForegroundColor Cyan
         Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "`n========================================" -ForegroundColor Red
         Write-Host "  Upgrade Failed" -ForegroundColor Red
         Write-Host "========================================`n" -ForegroundColor Red
@@ -2888,29 +4641,49 @@ else {
     Write-Host "========================================`n" -ForegroundColor Cyan
 }
 
-# Check if already installed (both config and task must exist for valid installation)
-$hasConfig = Test-Path $configPath
-$hasTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-$alreadyInstalled = $hasConfig -and $hasTask
+# Enhanced installation health check (4 components: config, task, C:\GalaxyBook, GBeSupportService)
+$installHealth = Test-InstallationHealth -ConfigPath $configPath -TaskName $taskName
+$alreadyInstalled = $installHealth.IsHealthy -or $installHealth.IsBroken
 
 # Initialize BIOS values variable (may be set during reinstall)
 $biosValuesToUse = $null
 
 if ($alreadyInstalled) {
-    Write-Host "⚠ Galaxy Book Enabler is already installed!" -ForegroundColor Yellow
+    # Display version info
+    Write-Host ""
+    Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host "│  " -NoNewline -ForegroundColor Cyan
+    Write-Host "Galaxy Book Enabler" -NoNewline -ForegroundColor White
+    Write-Host " is installed                        │" -ForegroundColor Cyan
+    Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+    Write-Host "│  GBE Version:    " -NoNewline -ForegroundColor Cyan
+    Write-Host (" {0,-10}" -f $installHealth.GbeVersion) -NoNewline -ForegroundColor Green
+    Write-Host "                             │" -ForegroundColor Cyan
+    Write-Host "│  SSSE Version:   " -NoNewline -ForegroundColor Cyan
+    Write-Host (" {0,-10}" -f $installHealth.SsseVersion) -NoNewline -ForegroundColor Green
+    Write-Host "                             │" -ForegroundColor Cyan
+    Write-Host "│  Installer:      " -NoNewline -ForegroundColor Cyan
+    Write-Host (" {0,-10}" -f $SCRIPT_VERSION) -NoNewline -ForegroundColor Yellow
+    Write-Host "                             │" -ForegroundColor Cyan
+    Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
     
-    $currentVersion = "Unknown"
-    if (Test-Path $configPath) {
-        try {
-            $config = Get-Content $configPath | ConvertFrom-Json
-            $currentVersion = if ($config.InstalledVersion) { $config.InstalledVersion } else { "1.0.0" }
-        }
-        catch {
-            Write-Verbose "Failed to read config file, using default version"
-        }
+    # Show component health if broken
+    if ($installHealth.IsBroken) {
+        Write-Host ""
+        Write-Host "  ⚠ Installation appears BROKEN ($($installHealth.ComponentCount)/4 components)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Component Status:" -ForegroundColor Yellow
+        $checkMark = "✓"; $crossMark = "✗"
+        Write-Host "    $( if ($installHealth.Components.Config) { $checkMark } else { $crossMark } ) Config file" -ForegroundColor $(if ($installHealth.Components.Config) { "Green" } else { "Red" })
+        Write-Host "    $( if ($installHealth.Components.Task) { $checkMark } else { $crossMark } ) Scheduled task" -ForegroundColor $(if ($installHealth.Components.Task) { "Green" } else { "Red" })
+        Write-Host "    $( if ($installHealth.Components.SsseFolder) { $checkMark } else { $crossMark } ) C:\GalaxyBook folder" -ForegroundColor $(if ($installHealth.Components.SsseFolder) { "Green" } else { "Red" })
+        Write-Host "    $( if ($installHealth.Components.Service) { $checkMark } else { $crossMark } ) GBeSupportService" -ForegroundColor $(if ($installHealth.Components.Service) { "Green" } else { "Red" })
+        Write-Host ""
+        Write-Host "  Recommendation: Choose 'Reinstall' to fix the installation" -ForegroundColor Yellow
     }
-    Write-Host "Current version: $currentVersion" -ForegroundColor Gray
-    Write-Host "Installer version: $SCRIPT_VERSION" -ForegroundColor Gray
+    else {
+        Write-Host "  ✓ All 4 components healthy" -ForegroundColor Green
+    }
     
     # Check for updates from GitHub
     Write-Host "`nChecking for updates..." -ForegroundColor Cyan
@@ -2934,13 +4707,14 @@ if ($alreadyInstalled) {
         Write-Host "  [2] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [3] Reinstall current version" -ForegroundColor Gray
         Write-Host "  [4] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [5] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [6] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [7] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [8] Cancel" -ForegroundColor Gray
+        Write-Host "  [5] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
+        Write-Host "  [6] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [7] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [8] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [9] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-8]"
+        $choice = Read-Host "Enter choice [1-9]"
         
         if ($choice -eq "1") {
             if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
@@ -2964,13 +4738,14 @@ if ($alreadyInstalled) {
         Write-Host "  [1] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
         Write-Host "  [2] Reinstall" -ForegroundColor Gray
         Write-Host "  [3] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [4] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [5] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [6] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [7] Cancel" -ForegroundColor Gray
+        Write-Host "  [4] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
+        Write-Host "  [5] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
+        Write-Host "  [6] Uninstall (apps only)" -ForegroundColor Gray
+        Write-Host "  [7] Uninstall (services & scheduled task only)" -ForegroundColor Gray
+        Write-Host "  [8] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-7]"
+        $choice = Read-Host "Enter choice [1-8]"
     }
     
     # Handle "Update Samsung Settings" option - same action for both menus
@@ -2993,14 +4768,15 @@ if ($alreadyInstalled) {
         }
         
         # Call the main Install-SystemSupportEngine function which handles everything properly
-        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $false
+        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode
         
         if ($result) {
             Write-Host "`n========================================" -ForegroundColor Green
             Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
             Write-Host "========================================`n" -ForegroundColor Green
             Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
-        } else {
+        }
+        else {
             Write-Host "`n⚠ Update may have encountered issues." -ForegroundColor Yellow
             Write-Host "  Check the output above for details." -ForegroundColor Gray
         }
@@ -3009,19 +4785,98 @@ if ($alreadyInstalled) {
         exit
     }
     
-    # Remap choices for the rest of the switch (shift numbers after SSSE option)
+    # Handle "Reset/Repair Samsung Apps" option - same action for both menus
+    if (($updateCheck.Available -and $choice -eq "5") -or (-not $updateCheck.Available -and $choice -eq "4")) {
+        Write-Host "`n========================================" -ForegroundColor Yellow
+        Write-Host "  Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        
+        Write-Host "Repair Options:" -ForegroundColor Cyan
+        Write-Host "  [1] Diagnostics" -ForegroundColor White
+        Write-Host "      Check installed packages and device data" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [2] Soft Reset" -ForegroundColor White
+        Write-Host "      Clear caches only (keeps login)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [3] Hard Reset" -ForegroundColor White
+        Write-Host "      Clear caches + device data + settings (re-login required)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [4] Clear Authentication" -ForegroundColor White
+        Write-Host "      Remove Samsung Account DB and credentials" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [5] Repair Permissions" -ForegroundColor White
+        Write-Host "      Fix ACLs on app folders" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [6] Re-register Apps" -ForegroundColor White
+        Write-Host "      Fix broken app registrations" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [7] Factory Reset" -ForegroundColor Red
+        Write-Host "      Completely wipe ALL Samsung data" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [8] Back to Main Menu" -ForegroundColor Gray
+        Write-Host ""
+        
+        $resetChoice = Read-Host "Enter choice [1-8]"
+        
+        switch ($resetChoice) {
+            "1" { Invoke-Diagnostics }
+            "2" { Invoke-SoftReset -TestMode $TestMode }
+            "3" { Invoke-HardReset -TestMode $TestMode }
+            "4" { Clear-AuthenticationData }
+            "5" { Repair-Permissions }
+            "6" { Invoke-AppReRegistration }
+            "7" { Invoke-FactoryReset -TestMode $TestMode }
+            default { Write-Host "`nCancelled." -ForegroundColor Yellow }
+        }
+        
+        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        exit
+    }
+    
+    # Remap choices for the rest of the switch
+    # The switch statement uses a unified numbering:
+    #   1 = Update to installer version
+    #   2 = Reinstall
+    #   3 = Reinstall current version (only when update available)
+    #   4 = Uninstall all (apps, services & scheduled task)
+    #   5 = Uninstall apps only
+    #   6 = Uninstall services & scheduled task only
+    #   7 = Cancel
+    
     if ($updateCheck.Available) {
-        # When update available: 4->SSSE (handled), 5->3, 6->4, 7->5, 8->6
-        if ($choice -eq "5") { $choice = "4" }      # Uninstall all -> was 4
-        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall apps -> was 5
-        elseif ($choice -eq "7") { $choice = "6" }  # Uninstall services -> was 6
-        elseif ($choice -eq "8") { $choice = "7" }  # Cancel -> was 7
-    } else {
-        # When no update: 3->SSSE (handled), 4->3, 5->4, 6->5, 7->6
-        if ($choice -eq "4") { $choice = "3" }      # Uninstall all -> was 3
-        elseif ($choice -eq "5") { $choice = "4" }  # Uninstall apps -> was 4
-        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall services -> was 5
-        elseif ($choice -eq "7") { $choice = "6" }  # Cancel -> was 6
+        # Menu when update available:
+        #   [1] Download latest -> handled above
+        #   [2] Update to installer -> switch 1
+        #   [3] Reinstall current -> switch 2
+        #   [4] Update SSSE -> handled above
+        #   [5] Reset/Repair -> handled above
+        #   [6] Uninstall all -> switch 4
+        #   [7] Uninstall apps -> switch 5
+        #   [8] Uninstall services -> switch 6
+        #   [9] Cancel -> switch 7
+        if ($choice -eq "2") { $choice = "1" }      # Update to installer version
+        elseif ($choice -eq "3") { $choice = "2" }  # Reinstall current version
+        elseif ($choice -eq "6") { $choice = "4" }  # Uninstall all
+        elseif ($choice -eq "7") { $choice = "5" }  # Uninstall apps only
+        elseif ($choice -eq "8") { $choice = "6" }  # Uninstall services only
+        elseif ($choice -eq "9") { $choice = "7" }  # Cancel
+    }
+    else {
+        # Menu when no update available:
+        #   [1] Update to installer -> switch 1
+        #   [2] Reinstall -> switch 2
+        #   [3] Update SSSE -> handled above
+        #   [4] Reset/Repair -> handled above
+        #   [5] Uninstall all -> switch 4
+        #   [6] Uninstall apps -> switch 5
+        #   [7] Uninstall services -> switch 6
+        #   [8] Cancel -> switch 7
+        # Choices 1 and 2 stay the same
+        if ($choice -eq "5") { $choice = "4" }      # Uninstall all
+        elseif ($choice -eq "6") { $choice = "5" }  # Uninstall apps only
+        elseif ($choice -eq "7") { $choice = "6" }  # Uninstall services only
+        elseif ($choice -eq "8") { $choice = "7" }  # Cancel
     }
     
     switch ($choice) {
@@ -3048,361 +4903,281 @@ if ($alreadyInstalled) {
             }
         }
         "2" {
-            Write-Host "`nReinstalling..." -ForegroundColor Yellow
+            Write-Host "`n========================================" -ForegroundColor Yellow
+            Write-Host "  Full Reinstall (Nuke + Fresh Install)" -ForegroundColor Yellow
+            Write-Host "========================================`n" -ForegroundColor Yellow
             
-            # Backup existing BIOS configuration before reinstall
-            $backupBiosValues = $null
-            if (Test-Path $batchScriptPath) {
-                Write-Host "  Backing up current BIOS configuration..." -ForegroundColor Cyan
-                $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
-                if ($backupBiosValues -and $backupBiosValues.IsCustom) {
-                    Write-Host "  ✓ Custom BIOS values backed up" -ForegroundColor Green
-                }
-            }
-            
-            # Remove existing installation
-            if (Test-Path $installPath) {
-                Remove-Item $installPath -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($existingTask) {
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-            }
-            
-            # Ask user if they want to restore backed up BIOS values
-            if ($backupBiosValues -and $backupBiosValues.IsCustom) {
-                Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
-                Write-Host "  Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Cyan
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would perform full reinstall:" -ForegroundColor Magenta
+                Write-Host "  • Backup BIOS configuration" -ForegroundColor Gray
+                Write-Host "  • Uninstall all Samsung apps" -ForegroundColor Gray
+                Write-Host "  • Remove services & scheduled task" -ForegroundColor Gray
+                Write-Host "  • Delete Samsung folders" -ForegroundColor Gray
+                Write-Host "  • Perform fresh installation" -ForegroundColor Gray
                 Write-Host ""
-                $preserveChoice = Read-Host "Keep your custom config? ([Y]=Keep custom, N=Use default GB3U)"
-                
-                if ($preserveChoice -eq "" -or $preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
-                    $biosValuesToUse = $backupBiosValues.Values
-                    Write-Host "  ✓ Will restore your custom BIOS values" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "  ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
-                }
+                Write-Host "[TEST MODE] Simulating fresh install instead..." -ForegroundColor Yellow
+                # Fall through to simulated install
             }
-        }
-        "3" {
-            if ($updateCheck.Available) {
-                Write-Host "`nReinstalling current version..." -ForegroundColor Cyan
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                }
-                if (Test-Path $batchScriptPath) {
-                    $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
-                    if ($backupBiosValues -and $backupBiosValues.IsCustom) {
-                        $preserveChoice = Read-Host "Keep custom BIOS config? ([Y]/N)"
-                        if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
-                            $biosValuesToUse = $backupBiosValues.Values
-                        }
-                    }
-                }
-            } else {
-                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            else {
+                Write-Host "This will:" -ForegroundColor Cyan
+                Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
+                Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
+                Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
+                Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
+                Write-Host "  5. Perform a fresh installation" -ForegroundColor White
+                Write-Host ""
                 
-                Uninstall-SamsungApps | Out-Null
-                
-                # Remove services first
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
-                
-                # Remove scheduled task
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                    Write-Host "  ✓ Task removed" -ForegroundColor Green
-                }
-                
-                Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
-                Stop-SamsungProcesses | Out-Null
-                
-                # Remove user folder
-                if (Test-Path $installPath) {
-                    Write-Host "  Removing user folder..." -ForegroundColor Gray
-                    
-                    try {
-                        Get-ChildItem -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-                        Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
-                    } catch {
-                        Write-Verbose "First removal attempt: $_"
-                    }
-                    Start-Sleep -Milliseconds 500
-                    
-                    if (Test-Path $installPath) {
-                        Write-Host "  Retrying user folder removal..." -ForegroundColor Yellow
-                        try {
-                            Remove-Item -Path $installPath -Recurse -Force -ErrorAction Stop
-                        } catch {
-                            Write-Host "  ✗ Failed to remove user folder: $($_.Exception.Message)" -ForegroundColor Red
-                        }
-                        Start-Sleep -Milliseconds 500
-                    }
-                    
-                    if (-not (Test-Path $installPath)) {
-                        Write-Host "  ✓ User folder removed" -ForegroundColor Green
-                    }
-                }
-                
-                # Remove SSSE installation folder (C:\GalaxyBook)
-                $ssseInstallPath = "C:\GalaxyBook"
-                if (Test-Path $ssseInstallPath) {
-                    Write-Host "  Removing SSSE folder..." -ForegroundColor Gray
-                    
-                    try {
-                        Get-ChildItem -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-                        Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
-                    } catch {
-                        Write-Verbose "First SSSE removal attempt: $_"
-                    }
-                    Start-Sleep -Milliseconds 500
-                    
-                    if (Test-Path $ssseInstallPath) {
-                        Write-Host "  Retrying SSSE folder removal..." -ForegroundColor Yellow
-                        try {
-                            Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction Stop
-                        } catch {
-                            Write-Host "  ✗ Failed to remove SSSE folder: $($_.Exception.Message)" -ForegroundColor Red
-                        }
-                        Start-Sleep -Milliseconds 500
-                    }
-                    
-                    if (-not (Test-Path $ssseInstallPath)) {
-                        Write-Host "  ✓ SSSE folder removed" -ForegroundColor Green
-                    }
-                }
-                
-                # Report any remaining folders
-                $remainingFolders = @()
-                if (Test-Path $installPath) { $remainingFolders += $installPath }
-                if (Test-Path $ssseInstallPath) { $remainingFolders += $ssseInstallPath }
-                
-                if ($remainingFolders.Count -gt 0) {
-                    Write-Host "`n  ✗ Some folders could not be removed:" -ForegroundColor Red
-                    foreach ($folder in $remainingFolders) {
-                        Write-Host "    $folder" -ForegroundColor Yellow
-                    }
-                    Write-Host "    Try closing all Samsung apps and running again" -ForegroundColor Yellow
-                    Write-Host "    Or manually delete after reboot" -ForegroundColor Gray
-                }
-                
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            }
-        }
-        "4" {
-            if ($updateCheck.Available) {
-                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
-                
-                $removedCount = Uninstall-SamsungApps
-                
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
-                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
-                
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                    Write-Host "  ✓ Task removed" -ForegroundColor Green
-                }
-                
-                if (Test-Path $installPath) {
-                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
-                    Stop-SamsungProcesses | Out-Null
-                    Remove-Item -Path $installPath -Recurse -Force
-                    Write-Host "  ✓ Folder removed" -ForegroundColor Green
-                }
-                
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            } else {
-                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
-                
-                $removedCount = Uninstall-SamsungApps
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            }
-        }
-        "5" {
-            if ($updateCheck.Available) {
-                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
-                
-                Uninstall-SamsungApps | Out-Null
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            } else {
-                Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
-                
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
-                
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                    Write-Host "  ✓ Task removed" -ForegroundColor Green
-                }
-                
-                Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
-                Stop-SamsungProcesses | Out-Null
-                
-                # Remove user folder
-                if (Test-Path $installPath) {
-                    Write-Host "  Removing user folder..." -ForegroundColor Gray
-                    
-                    try {
-                        Get-ChildItem -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-                        Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
-                    } catch {
-                        Write-Verbose "First removal attempt: $_"
-                    }
-                    Start-Sleep -Milliseconds 500
-                    
-                    if (Test-Path $installPath) {
-                        Write-Host "  Retrying user folder removal..." -ForegroundColor Yellow
-                        try {
-                            Remove-Item -Path $installPath -Recurse -Force -ErrorAction Stop
-                        } catch {
-                            Write-Host "  ✗ Failed to remove user folder: $($_.Exception.Message)" -ForegroundColor Red
-                        }
-                        Start-Sleep -Milliseconds 500
-                    }
-                    
-                    if (-not (Test-Path $installPath)) {
-                        Write-Host "  ✓ User folder removed" -ForegroundColor Green
-                    }
-                }
-                
-                # Remove SSSE installation folder (C:\GalaxyBook)
-                $ssseInstallPath = "C:\GalaxyBook"
-                if (Test-Path $ssseInstallPath) {
-                    Write-Host "  Removing SSSE folder..." -ForegroundColor Gray
-                    
-                    try {
-                        Get-ChildItem -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-                        Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
-                    } catch {
-                        Write-Verbose "First SSSE removal attempt: $_"
-                    }
-                    Start-Sleep -Milliseconds 500
-                    
-                    if (Test-Path $ssseInstallPath) {
-                        Write-Host "  Retrying SSSE folder removal..." -ForegroundColor Yellow
-                        try {
-                            Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction Stop
-                        } catch {
-                            Write-Host "  ✗ Failed to remove SSSE folder: $($_.Exception.Message)" -ForegroundColor Red
-                        }
-                        Start-Sleep -Milliseconds 500
-                    }
-                    
-                    if (-not (Test-Path $ssseInstallPath)) {
-                        Write-Host "  ✓ SSSE folder removed" -ForegroundColor Green
-                    }
-                }
-                
-                # Report any remaining folders
-                $remainingFolders = @()
-                if (Test-Path $installPath) { $remainingFolders += $installPath }
-                if (Test-Path $ssseInstallPath) { $remainingFolders += $ssseInstallPath }
-                
-                if ($remainingFolders.Count -gt 0) {
-                    Write-Host "`n  ✗ Some folders could not be removed:" -ForegroundColor Red
-                    foreach ($folder in $remainingFolders) {
-                        Write-Host "    $folder" -ForegroundColor Yellow
-                    }
-                    Write-Host "    Try closing all Samsung apps and running again" -ForegroundColor Yellow
-                    Write-Host "    Or manually delete after reboot" -ForegroundColor Gray
-                }
-                
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            }
-        }
-        "6" {
-            if ($updateCheck.Available) {
-                Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
-                
-                $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($dummyService) {
-                    & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
-                }
-                $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-                if ($gbeService) {
-                    & sc.exe delete GBeSupportService 2>&1 | Out-Null
-                }
-                if ($dummyService -or $gbeService) {
-                    Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
-                }
-                
-                $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                if ($existingTask) {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                    Write-Host "  ✓ Task removed" -ForegroundColor Green
-                }
-                
-                if (Test-Path $installPath) {
-                    Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
-                    Stop-SamsungProcesses | Out-Null
-                    Write-Host "  Removing installation folder..." -ForegroundColor Gray
-                    Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
-                    Start-Sleep -Milliseconds 500
-                    
-                    # Verify removal
-                    if (Test-Path $installPath) {
-                        Write-Host "  Retrying folder removal..." -ForegroundColor Yellow
-                        Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
-                        Start-Sleep -Milliseconds 500
-                    }
-                    
-                    if (Test-Path $installPath) {
-                        Write-Host "  ✗ Failed to remove folder (may be in use)" -ForegroundColor Red
-                        Write-Host "    Try closing Samsung apps and running again" -ForegroundColor Yellow
-                    } else {
-                        Write-Host "  ✓ Folder removed" -ForegroundColor Green
-                    }
-                } else {
-                    Write-Host "  Installation folder not found (already removed)" -ForegroundColor Gray
-                }
-                
-                Write-Host "`nUninstall complete!" -ForegroundColor Green
-                exit
-            } else {
+                $confirmReinstall = Read-Host "Proceed with full reinstall? (Y/n)"
+            if ($confirmReinstall -like "n*") {
                 Write-Host "`nCancelled." -ForegroundColor Yellow
                 exit
             }
+            
+            # Step 1: Backup existing BIOS configuration
+            $backupBiosValues = $null
+            if (Test-Path $batchScriptPath) {
+                Write-Host "`n  [1/5] Backing up BIOS configuration..." -ForegroundColor Cyan
+                $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
+                if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                    Write-Host "    ✓ Custom BIOS values backed up" -ForegroundColor Green
+                    Write-Host "      Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Gray
+                }
+                else {
+                    Write-Host "    ✓ Default BIOS config detected" -ForegroundColor Green
+                }
+            }
+            else {
+                Write-Host "`n  [1/5] No existing BIOS config found" -ForegroundColor Gray
+            }
+            
+            # Ask about preserving config NOW before nuking
+            if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                Write-Host ""
+                $preserveChoice = Read-Host "  Keep your custom BIOS config after reinstall? ([Y]=Keep, N=Use default GB3U)"
+                
+                if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
+                    $biosValuesToUse = $backupBiosValues.Values
+                    Write-Host "    ✓ Will restore custom BIOS values after reinstall" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "    ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+                }
+            }
+            
+            # Step 2: Ask about deleting Samsung app data
+            Write-Host "`n  [2/5] Uninstalling Samsung apps..." -ForegroundColor Cyan
+            $deleteData = $false
+            $nukeConfirm = Read-Host "    Delete ALL Samsung app data too? (Nuke Mode) [y/N]"
+            if ($nukeConfirm -like "y*") {
+                $deleteData = $true
+                Write-Host "    ⚠ Will delete all Samsung app data" -ForegroundColor Yellow
+            }
+            
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
+            
+            # Step 3: Remove services
+            Write-Host "`n  [3/5] Removing services..." -ForegroundColor Cyan
+            $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            if ($dummyService) {
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+                Write-Host "    ✓ SamsungSystemSupportService removed" -ForegroundColor Green
+            }
+            $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+            if ($gbeService) {
+                Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete GBeSupportService 2>&1 | Out-Null
+                Write-Host "    ✓ GBeSupportService removed" -ForegroundColor Green
+            }
+            if (-not $dummyService -and -not $gbeService) {
+                Write-Host "    ✓ No services to remove" -ForegroundColor Green
+            }
+            
+            # Step 4: Remove scheduled task and folders
+            Write-Host "`n  [4/5] Removing scheduled task & folders..." -ForegroundColor Cyan
+            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            if ($existingTask) {
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                Write-Host "    ✓ Scheduled task removed" -ForegroundColor Green
+            }
+            
+            Write-Host "    Stopping Samsung processes..." -ForegroundColor Gray
+            Stop-SamsungProcesses | Out-Null
+            
+            # Remove user folder
+            if (Test-Path $installPath) {
+                Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ User folder removed" -ForegroundColor Green
+            }
+            
+            # Remove SSSE installation folder (C:\GalaxyBook)
+            $ssseInstallPath = "C:\GalaxyBook"
+            if (Test-Path $ssseInstallPath) {
+                Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✓ SSSE folder removed" -ForegroundColor Green
+            }
+            
+            # Step 5: Continue with fresh install
+            Write-Host "`n  [5/5] Starting fresh installation..." -ForegroundColor Cyan
+            Write-Host "    Continuing with installation process..." -ForegroundColor Gray
+            Write-Host ""
+            }  # End of else block for non-TestMode
+            
+            # Fall through to the main installation flow below
+        }
+        "3" {
+            # This case should not be reached after remapping
+            # Fall through to continue with reinstall if somehow reached
+            Write-Host "`nReinstalling..." -ForegroundColor Yellow
+        }
+        "4" {
+            # Uninstall all (apps, services & scheduled task)
+            Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
+                Write-Host "  • All Samsung apps" -ForegroundColor Gray
+                Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
+                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
+                Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
+            
+            $deleteData = $false
+            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
+            if ($nukeConfirm -like "y*") {
+                $deleteData = $true
+            }
+            
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
+            
+            # Remove services
+            $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            if ($dummyService) {
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+            }
+            $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+            if ($gbeService) {
+                Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete GBeSupportService 2>&1 | Out-Null
+            }
+            if ($dummyService -or $gbeService) {
+                Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
+            }
+            
+            # Remove scheduled task
+            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            if ($existingTask) {
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                Write-Host "  ✓ Task removed" -ForegroundColor Green
+            }
+            
+            Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+            Stop-SamsungProcesses | Out-Null
+            
+            # Remove user folder
+            if (Test-Path $installPath) {
+                Write-Host "  Removing user folder..." -ForegroundColor Gray
+                Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $installPath)) {
+                    Write-Host "  ✓ User folder removed" -ForegroundColor Green
+                }
+            }
+            
+            # Remove SSSE installation folder (C:\GalaxyBook)
+            $ssseInstallPath = "C:\GalaxyBook"
+            if (Test-Path $ssseInstallPath) {
+                Write-Host "  Removing SSSE folder..." -ForegroundColor Gray
+                Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $ssseInstallPath)) {
+                    Write-Host "  ✓ SSSE folder removed" -ForegroundColor Green
+                }
+            }
+            
+            Write-Host "`nUninstall complete!" -ForegroundColor Green
+            exit
+        }
+        "5" {
+            # Uninstall apps only
+            Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+            
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall all Samsung apps" -ForegroundColor Magenta
+                Write-Host "[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
+            
+            $deleteData = $false
+            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
+            if ($nukeConfirm -like "y*") {
+                $deleteData = $true
+            }
+            
+            Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
+            Write-Host "`nUninstall complete!" -ForegroundColor Green
+            exit
+        }
+        "6" {
+            # Uninstall services & scheduled task only
+            Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
+            
+            if ($TestMode) {
+                Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
+                Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
+                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
+                Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
+                exit
+            }
+            
+            # Remove services
+            $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            if ($dummyService) {
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete SamsungSystemSupportService 2>&1 | Out-Null
+            }
+            $gbeService = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+            if ($gbeService) {
+                Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                & sc.exe delete GBeSupportService 2>&1 | Out-Null
+            }
+            if ($dummyService -or $gbeService) {
+                Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
+            }
+            
+            # Remove scheduled task
+            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            if ($existingTask) {
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                Write-Host "  ✓ Task removed" -ForegroundColor Green
+            }
+            
+            Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
+            Stop-SamsungProcesses | Out-Null
+            
+            # Remove user folder
+            if (Test-Path $installPath) {
+                Write-Host "  Removing user folder..." -ForegroundColor Gray
+                Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $installPath)) {
+                    Write-Host "  ✓ User folder removed" -ForegroundColor Green
+                }
+            }
+            
+            # Remove SSSE installation folder (C:\GalaxyBook)
+            $ssseInstallPath = "C:\GalaxyBook"
+            if (Test-Path $ssseInstallPath) {
+                Write-Host "  Removing SSSE folder..." -ForegroundColor Gray
+                Remove-Item -Path $ssseInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $ssseInstallPath)) {
+                    Write-Host "  ✓ SSSE folder removed" -ForegroundColor Green
+                }
+            }
+            
+            Write-Host "`nUninstall complete!" -ForegroundColor Green
+            exit
         }
         "7" {
             Write-Host "`nCancelled." -ForegroundColor Yellow
@@ -3427,7 +5202,16 @@ if ($wifiCheck.HasWiFi) {
     Write-Host "Detected: $($wifiCheck.AdapterName)" -ForegroundColor Green
     
     if ($wifiCheck.IsIntel) {
-        Write-Host "✓ Intel Wi-Fi adapter - Full* compatibility with Quick Share, Camera Share, Storage Share!" -ForegroundColor Green
+        if ($wifiCheck.IsAX) {
+            Write-Host "✓ Intel Wi-Fi 6/6E/7 adapter - Full compatibility!" -ForegroundColor Green
+            Write-Host "  Note: Multi Control may be jittery on Wi-Fi 6/6E" -ForegroundColor Gray
+        }
+        else {
+            Write-Host "⚠ Intel Wi-Fi 5 (AC) adapter detected" -ForegroundColor Yellow
+            Write-Host "  Quick Share, Camera Share, Storage Share: ✓ Work" -ForegroundColor Green
+            Write-Host "  Multi Control: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
+            Write-Host "  Second Screen: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
+        }
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
@@ -3749,6 +5533,9 @@ else {
         if ($pkg.Warning) {
             Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
         }
+        if ($pkg.Tip) {
+            Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+        }
         
         if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
             Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
@@ -3943,13 +5730,15 @@ $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction Sil
 if (-not $dummyService) {
     & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= disabled 2>&1 | Out-Null
     Write-Host "✓ Dummy service created (disabled)" -ForegroundColor Green
-} else {
+}
+else {
     # Ensure existing service is disabled
     $currentStartType = (Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue).StartType
     if ($currentStartType -ne 'Disabled') {
         Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
         Write-Host "✓ Service already exists (set to disabled)" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "✓ Service already exists (disabled)" -ForegroundColor Green
     }
 }
@@ -4013,7 +5802,7 @@ else {
     # Launch Galaxy Book Experience to show available Samsung apps
     Write-Host "`nLaunching Galaxy Book Experience..." -ForegroundColor Cyan
     try {
-         Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g!App"
+        Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g!App"
         Write-Host "  ✓ Galaxy Book Experience opened - explore available Samsung apps!" -ForegroundColor Green
     }
     catch {
