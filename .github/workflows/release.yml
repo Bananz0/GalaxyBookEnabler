@@ -61,7 +61,9 @@ jobs:
           
           # Extract version section
           extract() {
-            awk "/^## \\[$1\\]/{f=1;next}/^## \\[/{f=0}f" CHANGELOG.md
+            # Escape regex special characters in version string for awk
+            local pattern=$(echo "$1" | sed 's/[.[\*^$]/\\&/g')
+            awk "/^## \\[$pattern\\]/{f=1;next}/^## \\[/{f=0}f" CHANGELOG.md
           }
           
           CONTENT=$(extract "$VERSION")
