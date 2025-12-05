@@ -3647,8 +3647,8 @@ function Show-PackageManager {
         Write-Host "  [1] Install Profile" -ForegroundColor Green
         Write-Host "      Add packages from a profile" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  [2] Uninstall Profile" -ForegroundColor Red
-        Write-Host "      Remove packages from a profile" -ForegroundColor Gray
+        Write-Host "  [2] Downgrade Installation" -ForegroundColor Yellow
+        Write-Host "      Remove extras, keep a smaller profile" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  [3] Uninstall All Samsung Apps" -ForegroundColor Red
         Write-Host "      Remove all Samsung packages" -ForegroundColor Gray
@@ -3698,40 +3698,122 @@ function Show-PackageManager {
                 }
             }
             "2" {
-                # Uninstall Profile
+                # Downgrade Profile (keep selected, remove extras)
                 Clear-Host
-                Write-Host "========================================" -ForegroundColor Red
-                Write-Host "  Uninstall Profile" -ForegroundColor Red
-                Write-Host "========================================`n" -ForegroundColor Red
+                Write-Host "========================================" -ForegroundColor Yellow
+                Write-Host "  Downgrade Installation" -ForegroundColor Yellow
+                Write-Host "========================================`n" -ForegroundColor Yellow
                 
-                Write-Host "⚠ WARNING: This will uninstall packages from the selected profile!" -ForegroundColor Yellow
+                Write-Host "Choose what to KEEP (packages above your choice will be removed):" -ForegroundColor Cyan
                 Write-Host ""
-                Write-Host "Select profile to uninstall:" -ForegroundColor Yellow
+                Write-Host "  [1] Keep Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
+                Write-Host "      (No changes)" -ForegroundColor Gray
                 Write-Host ""
-                Write-Host "  [1] Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
-                Write-Host "  [2] Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
-                Write-Host "  [3] Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
-                Write-Host "  [4] Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
-                Write-Host "  [5] Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
-                Write-Host "  [6] Cancel" -ForegroundColor Gray
+                Write-Host "  [2] Keep Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
+                Write-Host "      Removes: NonWorking (Recovery, Update)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [3] Keep Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
+                Write-Host "      Removes: ExtraSteps + NonWorking" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [4] Keep Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
+                Write-Host "      Removes: RecommendedPlus + ExtraSteps + NonWorking" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [5] Keep Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
+                Write-Host "      Removes: Recommended + RecommendedPlus + ExtraSteps + NonWorking" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [6] Remove All" -ForegroundColor Red
+                Write-Host "      Removes: Everything (use Uninstall All instead)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [7] Cancel" -ForegroundColor Gray
                 Write-Host ""
                 
-                $profileChoice = Read-Host "Enter choice [1-6]"
+                $profileChoice = Read-Host "Enter choice [1-7]"
                 
-                if ($profileChoice -in "1","2","3","4","5") {
-                    $packagesToUninstall = Get-PackagesByProfile -ProfileName $profileChoice
-                    $profileNames = @{ "1" = "Core Only"; "2" = "Recommended"; "3" = "Recommended Plus"; "4" = "Full Experience"; "5" = "Everything" }
+                # Determine which package categories to remove based on choice
+                $packagesToRemove = @()
+                $keepProfileName = ""
+                
+                switch ($profileChoice) {
+                    "1" {
+                        Write-Host "`n✓ No changes made." -ForegroundColor Green
+                        Start-Sleep -Seconds 1
+                        continue
+                    }
+                    "2" {
+                        # Keep Full Experience, remove NonWorking
+                        $packagesToRemove = $PackageDatabase.NonWorking
+                        $keepProfileName = "Full Experience"
+                    }
+                    "3" {
+                        # Keep Recommended Plus, remove ExtraSteps + NonWorking
+                        $packagesToRemove = $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                        $keepProfileName = "Recommended Plus"
+                    }
+                    "4" {
+                        # Keep Recommended, remove RecommendedPlus + ExtraSteps + NonWorking
+                        $packagesToRemove = $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                        $keepProfileName = "Recommended"
+                    }
+                    "5" {
+                        # Keep Core, remove Recommended + RecommendedPlus + ExtraSteps + NonWorking
+                        $packagesToRemove = $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+                        $keepProfileName = "Core Only"
+                    }
+                    "6" {
+                        Write-Host "`nUse 'Uninstall All Samsung Apps' option instead." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 2
+                        continue
+                    }
+                    default {
+                        continue
+                    }
+                }
+                
+                if ($packagesToRemove.Count -gt 0) {
+                    # Filter to only packages that are actually installed
+                    $installedToRemove = @()
+                    foreach ($pkg in $packagesToRemove) {
+                        $dbName = $pkg.Name.Replace(" ", "")
+                        $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+                        
+                        $isInstalled = $false
+                        foreach ($installedName in $installedPkgs) {
+                            if ($installedName -like "*$searchName*") {
+                                $isInstalled = $true
+                                break
+                            }
+                        }
+                        
+                        if ($isInstalled) {
+                            $installedToRemove += $pkg
+                        }
+                    }
                     
-                    Write-Host "`n⚠ This will uninstall $($packagesToUninstall.Count) packages from '$($profileNames[$profileChoice])'!" -ForegroundColor Red
-                    $confirm = Read-Host "Type 'UNINSTALL' to confirm"
+                    if ($installedToRemove.Count -eq 0) {
+                        Write-Host "`n✓ No packages to remove - you're already at '$keepProfileName' or lower." -ForegroundColor Green
+                        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+                        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                        continue
+                    }
                     
-                    if ($confirm -eq "UNINSTALL") {
-                        Write-Host "`nUninstalling packages..." -ForegroundColor Red
+                    Write-Host "`n⚠ This will remove $($installedToRemove.Count) installed package(s), keeping '$keepProfileName'!" -ForegroundColor Yellow
+                    
+                    # Show what will be removed
+                    Write-Host "`nPackages to remove:" -ForegroundColor Gray
+                    foreach ($pkg in $installedToRemove) {
+                        Write-Host "  • $($pkg.Name)" -ForegroundColor DarkGray
+                    }
+                    Write-Host ""
+                    
+                    $confirm = Read-Host "Type 'DOWNGRADE' to confirm"
+                    
+                    if ($confirm -eq "DOWNGRADE") {
+                        Write-Host "`nRemoving packages..." -ForegroundColor Yellow
                         
                         $uninstalled = 0
                         $failed = 0
                         
-                        foreach ($pkg in $packagesToUninstall) {
+                        foreach ($pkg in $installedToRemove) {
                             Write-Host "  Removing $($pkg.Name)..." -ForegroundColor Gray
                             
                             # Find the actual AppX package
@@ -3751,16 +3833,15 @@ function Show-PackageManager {
                                     $failed++
                                 }
                             }
-                            else {
-                                Write-Host "    - Not installed" -ForegroundColor DarkGray
-                            }
                         }
                         
                         Write-Host "`n========================================" -ForegroundColor Green
-                        Write-Host "  Uninstall Summary" -ForegroundColor Green
+                        Write-Host "  Downgrade Summary" -ForegroundColor Green
                         Write-Host "========================================" -ForegroundColor Green
                         Write-Host "  Removed: $uninstalled" -ForegroundColor Green
                         Write-Host "  Failed:  $failed" -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Gray" })
+                        Write-Host ""
+                        Write-Host "  ✓ Now running: $keepProfileName" -ForegroundColor Cyan
                         
                         Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
                         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
