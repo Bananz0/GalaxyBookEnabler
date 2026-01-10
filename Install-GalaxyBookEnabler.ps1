@@ -4429,13 +4429,20 @@ function Install-SSSEDriverToStore {
 }
 
 function Test-IntelWiFi {
-    $wifiAdapters = Get-NetAdapter | Where-Object { 
+    # Use hardware ID detection (language-independent)
+    # Intel Vendor ID: 8086
+    $wifiDevices = Get-PnpDevice -Class Net -Status OK -ErrorAction SilentlyContinue | 
+        Where-Object { $_.HardwareID -match 'PCI\\VEN_8086&DEV_' -or $_.HardwareID -match 'USB\\VID_8086&PID_' }
+    
+    if (-not $wifiDevices -or $wifiDevices.Count -eq 0) {
+        # Fallback to NetAdapter if PnpDevice fails (still works in most languages)
+        $wifiAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { 
         $_.InterfaceDescription -like "*Wi-Fi*" -or 
         $_.InterfaceDescription -like "*Wireless*" -or
         $_.InterfaceDescription -like "*802.11*"
     }
     
-    if ($wifiAdapters.Count -eq 0) {
+        if (-not $wifiAdapters -or $wifiAdapters.Count -eq 0) {
         return @{
             HasWiFi     = $false
             IsIntel     = $false
@@ -4447,6 +4454,12 @@ function Test-IntelWiFi {
     
     $wifiInfo = $wifiAdapters[0].InterfaceDescription
     $isIntel = $wifiInfo -like "*Intel*"
+    }
+    else {
+        # Got Intel WiFi via hardware ID
+        $wifiInfo = $wifiDevices[0].FriendlyName
+        $isIntel = $true
+    }
     
     # Detect specific Intel Wi-Fi models and determine if AX (Wi-Fi 6/6E/7) or AC (Wi-Fi 5)
     $model = "Unknown"
@@ -4472,11 +4485,20 @@ function Test-IntelWiFi {
 }
 
 function Test-IntelBluetooth {
-    # Filter for actual Bluetooth radio hardware (USB or PCI devices), not paired devices or services
+    # Use hardware ID detection (language-independent)
+    # Intel Bluetooth Vendor ID: 8087 (USB)
     $btAdapters = Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue | 
-    Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
+        Where-Object { 
+            ($_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*") -and
+            ($_.HardwareID -match 'USB\\VID_8087&PID_' -or $_.HardwareID -match 'PCI\\VEN_8087&DEV_')
+        }
     
     if (-not $btAdapters -or $btAdapters.Count -eq 0) {
+        # Fallback: check if any Bluetooth exists (not Intel)
+        $anyBt = Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue | 
+            Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
+        
+        if (-not $anyBt -or $anyBt.Count -eq 0) {
         return @{
             HasBluetooth = $false
             IsIntel      = $false
@@ -4484,13 +4506,19 @@ function Test-IntelBluetooth {
         }
     }
     
-    $btInfo = $btAdapters[0].FriendlyName
-    $isIntel = $btInfo -like "*Intel*"
+        # Has Bluetooth, but not Intel
+        return @{
+            HasBluetooth = $true
+            IsIntel      = $false
+            AdapterName  = $anyBt[0].FriendlyName
+        }
+    }
     
+    # Found Intel Bluetooth
     return @{
         HasBluetooth = $true
-        IsIntel      = $isIntel
-        AdapterName  = $btInfo
+        IsIntel      = $true
+        AdapterName  = $btAdapters[0].FriendlyName
     }
 }
 
