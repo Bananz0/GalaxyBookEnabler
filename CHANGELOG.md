@@ -5,11 +5,56 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.0] - 2026-01-10
 
 ### Added
 
-- Configuration guides for "Extra Steps" apps (Phone, Find) *(planned)*
+- **Hardware ID-Based Detection** - Wi-Fi and Bluetooth detection now uses PCI/USB Vendor IDs instead of friendly names
+  - Intel Wi-Fi: Vendor ID 8086 (works in all Windows languages)
+  - Intel Bluetooth: Vendor ID 8087 (language-independent)
+  - Fallback to friendly name detection if hardware ID check fails
+
+### Changed
+
+- **Simplified Hardware Compatibility Messaging** - Removed specific Wi-Fi generation warnings
+  - No longer displays specific "jittery on Wi-Fi 6/6E" or "doesn't work on AC" messages
+  - Replaced with generic "compatibility varies by hardware" messaging
+  - Encourages users to submit documentation issues with real-world results
+  - Simplified `Test-IntelWiFi` function (removed unused model/generation detection)
+
+- **Expanded Wi-Fi Compatibility Documentation** - Full Intel wireless product stack documented
+  - Wi-Fi 7 (BE200, BE201, BE202): Full compatibility
+  - Wi-Fi 6E (AX210, AX211, AX411): Full compatibility
+  - Wi-Fi 6 (AX201, AX200): Full compatibility
+  - Wi-Fi 5 / Wireless-AC (9260, 9560, 8265, 8260): Limited (Quick Share works, Multi Control/Second Screen don't)
+  - Wireless-AC 7000/3000 Series: Not tested, may not work with outdated drivers
+
+- **Multi Control Status** - Updated to "Under Investigation"
+  - Works intermittently on all Intel Wi-Fi generations
+  - Not reliably working on any platform currently
+  - Investigation ongoing
+
+### Fixed
+
+- **Step 5 Performance** - Removed slow `Get-AppxProvisionedPackage` check
+  - Was taking 2+ minutes and failing with "Class not registered"
+  - Now uses `Get-AppxPackage -AllUsers` only (completes in ~200ms)
+  - Commented out with explanation for future reference
+
+- **Package Removal** - Disabled broken Method 3 (provisioned package removal)
+  - Methods 1 (PowerShell 7) and 2 (Windows PowerShell 5.1 fallback) handle most cases
+  - Shows helpful manual removal message when both methods fail
+
+- **System-wide Package Detection** - Added `(System-wide)` label for packages staged to SYSTEM account
+  - Detects S-1-5-18 in PackageUserInformation
+  - Helps identify packages that need Windows PowerShell 5.1 for removal
+
+### Documentation
+
+- Updated Wi-Fi compatibility tables in README.md and PACKAGES.md
+- Added Intel Wireless-AC product information
+- Documented driver requirements (recent drivers needed)
+- Multi Control marked as "Under Investigation"
 
 ## [3.0.0] - 2025-12-04
 

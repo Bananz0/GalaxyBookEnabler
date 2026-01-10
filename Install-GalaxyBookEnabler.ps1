@@ -10,8 +10,8 @@
     - Quick Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Camera Share (requires Intel Wi-Fi + Intel Bluetooth)
     - Storage Share (requires Intel Wi-Fi + Intel Bluetooth)
-    - Multi Control (requires Intel Wi-Fi 6/6E/7 - jittery on AX, doesn't work on AC)
-    - Second Screen (requires Intel Wi-Fi 6/6E/7 - doesn't work on AC)
+    - Multi Control (requires Intel Wi-Fi + Intel Bluetooth - compatibility varies by hardware)
+    - Second Screen (requires Intel Wi-Fi + Intel Bluetooth - compatibility varies by hardware)
     - Samsung Notes
     - AI Select (with keyboard shortcut setup)
     - System Support Engine (advanced/experimental)
@@ -121,7 +121,7 @@ if (-not $isAdmin) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "3.0.0"
+$SCRIPT_VERSION = "3.1.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -3418,39 +3418,27 @@ Get-AppxPackage -AllUsers | Where-Object { `$_.PackageFullName -eq '$packageFull
                 $error2 = $_.Exception.Message
                 Write-Host "    ✗ Windows PowerShell failed: $error2" -ForegroundColor DarkGray
                 
-                # Method 3: Try removing provisioned package
-                try {
-                    Write-Host "    [Method 3] Checking provisioned packages..." -ForegroundColor DarkGray
-                    
-                    $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { 
-                        $_.PackageName -like "*$($app.Name)*" 
-                    }
-                    
-                    if ($provisioned) {
-                        Write-Host "    Found provisioned package, removing..." -ForegroundColor DarkGray
-                        $provisioned | Remove-AppxProvisionedPackage -Online -ErrorAction Stop
-                        
-                        # Also try to remove user package again
-                        $app | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue *>$null
-                        
-                        # Verify removal
-                        $stillExists = Get-AppxPackage -AllUsers | Where-Object { $_.PackageFullName -eq $packageFullName }
-                        if (-not $stillExists) {
-                            Write-Host "    ✓ Successfully removed provisioned package" -ForegroundColor Green
-                            $removed = $true
-                            $results.Success += $packageName
-                        }
-                        else {
-                            throw "Package still exists after provisioned removal"
-                        }
-                    }
-                    else {
-                        throw "No provisioned package found"
-                    }
-                }
-                catch {
-                    $error3 = $_.Exception.Message
-                    Write-Host "    ✗ Provisioned package removal failed: $error3" -ForegroundColor DarkGray
+                # Method 3: Provisioned package removal (DISABLED - too slow and unreliable)
+                # Get-AppxProvisionedPackage takes 2+ minutes and often fails with "Class not registered"
+                # If Methods 1 & 2 failed, the package is likely protected and needs manual removal
+                Write-Host "    ✗ All automatic removal methods failed" -ForegroundColor Red
+                Write-Host "    Manual removal may be required (try Settings > Apps or DISM)" -ForegroundColor Yellow
+                
+                # Commented out slow/broken Method 3:
+                # try {
+                #     Write-Host "    [Method 3] Checking provisioned packages..." -ForegroundColor DarkGray
+                #     $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { 
+                #         $_.PackageName -like "*$($app.Name)*" 
+                #     }
+                #     if ($provisioned) {
+                #         $provisioned | Remove-AppxProvisionedPackage -Online -ErrorAction Stop
+                #         $app | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue *>$null
+                #     }
+                # }
+                
+                $results.Failed += @{
+                    Name     = $packageName
+                    FullName = $packageFullName
                 }
             }
         }
@@ -4028,8 +4016,8 @@ function Show-PackageSelectionMenu {
     Write-Host "  [2] Recommended $recText" -ForegroundColor $recColor
     Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
     if (-not $HasIntelWiFi) {
-        Write-Host "      ⚠ Note: Quick Share/Camera Share/Storage Share require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
-        Write-Host "      ⚠ Note: Multi Control/Second Screen require Wi-Fi 6/6E/7 (not Wi-Fi 5)" -ForegroundColor Yellow
+        Write-Host "      ⚠ Note: Wireless features require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
+        Write-Host "      Compatibility varies by hardware - see documentation for details" -ForegroundColor Gray
     }
     Write-Host ""
     
@@ -4437,23 +4425,21 @@ function Test-IntelWiFi {
     if (-not $wifiDevices -or $wifiDevices.Count -eq 0) {
         # Fallback to NetAdapter if PnpDevice fails (still works in most languages)
         $wifiAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { 
-        $_.InterfaceDescription -like "*Wi-Fi*" -or 
-        $_.InterfaceDescription -like "*Wireless*" -or
-        $_.InterfaceDescription -like "*802.11*"
-    }
-    
-        if (-not $wifiAdapters -or $wifiAdapters.Count -eq 0) {
-        return @{
-            HasWiFi     = $false
-            IsIntel     = $false
-            IsAX        = $false
-            AdapterName = "None"
-            Model       = "None"
+            $_.InterfaceDescription -like "*Wi-Fi*" -or 
+            $_.InterfaceDescription -like "*Wireless*" -or
+            $_.InterfaceDescription -like "*802.11*"
         }
-    }
-    
-    $wifiInfo = $wifiAdapters[0].InterfaceDescription
-    $isIntel = $wifiInfo -like "*Intel*"
+        
+        if (-not $wifiAdapters -or $wifiAdapters.Count -eq 0) {
+            return @{
+                HasWiFi     = $false
+                IsIntel     = $false
+                AdapterName = "None"
+            }
+        }
+        
+        $wifiInfo = $wifiAdapters[0].InterfaceDescription
+        $isIntel = $wifiInfo -like "*Intel*"
     }
     else {
         # Got Intel WiFi via hardware ID
@@ -4461,26 +4447,10 @@ function Test-IntelWiFi {
         $isIntel = $true
     }
     
-    # Detect specific Intel Wi-Fi models and determine if AX (Wi-Fi 6/6E/7) or AC (Wi-Fi 5)
-    $model = "Unknown"
-    $isAX = $false
-    if ($isIntel) {
-        if ($wifiInfo -match "(AX\d+|BE\d+|Wi-Fi [67][E]?)") {
-            $model = $matches[1]
-            $isAX = $true
-        }
-        elseif ($wifiInfo -match "(AC \d+|Wireless-AC|Wi-Fi 5)") {
-            $model = $matches[1]
-            $isAX = $false  # AC (Wi-Fi 5) cards: Multi Control doesn't work, Second Screen doesn't work
-        }
-    }
-    
     return @{
         HasWiFi     = $true
         IsIntel     = $isIntel
-        IsAX        = $isAX
         AdapterName = $wifiInfo
-        Model       = $model
     }
 }
 
@@ -4499,13 +4469,13 @@ function Test-IntelBluetooth {
             Where-Object { $_.DeviceID -like "USB*" -or $_.DeviceID -like "PCI*" }
         
         if (-not $anyBt -or $anyBt.Count -eq 0) {
-        return @{
-            HasBluetooth = $false
-            IsIntel      = $false
-            AdapterName  = "None"
+            return @{
+                HasBluetooth = $false
+                IsIntel      = $false
+                AdapterName  = "None"
+            }
         }
-    }
-    
+        
         # Has Bluetooth, but not Intel
         return @{
             HasBluetooth = $true
@@ -5648,16 +5618,10 @@ if ($wifiCheck.HasWiFi) {
     Write-Host "Detected: $($wifiCheck.AdapterName)" -ForegroundColor Green
     
     if ($wifiCheck.IsIntel) {
-        if ($wifiCheck.IsAX) {
-            Write-Host "✓ Intel Wi-Fi 6/6E/7 adapter - Full compatibility!" -ForegroundColor Green
-            Write-Host "  Note: Multi Control may be jittery on Wi-Fi 6/6E" -ForegroundColor Gray
-        }
-        else {
-            Write-Host "⚠ Intel Wi-Fi 5 (AC) adapter detected" -ForegroundColor Yellow
-            Write-Host "  Quick Share, Camera Share, Storage Share: ✓ Work" -ForegroundColor Green
-            Write-Host "  Multi Control: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
-            Write-Host "  Second Screen: ✗ Does not work on Wi-Fi 5" -ForegroundColor Red
-        }
+        Write-Host "✓ Intel Wi-Fi adapter detected" -ForegroundColor Green
+        Write-Host "  Compatibility varies by hardware generation" -ForegroundColor Gray
+        Write-Host "  Your experience may differ - feel free to submit a" -ForegroundColor Gray
+        Write-Host "  documentation issue on GitHub with your results!" -ForegroundColor Cyan
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
@@ -5693,15 +5657,19 @@ else {
     Write-Host "  Quick Share, Camera Share, Storage Share require Bluetooth" -ForegroundColor Gray
 }
 
-# Summary check for Quick Share / Camera Share / Storage Share compatibility
-$quickShareCompatible = $wifiCheck.HasWiFi -and $wifiCheck.IsIntel -and $btCheck.HasBluetooth -and $btCheck.IsIntel
-if (-not $quickShareCompatible) {
+# Summary check for wireless features compatibility
+$wirelessCompatible = $wifiCheck.HasWiFi -and $wifiCheck.IsIntel -and $btCheck.HasBluetooth -and $btCheck.IsIntel
+if (-not $wirelessCompatible) {
     Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
-    Write-Host "  Quick Share/Camera Share/Storage Share" -ForegroundColor Red
-    Write-Host "  will NOT work on this system" -ForegroundColor Red
-    Write-Host "  Requires: Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
+    Write-Host "  Wireless Features Compatibility" -ForegroundColor Yellow
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
+    Write-Host "  Requires: Intel Wi-Fi + Intel Bluetooth" -ForegroundColor White
+    Write-Host "  Compatibility varies by hardware generation." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Your results may vary - feel free to submit a" -ForegroundColor Gray
+    Write-Host "  documentation issue on GitHub with your experience!" -ForegroundColor Cyan
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -5854,26 +5822,29 @@ Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  STEP 5: System Support Engine (Advanced)" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
+Write-Host "Scanning for existing Samsung Settings packages..." -ForegroundColor Gray
+Write-Host "  (Checking all users - this may take 10-30 seconds)`n" -ForegroundColor DarkGray
+
 # Warn if Samsung Settings already installed (version mismatch risk with driver-bound install)
 try {
+    # Use -AllUsers to detect system-provisioned packages (staged for SYSTEM account)
+    # These won't show up with current-user-only check
     $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
-    $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
     
-    if ($existingSettings -or $provisionedSettings) {
+    # Note: Get-AppxProvisionedPackage is commented out because:
+    # - Takes 2+ minutes to execute
+    # - Often fails with "Class not registered" error
+    # - Not critical since -AllUsers catches provisioned packages anyway
+    #
+    # $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
+    
+    if ($existingSettings) {
         Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
         
-        if ($existingSettings) {
-            Write-Host "`n  Installed packages:" -ForegroundColor Cyan
-            foreach ($app in $existingSettings) {
-                Write-Host "    • $($app.Name) (version: $($app.Version))" -ForegroundColor Gray
-            }
-        }
-        
-        if ($provisionedSettings) {
-            Write-Host "`n  Provisioned packages (system-wide):" -ForegroundColor Cyan
-            foreach ($prov in $provisionedSettings) {
-                Write-Host "    • $($prov.DisplayName) (version: $($prov.Version))" -ForegroundColor Gray
-            }
+        Write-Host "`n  Installed packages:" -ForegroundColor Cyan
+        foreach ($app in $existingSettings) {
+            $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
+            Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
         }
         
         Write-Host ""
@@ -6110,13 +6081,15 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
         Write-Host ""
     }
     
-    # Show Quick Share specific warning if selected
-    $quickShareSelected = $packagesToInstall | Where-Object { $_.Name -eq "Quick Share" }
-    if ($quickShareSelected -and -not $wifiCheck.IsIntel) {
-        Write-Host "⚠ QUICK SHARE WARNING:" -ForegroundColor Yellow
-        Write-Host "  Quick Share was installed but may not work with your Wi-Fi adapter." -ForegroundColor Yellow
-        Write-Host "  If you experience issues, consider Google Nearby Share as an alternative." -ForegroundColor Gray
-        Write-Host "  https://www.android.com/better-together/nearby-share-app/" -ForegroundColor Cyan
+    # Show wireless features compatibility note
+    $wirelessApps = $packagesToInstall | Where-Object { $_.RequiresIntelWiFi -eq $true }
+    if ($wirelessApps.Count -gt 0) {
+        Write-Host "ℹ️  WIRELESS FEATURES NOTE:" -ForegroundColor Cyan
+        Write-Host "  Wireless app compatibility varies by hardware." -ForegroundColor Gray
+        Write-Host "  Your experience may differ from documentation." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Please submit a documentation issue on GitHub" -ForegroundColor Gray
+        Write-Host "  to help us improve compatibility information!" -ForegroundColor Cyan
         Write-Host ""
     }
     

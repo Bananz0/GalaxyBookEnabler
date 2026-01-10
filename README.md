@@ -17,7 +17,7 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-> 📋 **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
+> **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
 
@@ -37,9 +37,9 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Advanced Reset & Repair** - Built-in tools to fix app issues, clear caches, and repair permissions
 - **Nuke Mode** - Optional destructive uninstall to wipe all Samsung app data
 
-## 📋 Requirements
+## Requirements
 
-### ⚠️ IMPORTANT: This script requires PowerShell 7.0 or later
+### IMPORTANT: This script requires PowerShell 7.0 or later
 
 Windows comes with PowerShell 5.1 by default, which is **NOT compatible**. You must install PowerShell 7:
 
@@ -108,7 +108,7 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 
 Test mode simulates the entire installation without making any actual changes. Perfect for testing or reviewing what the installer will do before committing.
 
-## 🛠️ Reset & Repair Tools
+## Reset & Repair Tools
 
 The installer includes a comprehensive suite of tools to fix common issues with Samsung apps. Select **"Reset/Repair Samsung Apps"** from the main menu (or uninstall menu) to access:
 
@@ -135,7 +135,7 @@ Essential packages for basic Samsung ecosystem functionality:
 - Samsung Bluetooth Sync
 - Galaxy Book Experience
 
-### Recommended ⭐
+### Recommended
 
 Core packages + all fully working Samsung apps:
 
@@ -176,7 +176,7 @@ All packages including non-functional ones:
 
 Pick individual packages by category with detailed descriptions and warnings.
 
-## 📋 Package Compatibility Matrix
+## Package Compatibility Matrix
 
 | Package | Status | Intel Wi-Fi AX + BT Required | Notes |
 |---------|--------|------------------------------|-------|
@@ -191,7 +191,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Camera Share | ✅ Working |**Yes**| Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
-| Multi Control | ⚠️ Limited | **Yes** | Jittery on Wi-Fi 6/6E, untested on Wi-Fi 7, not working on Wi-Fi 5 |
+| Multi Control | 🔍 Investigating | **Yes** | Under investigation - works intermittently, not reliable on any Wi-Fi |
 | Samsung Gallery | ✅ Working | No | - |
 | Samsung Studio | ✅ Working | No | - |
 | Samsung Studio for Gallery | ✅ Working | No | - |
@@ -214,7 +214,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Recovery | ❌ Not Working | No | Requires genuine hardware |
 | Samsung Update | ❌ Not Working | No | Requires genuine hardware |
 
-## 💻 System Requirements
+## System Requirements
 
 ### Required
 
@@ -236,7 +236,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 - **Advanced users only** - Involves binary patching and service creation
 - **Experimental** - May cause system instability or trigger antivirus warnings
 
-## ⚠️ Wi-Fi & Bluetooth Compatibility
+## Wi-Fi & Bluetooth Compatibility
 
 Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full wireless features. Compatibility varies by Wi-Fi generation:
 
@@ -244,32 +244,66 @@ Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full w
 
 | Generation | Adapters | Quick Share | Multi Control | Second Screen | Camera Share | Storage Share |
 |------------|----------|-------------|---------------|---------------|--------------|---------------|
-| **Wi-Fi 7 (BE)** | BE200, BE201, BE202 | ✅ Full | ❓ Unknown | ✅ Full | ✅ Full | ✅ Full |
-| **Wi-Fi 6/6E (AX)** | AX210, AX211, AX201, AX200 | ✅ Full | ⚠️ Jittery | ✅ Full | ✅ Full | ✅ Full |
-| **Wi-Fi 5 (AC)** | AC 9260, AC 9560, AC 8265, AC 8260 | ✅ Works | ❌ Not Working | ❌ Not Working | ✅ Works | ✅ Works |
-| **Non-Intel** | Realtek, MediaTek, Qualcomm, Broadcom | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Wi-Fi 7 (BE)** | BE200, BE201, BE202 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
+| **Wi-Fi 6E (AX)** | AX210, AX211, AX411 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
+| **Wi-Fi 6 (AX)** | AX201, AX200 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
+| **Wi-Fi 5 (AC)** | 9260, 9560, 8265, 8260 | ✅ Works | ❌ Not Working | ❌ Not Working | ✅ Works | ✅ Works |
+| **Wireless-AC (Legacy)** | 7265, 7260, 3168, 3165 | ❓ Not Tested | ❌ Not Working | ❌ Not Working | ❓ Not Tested | ❓ Not Tested |
+| **Non-Intel** | Realtek, MediaTek, Qualcomm | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-### Wi-Fi 7 (BE) - Full Compatibility ✅
+### Intel Wi-Fi Product Families
 
-- Intel Wi-Fi 7 BE200
-- Intel Wi-Fi 7 BE201  
-- Intel Wi-Fi 7 BE202
+#### Wi-Fi 7 (BE) - Full Compatibility ✅
 
-### Wi-Fi 6/6E (AX) - Full Compatibility ✅
+| Product | Launch | Max Speed | Notes |
+|---------|--------|-----------|-------|
+| Intel Wi-Fi 7 BE200 | Q3'23 | 5.8 Gbps | 320 MHz, 4096 QAM |
+| Intel Wi-Fi 7 BE201 | Q2'24 | 5.8 Gbps | Double Connect Technology |
+| Intel Wi-Fi 7 BE202 | Q3'23 | 2.4 Gbps | 160 MHz, 1024 QAM |
 
-- Intel Wi-Fi 6E AX210/AX211
+#### Wi-Fi 6E (AX) - Full Compatibility ✅
+
+| Product | Launch | Max Speed | Notes |
+|---------|--------|-----------|-------|
+| Intel Wi-Fi 6E AX411 (Gig+) | Q4'21 | ~3.0 Gbps | Double Connect Technology |
+| Intel Wi-Fi 6E AX211 (Gig+) | Q3'21 | 2.4 Gbps | Most common 6E adapter |
+| Intel Wi-Fi 6E AX210 (Gig+) | Q4'20 | 2.4 Gbps | First consumer 6E |
+
+#### Wi-Fi 6 (AX) - Full Compatibility ✅
+
 - Intel Wi-Fi 6 AX201/AX200
+- Intel Killer Wi-Fi 6 variants
 
-### Wi-Fi 5 (AC) - Limited Compatibility ⚠️
+#### Wi-Fi 5 / Wireless-AC - Limited Compatibility ⚠️
 
-- Intel Wireless-AC 9260/9560
-- Intel Wireless-AC 8265/8260
+| Product Family | Quick Share | Multi Control | Second Screen |
+|----------------|-------------|---------------|---------------|
+| Intel Wireless-AC 9000 Series (9260, 9560) | ✅ Works | ❌ No | ❌ No |
+| Intel Wireless-AC 8000 Series (8265, 8260) | ✅ Works | ❌ No | ❌ No |
 
 **AC Limitations:**
-
 - Multi Control does not work
 - Second Screen does not work (WiFi Direct uses 802.11n - Samsung limitation)
 - May show "A software or driver update is required" error in Quick Share
+
+#### Legacy Wireless-AC - Not Tested ❓
+
+| Product Family | Status |
+|----------------|--------|
+| Intel Wireless-AC 7265/7260 | Not tested - may not work |
+| Intel Wireless-AC 3168/3165 | Not tested - may not work |
+
+> **⚠️ Legacy Warning**: These older adapters may not work if:
+> - Driver hasn't been updated since 2020 (e.g., Windows 8.1 drivers v21.40.5)
+> - Product is discontinued without Windows 10/11 driver support
+> - Adapter doesn't support modern Wi-Fi Direct features
+
+### Multi Control Status: Under Investigation 🔍
+
+Multi Control is currently **not working reliably** on any Intel Wi-Fi generation:
+- Works intermittently on Wi-Fi 6/6E/7
+- Completely non-functional on Wi-Fi 5 (AC)
+- Investigation ongoing - may be Samsung server-side issue
 
 ### Non-Intel Wi-Fi (Not Working) ❌
 
@@ -412,7 +446,7 @@ Enter model number (1-22): 5
   BIOS: P08ALX.400.250306.05
 ```
 
-## 📖 Installation Guide
+## Installation Guide
 
 ### Step-by-Step
 

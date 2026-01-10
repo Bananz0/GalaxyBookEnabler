@@ -31,16 +31,28 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
 | Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
 | Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
-| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. Jittery on Wi-Fi 6/6E, not working on Wi-Fi 5 |
+| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. **⚠️ Under Investigation** - works intermittently on all Intel Wi-Fi, not working reliably |
 | Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
 | Second Screen | 9PLTXW5DX5KB | ✅ Yes | Use tablet as secondary display. Works on Wi-Fi 6/6E/7, not on Wi-Fi 5 |
 
 > **Wi-Fi Compatibility Note:**
-> - **Wi-Fi 7 (BE200, BE201, BE202)**: Full compatibility (Multi Control untested)
-> - **Wi-Fi 6/6E (AX210, AX211, AX201, AX200)**: Full compatibility, Multi Control may be jittery  
-> - **Wi-Fi 5 (AC 9260, AC 9560, AC 8265, AC 8260)**: Quick Share, Camera Share, Storage Share work. Multi Control and Second Screen do not work.
-> - All wireless features also require **Intel Bluetooth**
+>
+> **Supported Intel Products:**
+> - **Wi-Fi 7 (BE200, BE201, BE202)**: Full compatibility
+> - **Wi-Fi 6E (AX210, AX211, AX411)**: Full compatibility
+> - **Wi-Fi 6 (AX200, AX201)**: Full compatibility
+> - **Wi-Fi 5 / Wireless-AC 9000 Series (9260, 9560)**: Quick Share, Camera Share, Storage Share work. Multi Control and Second Screen do not work.
+> - **Wi-Fi 5 / Wireless-AC 8000 Series (8265, 8260)**: Same as 9000 series
+>
+> **Not Tested / May Not Work:**
+> - **Wireless-AC 7000 Series (7265, 7260)**: Legacy adapters, untested
+> - **Wireless-AC 3000 Series (3168, 3165)**: Legacy adapters, untested
+> - These older adapters may not work with outdated drivers (e.g., Windows 8.1 drivers from 2020)
+>
+> **Multi Control Status**: Currently under investigation. Works intermittently on all Intel Wi-Fi generations but not reliably.
+>
+> All wireless features also require **Intel Bluetooth**
 
 ### Productivity
 | Package | Store ID | Description | Notes |
@@ -233,4 +245,4 @@ winget search "Samsung" --source msstore
 
 ---
 
-**Last Updated**: December 5, 2025 (v3.0.0)
+**Last Updated**: January 10, 2026 (v3.1.0)
