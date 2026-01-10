@@ -24,6 +24,7 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
 - **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app
 - **Auto-Elevation** - Automatically requests admin rights (supports gsudo and Windows 11 native sudo)
+- **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
@@ -661,11 +662,22 @@ Contributions are welcome! Please:
 
 When reporting issues, please include:
 
-- Windows version
-- PowerShell version (`$PSVersionTable`)
-- Wi-Fi adapter model
+- **Installation log file** (automatically created at `%TEMP%\GalaxyBookEnabler_*.log`)
+  - The script creates a detailed diagnostic log during installation
+  - This log is created even when running via `irm | iex`
+  - Find it by pressing Win+R, typing `%TEMP%`, and looking for the newest `GalaxyBookEnabler_*.log` file
+  - Attach this file to your issue report for faster troubleshooting
+- Windows version (Settings → System → About)
+- PowerShell version (`$PSVersionTable.PSVersion`)
+- Wi-Fi adapter model (Device Manager → Network adapters)
+- Bluetooth adapter model (Device Manager → Bluetooth)
 - Error messages or screenshots
 - Steps to reproduce
+
+**Use our issue templates** when creating a new issue on GitHub:
+- 🐛 [Bug Report](.github/ISSUE_TEMPLATE/bug_report.yml) - For installation problems or features not working
+- 📊 [Hardware Compatibility Report](.github/ISSUE_TEMPLATE/hardware_compatibility.yml) - Share your hardware compatibility results
+- ✨ [Feature Request](.github/ISSUE_TEMPLATE/feature_request.yml) - Suggest new features
 
 ## License
 

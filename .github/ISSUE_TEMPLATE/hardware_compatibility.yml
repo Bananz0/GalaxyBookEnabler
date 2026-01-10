@@ -1,0 +1,127 @@
+name: Hardware Compatibility Report
+description: Report your hardware compatibility results to help improve documentation
+title: "[Compatibility]: "
+labels: ["documentation", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve compatibility documentation by sharing your results!
+        
+        Your feedback helps others know what to expect with their hardware.
+  
+  - type: dropdown
+    id: wifi-generation
+    attributes:
+      label: Intel Wi-Fi Generation
+      options:
+        - Wi-Fi 7 (BE200, BE201, BE202)
+        - Wi-Fi 6E (AX210, AX211, AX411)
+        - Wi-Fi 6 (AX201, AX200, AX101)
+        - Wi-Fi 5 / Wireless-AC (9260, 9560, 8265, 8260)
+        - Wireless-AC 7000/3000 Series
+        - Non-Intel Adapter
+        - Other Intel Model
+    validations:
+      required: true
+  
+  - type: input
+    id: wifi-model
+    attributes:
+      label: Exact Wi-Fi Model
+      description: From Device Manager → Network adapters
+      placeholder: "Intel Wi-Fi 6E AX211 160MHz"
+    validations:
+      required: true
+  
+  - type: input
+    id: bluetooth-model
+    attributes:
+      label: Exact Bluetooth Model
+      description: From Device Manager → Bluetooth
+      placeholder: "Intel Wireless Bluetooth"
+    validations:
+      required: false
+  
+  - type: dropdown
+    id: quick-share
+    attributes:
+      label: Quick Share
+      options:
+        - Works perfectly
+        - Works but slow/unstable
+        - Doesn't work
+        - Didn't test
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: camera-share
+    attributes:
+      label: Camera Share
+      options:
+        - Works perfectly
+        - Works but slow/unstable
+        - Doesn't work
+        - Didn't test
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: storage-share
+    attributes:
+      label: Storage Share
+      options:
+        - Works perfectly
+        - Works but slow/unstable
+        - Doesn't work
+        - Didn't test
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: multi-control
+    attributes:
+      label: Multi Control
+      options:
+        - Works perfectly
+        - Works but jittery/laggy
+        - Doesn't detect devices
+        - Detects but can't connect
+        - Didn't test
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: second-screen
+    attributes:
+      label: Second Screen
+      options:
+        - Works perfectly
+        - Works but laggy/unstable
+        - Doesn't work
+        - Didn't test
+    validations:
+      required: true
+  
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional Details
+      description: Any quirks, workarounds, or additional observations?
+      placeholder: "Example: Quick Share works great for files under 100MB, but larger files sometimes fail mid-transfer"
+    validations:
+      required: false
+  
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System Information
+      description: |
+        CPU, Windows version, any other relevant details
+      placeholder: |
+        CPU: AMD Ryzen 7 7840HS
+        Windows: 11 Pro 24H2 (Build 26100.2894)
+        RAM: 32GB
+    validations:
+      required: false

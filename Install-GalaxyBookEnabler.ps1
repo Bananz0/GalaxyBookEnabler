@@ -125,6 +125,118 @@ $SCRIPT_VERSION = "3.1.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
+# LOGGING SETUP
+$script:LogFile = Join-Path $env:TEMP "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$script:LoggingEnabled = $true
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS", "DEBUG")]
+        [string]$Level = "INFO"
+    )
+    
+    if (-not $script:LoggingEnabled) { return }
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp] [$Level] $Message"
+    
+    try {
+        Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
+    }
+    catch {
+        # Silently fail if logging doesn't work
+    }
+}
+
+function Write-LogSection {
+    param([string]$SectionName)
+    
+    $separator = "=" * 80
+    Write-Log $separator
+    Write-Log "  $SectionName"
+    Write-Log $separator
+}
+
+function Write-LogSystemInfo {
+    Write-LogSection "SYSTEM INFORMATION"
+    
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem
+        $cs = Get-CimInstance Win32_ComputerSystem
+        $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+        
+        Write-Log "Script Version: $SCRIPT_VERSION"
+        Write-Log "Windows: $($os.Caption) (Build $($os.BuildNumber))"
+        Write-Log "Computer: $($cs.Manufacturer) $($cs.Model)"
+        Write-Log "CPU: $($cpu.Name)"
+        Write-Log "RAM: $([math]::Round($cs.TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-Log "PowerShell: $($PSVersionTable.PSVersion)"
+        Write-Log "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Log "Command Line: $($MyInvocation.Line)"
+    }
+    catch {
+        Write-Log "Failed to gather system info: $($_.Exception.Message)" -Level ERROR
+    }
+}
+
+function Write-LogHardwareInfo {
+    Write-LogSection "HARDWARE DETECTION"
+    
+    try {
+        # Wi-Fi adapter
+        $wifiDevices = Get-PnpDevice -Class "Net" -Status "OK" -ErrorAction SilentlyContinue | 
+            Where-Object { $_.HardwareID -match "VEN_8086|VID_8086" -and $_.FriendlyName -match "Wi-Fi|Wireless" }
+        
+        if ($wifiDevices) {
+            foreach ($wifi in $wifiDevices) {
+                Write-Log "Wi-Fi (Intel): $($wifi.FriendlyName)"
+                Write-Log "  Hardware ID: $($wifi.HardwareID[0])"
+            }
+        }
+        else {
+            $wifiAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Status -eq "Up" -and ($_.InterfaceDescription -like "*Wi-Fi*" -or $_.InterfaceDescription -like "*Wireless*") }
+            
+            if ($wifiAdapters) {
+                foreach ($adapter in $wifiAdapters) {
+                    Write-Log "Wi-Fi: $($adapter.InterfaceDescription)" -Level WARNING
+                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                }
+            }
+            else {
+                Write-Log "Wi-Fi: Not detected" -Level WARNING
+            }
+        }
+        
+        # Bluetooth adapter
+        $btDevices = Get-PnpDevice -Class "Bluetooth" -Status "OK" -ErrorAction SilentlyContinue | 
+            Where-Object { $_.HardwareID -match "VEN_8087|VID_8087" }
+        
+        if ($btDevices) {
+            foreach ($bt in $btDevices) {
+                Write-Log "Bluetooth (Intel): $($bt.FriendlyName)"
+                Write-Log "  Hardware ID: $($bt.HardwareID[0])"
+            }
+        }
+        else {
+            $btAdapters = Get-PnpDevice -Class "Bluetooth" -Status "OK" -ErrorAction SilentlyContinue
+            if ($btAdapters) {
+                foreach ($adapter in $btAdapters) {
+                    Write-Log "Bluetooth: $($adapter.FriendlyName)" -Level WARNING
+                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                }
+            }
+            else {
+                Write-Log "Bluetooth: Not detected" -Level WARNING
+            }
+        }
+    }
+    catch {
+        Write-Log "Failed to detect hardware: $($_.Exception.Message)" -Level ERROR
+    }
+}
+
 
 # Galaxy Book Model Database
 $GalaxyBookModels = @{
@@ -4311,11 +4423,14 @@ function Install-SamsungPackages {
                 }
                 else {
                     Write-Host "  Installing..." -ForegroundColor Gray
+                    Write-Log "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
                     $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
                     
                     # Check for Microsoft Store connection error (0x80d03805)
                     if ($installOutput -match "0x80d03805|0x80D03805") {
                         Write-Host "  ✗ Microsoft Store connection error (0x80d03805)" -ForegroundColor Red
+                        Write-Log "ERROR: Package $($pkg.Name) failed with Microsoft Store error 0x80d03805" -Level ERROR
+                        Write-Log "Output: $installOutput" -Level DEBUG
                         Write-Host "" -ForegroundColor Yellow
                         Write-Host "    ═══════════════════════════════════════════════════════" -ForegroundColor Yellow
                         Write-Host "    WORKAROUND: Toggle your WiFi connection" -ForegroundColor Yellow
@@ -4335,21 +4450,27 @@ function Install-SamsungPackages {
                     # Parse output to determine actual result
                     elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
+                        Write-Log "SUCCESS: Package $($pkg.Name) installed successfully" -Level SUCCESS
                         $installed++
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
+                        Write-Log "Package $($pkg.Name) already installed (skipped)"
                         $skipped++
                     }
                     elseif ($installOutput -match "No package found matching input criteria|No applicable update found") {
                         Write-Host "  ✗ Package not found in winget" -ForegroundColor Red
                         Write-Host "    Package ID: $($pkg.Id)" -ForegroundColor Gray
                         Write-Host "    This may require installation through Microsoft Store instead" -ForegroundColor Yellow
+                        Write-Log "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
+                        Write-Log "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
                     elseif ($LASTEXITCODE -ne 0) {
                         Write-Host "  ✗ Installation failed (Exit code: $LASTEXITCODE)" -ForegroundColor Red
                         Write-Host "    Output: $($installOutput.Substring(0, [Math]::Min(200, $installOutput.Length)))" -ForegroundColor Gray
+                        Write-Log "ERROR: Package $($pkg.Name) failed with exit code $LASTEXITCODE" -Level ERROR
+                        Write-Log "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
                     else {
@@ -5606,7 +5727,14 @@ if ($alreadyInstalled) {
     }
 }
 
+# ==================== INITIALIZE LOGGING ====================
+Write-LogSystemInfo
+Write-LogHardwareInfo
+Write-Host "Installation log: $script:LogFile" -ForegroundColor DarkGray
+Write-Host "   (Include this file when reporting issues)`n" -ForegroundColor DarkGray
+
 # ==================== STEP 1: SYSTEM COMPATIBILITY CHECK ====================
+Write-LogSection "STEP 1: SYSTEM COMPATIBILITY CHECK"
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  STEP 1: System Compatibility Check" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
@@ -5818,6 +5946,7 @@ else {
 }
 
 # ==================== STEP 5: SYSTEM SUPPORT ENGINE (OPTIONAL/ADVANCED) ====================
+Write-LogSection "STEP 5: SYSTEM SUPPORT ENGINE"
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  STEP 5: System Support Engine (Advanced)" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
@@ -5885,19 +6014,23 @@ try {
                 $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
                 if ($continueAnyway -notlike "y*") {
                     Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
+                    Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
                     return
                 }
             }
             
             Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
+            Write-Log "Installing System Support Engine (SSSE)"
             Install-SystemSupportEngine -TestMode $TestMode | Out-Null
         }
         elseif ($choice -like "c*") {
             Write-Host "Continuing with existing packages..." -ForegroundColor Yellow
+            Write-Log "Installing SSSE with existing Samsung Settings packages"
             Install-SystemSupportEngine -TestMode $TestMode | Out-Null
         }
         else {
             Write-Host "Skipped SSSE setup by user choice." -ForegroundColor Yellow
+            Write-Log "User chose to skip SSSE installation"
         }
     }
     else {
@@ -5909,6 +6042,7 @@ catch {
 }
 
 # ==================== STEP 6: PACKAGE INSTALLATION ====================
+Write-LogSection "STEP 6: PACKAGE INSTALLATION"
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  STEP 6: Samsung Software Installation" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
@@ -6181,6 +6315,13 @@ if ($TestMode) {
     Write-Host "  .\\Install-GalaxyBookEnabler.ps1" -ForegroundColor White
 }
 else {
+    Write-LogSection "INSTALLATION COMPLETE"
+    Write-Log "Version: $SCRIPT_VERSION"
+    Write-Log "Install Path: $installPath"
+    Write-Log "Task Name: $taskName"
+    Write-Log "Wi-Fi: $($config.WiFiAdapter)"
+    Write-Log "Installation completed successfully at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level SUCCESS
+    
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "  Installation Complete!" -ForegroundColor Green
     Write-Host "========================================`n" -ForegroundColor Green
@@ -6190,6 +6331,10 @@ else {
     Write-Host "  Location: $installPath" -ForegroundColor Gray
     Write-Host "  Task: $taskName" -ForegroundColor Gray
     Write-Host "  Wi-Fi: $($config.WiFiAdapter)" -ForegroundColor Gray
+    
+    Write-Host "`Installation log saved to:" -ForegroundColor Cyan
+    Write-Host "   $script:LogFile" -ForegroundColor White
+    Write-Host "   (Include this file when reporting issues)" -ForegroundColor DarkGray
 
     Write-Host "`nWhat's Next:" -ForegroundColor Cyan
     Write-Host "  1. Reboot your PC for all changes to take effect" -ForegroundColor White

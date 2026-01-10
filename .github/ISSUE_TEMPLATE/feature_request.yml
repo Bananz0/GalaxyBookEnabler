@@ -1,0 +1,44 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature!
+  
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature Description
+      description: What feature would you like to see added?
+      placeholder: "Example: Add support for Samsung Flow"
+    validations:
+      required: true
+  
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: How would this feature be used? What problem does it solve?
+      placeholder: "Example: Samsung Flow would allow clipboard sync and notification mirroring"
+    validations:
+      required: true
+  
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions?
+      placeholder: "Example: Currently using KDE Connect but it's not as integrated"
+    validations:
+      required: false
+  
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information, screenshots, or examples
+    validations:
+      required: false

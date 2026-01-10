@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Logging System** - Automatic diagnostic log generation
+  - Logs saved to `%TEMP%\GalaxyBookEnabler_YYYYMMDD_HHMMSS.log`
+  - Captures system info, hardware detection, package operations, errors
+  - Works even when script is run via `irm | iex` (one-line install)
+  - Log path displayed at start and end of installation
+  - Include log file when reporting issues for faster troubleshooting
+
+- **GitHub Issue Templates** - Structured issue reporting
+  - Bug Report template with hardware info and log file upload
+  - Hardware Compatibility Report for community feedback
+  - Feature Request template
+
 - **Hardware ID-Based Detection** - Wi-Fi and Bluetooth detection now uses PCI/USB Vendor IDs instead of friendly names
   - Intel Wi-Fi: Vendor ID 8086 (works in all Windows languages)
   - Intel Bluetooth: Vendor ID 8087 (language-independent)
