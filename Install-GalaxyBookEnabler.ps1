@@ -4706,8 +4706,8 @@ function New-RegistrySpoofBatch {
     $randomDay = Get-Random -Minimum 1 -Maximum 29  # Safe for all months
     $biosReleaseDate = "{0:D2}/{1:D2}/{2}" -f $randomMonth, $randomDay, $randomYear
     
-    # Constants
-    $systemSku = "Samsung Chassis"
+    # Use ProductSku as SystemSKU (matches real Samsung hardware)
+    $systemSku = $values.ProductSku
     
     # Helper function to format registry value for BIOS key
     function Format-BiosRegValue {
@@ -4751,26 +4751,24 @@ REM SECTION 1: HKLM\HARDWARE\DESCRIPTION\System\BIOS
 REM ============================================================================
 $(Format-BiosRegValue "BIOSVendor" $values.BIOSVendor)
 $(Format-BiosRegValue "BIOSVersion" $values.BIOSVersion)
-$(Format-BiosRegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
-$(Format-BiosRegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
+$(Format-BiosRegValue "BiosMajorRelease" $values.BIOSMajorRelease)
+$(Format-BiosRegValue "BiosMinorRelease" $values.BIOSMinorRelease)
 $(Format-BiosRegValue "BIOSReleaseDate" $biosReleaseDate)
 $(Format-BiosRegValue "SystemManufacturer" $values.SystemManufacturer)
 $(Format-BiosRegValue "SystemFamily" $values.SystemFamily)
 $(Format-BiosRegValue "SystemProductName" $values.SystemProductName)
 $(Format-BiosRegValue "SystemSKU" $systemSku)
 $(Format-BiosRegValue "SystemVersion" $systemVersion)
-$(Format-BiosRegValue "ProductSku" $values.ProductSku)
-$(Format-BiosRegValue "EnclosureKind" $values.EnclosureKind)
+$(Format-BiosRegValue "EnclosureType" $values.EnclosureKind)
 $(Format-BiosRegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
 $(Format-BiosRegValue "BaseBoardProduct" $values.BaseBoardProduct)
 
 REM ============================================================================
 REM SECTION 2: HKLM\SYSTEM\HardwareConfig\Current
 REM ============================================================================
-$(Format-HwConfigRegValue "Id" "0x00000001")
+$(Format-HwConfigRegValue "Id" "0x00000000")
 $(Format-HwConfigRegValue "BootDriverFlags" "0x00000000")
 $(Format-HwConfigRegValue "EnclosureType" $values.EnclosureKind)
-$(Format-HwConfigRegValue "EnclosureKind" $values.EnclosureKind)
 $(Format-HwConfigRegValue "SystemManufacturer" $values.SystemManufacturer)
 $(Format-HwConfigRegValue "SystemFamily" $values.SystemFamily)
 $(Format-HwConfigRegValue "SystemProductName" $values.SystemProductName)
@@ -4779,11 +4777,8 @@ $(Format-HwConfigRegValue "SystemVersion" $systemVersion)
 $(Format-HwConfigRegValue "BIOSVendor" $values.BIOSVendor)
 $(Format-HwConfigRegValue "BIOSVersion" $values.BIOSVersion)
 $(Format-HwConfigRegValue "BIOSReleaseDate" $biosReleaseDate)
-$(Format-HwConfigRegValue "BIOSMajorRelease" $values.BIOSMajorRelease)
-$(Format-HwConfigRegValue "BIOSMinorRelease" $values.BIOSMinorRelease)
 $(Format-HwConfigRegValue "BaseBoardManufacturer" $values.BaseBoardManufacturer)
 $(Format-HwConfigRegValue "BaseBoardProduct" $values.BaseBoardProduct)
-$(Format-HwConfigRegValue "ProductSku" $values.ProductSku)
 
 REM ============================================================================
 REM SECTION 3: HKLM\SYSTEM\CurrentControlSet\Control\SystemInformation
