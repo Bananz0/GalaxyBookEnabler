@@ -109,6 +109,30 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 
 Test mode simulates the entire installation without making any actual changes. Perfect for testing or reviewing what the installer will do before committing.
 
+### Fully Autonomous Install (CI / Scripted)
+
+Run the installer non-interactively with all options specified up front:
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 `
+   -FullyAutonomous `
+   -AutonomousModel 960XGL `
+   -AutonomousPackageProfile Recommended `
+   -AutonomousInstallSsse:$true `
+   -AutonomousSsseStrategy Dual `
+   -AutonomousConfirmPackages:$true `
+   -AutonomousCreateAiSelectShortcut:$false `
+   -DebugOutput `
+   -LogDirectory "C:\GalaxyBook\Logs"
+```
+
+Notes:
+- `-AutonomousPackageProfile` supports: `Core`, `Recommended`, `RecommendedPlus`, `Full`, `Everything`, `Custom`, `Skip`.
+- For `Custom`, pass `-AutonomousPackageNames` with package names/IDs.
+- `-AutonomousModel` must match a model code from the model list (e.g., `960XGL`, `960XGK`).
+- `-AutonomousAction` supports: `Install` (default), `UpdateSettings`, `UpgradeSSE`, `UninstallAll`, `Cancel`.
+- Logs default to `C:\GalaxyBook\Logs` in autonomous mode unless `-LogPath` or `-LogDirectory` is supplied.
+
 ## Reset & Repair Tools
 
 The installer includes a comprehensive suite of tools to fix common issues with Samsung apps. Select **"Reset/Repair Samsung Apps"** from the main menu (or uninstall menu) to access:
@@ -385,10 +409,12 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 3. **Package Installation**: Installs selected Samsung apps from Microsoft Store
 4. **Configuration**: Sets up shortcuts and configuration files
 
-**Available Models** (21 authentic hardware profiles):
+**Available Models**
 
 | Model   | Family                              | Gen  |
 |---------|-------------------------------------|------|
+| 960XKB  | Galaxy Book6 Ultra                  | 2026 |
+| 960XKA  | Galaxy Book6 Pro                    | 2026 |
 | 960XHA  | Galaxy Book5 Pro                    | 2025 |
 | 940XHA  | Galaxy Book5 Pro                    | 2025 |
 | 960QHA  | Galaxy Book5 Pro 360                | 2025 |

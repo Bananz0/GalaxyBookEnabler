@@ -1,1 +1,8 @@
 internalanalysis
+INTERNAL-SERIALS.md
+INTERNAL-MODELS.md
+node_modules
+Generate-SamsungIdentity.ps1
+package-lock.json
+package.json
+tests

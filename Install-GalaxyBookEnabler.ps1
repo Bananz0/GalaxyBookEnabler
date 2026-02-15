@@ -26,6 +26,9 @@
     Cleans up existing installation, uninstalls Samsung Settings apps,
     fetches chosen SSSE version, patches, adds to DriverStore, and reinstalls apps.
 
+.PARAMETER FullyAutonomous
+    Runs a non-interactive install with all choices provided via parameters.
+
 .EXAMPLE
     .\Install-GalaxyBookEnabler.ps1
     Installs the Galaxy Book Enabler with interactive configuration.
@@ -58,8 +61,35 @@ param(
     [switch]$Uninstall,
     [switch]$TestMode,
     [switch]$UpgradeSSE,
-    [switch]$UpdateSettings
+    [switch]$UpdateSettings,
+    [switch]$FullyAutonomous,
+    [ValidateSet("Install", "UpdateSettings", "UpgradeSSE", "UninstallAll", "Cancel")]
+    [string]$AutonomousAction = "Install",
+    [string]$AutonomousModel,
+    [ValidateSet("Core", "Recommended", "RecommendedPlus", "Full", "Everything", "Custom", "Skip")]
+    [string]$AutonomousPackageProfile = "Recommended",
+    [string[]]$AutonomousPackageNames,
+    [bool]$AutonomousInstallSsse = $true,
+    [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
+    [string]$AutonomousSsseExistingMode = "Upgrade",
+    [ValidateSet("Dual", "Stable", "Latest", "Manual")]
+    [string]$AutonomousSsseStrategy = "Dual",
+    [string]$AutonomousSsseVersion,
+    [bool]$AutonomousRemoveExistingSettings = $true,
+    [bool]$AutonomousDisableOriginalService = $true,
+    [bool]$AutonomousConfirmPackages = $true,
+    [bool]$AutonomousCreateAiSelectShortcut = $false,
+    [bool]$AutonomousPreserveLegacy = $true,
+    [string]$LogDirectory,
+    [string]$LogPath,
+    [switch]$DebugOutput
 )
+
+$script:IsAutonomous = $FullyAutonomous.IsPresent
+if ($DebugOutput) {
+    $VerbosePreference = "Continue"
+    $DebugPreference = "Continue"
+}
 
 # This script requires PowerShell 7.0+ for modern syntax and features
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -127,6 +157,24 @@ $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
 # LOGGING SETUP
 $script:LogFile = Join-Path $env:TEMP "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$script:LogDirectory = $null
+
+if ($LogPath) {
+    $script:LogFile = $LogPath
+    $script:LogDirectory = Split-Path -Path $LogPath -Parent
+}
+elseif ($LogDirectory) {
+    $script:LogDirectory = $LogDirectory
+    $script:LogFile = Join-Path $LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+}
+elseif ($script:IsAutonomous) {
+    $script:LogDirectory = "C:\GalaxyBook\Logs"
+    $script:LogFile = Join-Path $script:LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+}
+
+if ($script:LogDirectory -and -not (Test-Path $script:LogDirectory)) {
+    New-Item -Path $script:LogDirectory -ItemType Directory -Force | Out-Null
+}
 $script:LoggingEnabled = $true
 
 function Write-Log {
@@ -2316,7 +2364,15 @@ function Install-SystemSupportEngine {
     param(
         [string]$InstallPath = "C:\GalaxyBook",
         [bool]$TestMode = $false,
-        [string]$ForceVersion = $null
+        [string]$ForceVersion = $null,
+        [bool]$AutoInstall = $false,
+        [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
+        [string]$AutoExistingInstallMode = "Upgrade",
+        [ValidateSet("Dual", "Stable", "Latest", "Manual")]
+        [string]$AutoStrategy = "Dual",
+        [string]$AutoVersion = $null,
+        [bool]$AutoRemoveExistingSettings = $true,
+        [bool]$AutoDisableOriginalService = $true
     )
     
     Write-Host "`n========================================" -ForegroundColor Yellow
@@ -2341,7 +2397,7 @@ function Install-SystemSupportEngine {
     Write-Host "`nRecommended for advanced users only." -ForegroundColor Yellow
     Write-Host ""
     
-    $continue = Read-Host "Do you want to install System Support Engine? (y/N)"
+    $continue = if ($AutoInstall) { "y" } else { Read-Host "Do you want to install System Support Engine? (y/N)" }
     if ($continue -notlike "y*") {
         Write-Host "Skipping System Support Engine installation." -ForegroundColor Cyan
         return $false
@@ -2440,7 +2496,7 @@ function Install-SystemSupportEngine {
         Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
         Write-Host ""
         
-        $disableOriginal = Read-Host "Disable original Samsung service? (Y/n)"
+        $disableOriginal = if ($AutoInstall) { if ($AutoDisableOriginalService) { "y" } else { "n" } } else { Read-Host "Disable original Samsung service? (Y/n)" }
         if ($disableOriginal -notlike "n*") {
             Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
             
@@ -2507,7 +2563,17 @@ function Install-SystemSupportEngine {
         Write-Host "  [4] Cancel" -ForegroundColor White
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-4]"
+        $choice = if ($AutoInstall) {
+            switch ($AutoExistingInstallMode) {
+                "Upgrade" { "1" }
+                "Keep" { "2" }
+                "Clean" { "3" }
+                default { "4" }
+            }
+        }
+        else {
+            Read-Host "Enter choice [1-4]"
+        }
         
         switch ($choice) {
             "1" {
@@ -2520,11 +2586,17 @@ function Install-SystemSupportEngine {
                         Write-Host "  [$($i + 1)] $($existingInstallations[$i].Path) (v$($existingInstallations[$i].Version))" -ForegroundColor White
                     }
                     Write-Host ""
-                    
-                    do {
-                        $upgradeChoice = Read-Host "Enter choice [1-$($existingInstallations.Count)]"
-                        $upgradeIndex = [int]$upgradeChoice - 1
-                    } while ($upgradeIndex -lt 0 -or $upgradeIndex -ge $existingInstallations.Count)
+
+                    if ($AutoInstall) {
+                        $upgradeIndex = 0
+                        Write-Host "  ✓ Auto-selecting first installation for upgrade" -ForegroundColor Gray
+                    }
+                    else {
+                        do {
+                            $upgradeChoice = Read-Host "Enter choice [1-$($existingInstallations.Count)]"
+                            $upgradeIndex = [int]$upgradeChoice - 1
+                        } while ($upgradeIndex -lt 0 -or $upgradeIndex -ge $existingInstallations.Count)
+                    }
                     
                     $InstallPath = $existingInstallations[$upgradeIndex].Path
                 }
@@ -2607,39 +2679,73 @@ function Install-SystemSupportEngine {
         Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest 7.1.2.0" -ForegroundColor Gray
         Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
         Write-Host ""
-        
-        $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
-        
-        if ($strategyChoice -like "n*") {
-            # Fallback to manual version selection
-            Write-Host ""
-            Write-Host "  Available versions:" -ForegroundColor Yellow
-            Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
-            Write-Host "    [2] 7.1.2.0 - Latest" -ForegroundColor White
-            Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
-            Write-Host ""
-            
-            $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
-            
-            $cabVersion = switch ($versionChoice) {
-                "2" { "7.1.2.0" }
-                "3" { $null }  # Will show interactive menu
-                default { "6.3.3.0" }
+
+        if ($AutoInstall) {
+            switch ($AutoStrategy) {
+                "Dual" {
+                    $cabVersion = "6.1.8.0"
+                    $driverVersion = "7.1.2.0"
+                    $installedVersion = $cabVersion
+                    $useDualVersionStrategy = $true
+                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> 7.1.2.0)" -ForegroundColor Green
+                }
+                "Stable" {
+                    $cabVersion = "6.3.3.0"
+                    $installedVersion = $cabVersion
+                    $useDualVersionStrategy = $false
+                    Write-Host "  ✓ Auto-selected stable version: $cabVersion" -ForegroundColor Cyan
+                }
+                "Latest" {
+                    $cabVersion = "7.1.2.0"
+                    $installedVersion = $cabVersion
+                    $useDualVersionStrategy = $false
+                    Write-Host "  ✓ Auto-selected latest version: $cabVersion" -ForegroundColor Cyan
+                }
+                default {
+                    if (-not $AutoVersion) {
+                        $AutoVersion = "6.3.3.0"
+                    }
+                    $cabVersion = $AutoVersion
+                    $installedVersion = $cabVersion
+                    $useDualVersionStrategy = $false
+                    Write-Host "  ✓ Auto-selected version: $cabVersion" -ForegroundColor Cyan
+                }
             }
-            
-            if ($cabVersion) {
-                Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
-            }
-            $installedVersion = $cabVersion  # Track installed version for single-version install
-            $useDualVersionStrategy = $false
         }
         else {
-            # Use dual-version strategy
-            $cabVersion = "6.1.8.0"  # Primary version for patched exe
-            $driverVersion = "7.1.2.0"  # Driver version for DriverStore
-            $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
-            $useDualVersionStrategy = $true
-            Write-Host "  ✓ Will install 6.1.8.0 then upgrade to 7.1.2.0" -ForegroundColor Green
+            $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
+            
+            if ($strategyChoice -like "n*") {
+                # Fallback to manual version selection
+                Write-Host ""
+                Write-Host "  Available versions:" -ForegroundColor Yellow
+                Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
+                Write-Host "    [2] 7.1.2.0 - Latest" -ForegroundColor White
+                Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
+                Write-Host ""
+                
+                $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
+                
+                $cabVersion = switch ($versionChoice) {
+                    "2" { "7.1.2.0" }
+                    "3" { $null }  # Will show interactive menu
+                    default { "6.3.3.0" }
+                }
+                
+                if ($cabVersion) {
+                    Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
+                }
+                $installedVersion = $cabVersion  # Track installed version for single-version install
+                $useDualVersionStrategy = $false
+            }
+            else {
+                # Use dual-version strategy
+                $cabVersion = "6.1.8.0"  # Primary version for patched exe
+                $driverVersion = "7.1.2.0"  # Driver version for DriverStore
+                $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
+                $useDualVersionStrategy = $true
+                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to 7.1.2.0" -ForegroundColor Green
+            }
         }
     }
     
@@ -2657,7 +2763,7 @@ function Install-SystemSupportEngine {
         Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
         Write-Host ""
         
-        $removeChoice = Read-Host "Remove existing Samsung Settings packages? (Y/n)"
+        $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { "y" } else { "n" } } else { Read-Host "Remove existing Samsung Settings packages? (Y/n)" }
         if ($removeChoice -notlike "n*") {
             Write-Host "  Removing packages..." -ForegroundColor Yellow
             $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
@@ -4212,6 +4318,45 @@ function Get-PackagesByProfile {
     return $packages
 }
 
+function Resolve-AutonomousPackages {
+    param(
+        [string]$ProfileName,
+        [string[]]$PackageNames
+    )
+
+    $normalized = if ($ProfileName) { $ProfileName.ToLowerInvariant() } else { "recommended" }
+
+    switch ($normalized) {
+        "core" { return Get-PackagesByProfile -ProfileName "1" }
+        "recommended" { return Get-PackagesByProfile -ProfileName "2" }
+        "recommendedplus" { return Get-PackagesByProfile -ProfileName "3" }
+        "full" { return Get-PackagesByProfile -ProfileName "4" }
+        "everything" { return Get-PackagesByProfile -ProfileName "5" }
+        "skip" { return @() }
+        "custom" {
+            if (-not $PackageNames -or $PackageNames.Count -eq 0) {
+                throw "AutonomousPackageNames must be provided when AutonomousPackageProfile is 'Custom'."
+            }
+
+            $allPackages = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+            $resolved = @()
+
+            foreach ($name in $PackageNames) {
+                $match = $allPackages | Where-Object { $_.Name -eq $name -or $_.Id -eq $name } | Select-Object -First 1
+                if (-not $match) {
+                    throw "Autonomous package '$name' was not found in the package database."
+                }
+                $resolved += $match
+            }
+
+            return $resolved
+        }
+        default {
+            throw "Invalid AutonomousPackageProfile '$ProfileName'."
+        }
+    }
+}
+
 function Show-CustomPackageSelection {
     param (
         [bool]$HasIntelWiFi
@@ -4692,6 +4837,22 @@ function Show-ModelSelectionMenu {
     } while ($true)
 }
 
+function Resolve-AutonomousModel {
+    param([string]$ModelCode)
+
+    if (-not $ModelCode) {
+        return $null
+    }
+
+    $key = $ModelCode.ToUpperInvariant()
+    if (-not $GalaxyBookModels.ContainsKey($key)) {
+        $valid = ($GalaxyBookModels.Keys | Sort-Object) -join ", "
+        throw "AutonomousModel '$ModelCode' is not a known model. Valid values: $valid"
+    }
+
+    return $GalaxyBookModels[$key]
+}
+
 function Get-LegacyBiosValues {
     param (
         [string]$OldBatchPath
@@ -5010,6 +5171,23 @@ $installPath = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
 $batchScriptPath = Join-Path $installPath "GalaxyBookSpoof.bat"
 $configPath = Join-Path $installPath "gbe-config.json"
 
+if ($script:IsAutonomous -and $AutonomousAction -ne "Install") {
+    switch ($AutonomousAction) {
+        "UpdateSettings" { $UpdateSettings = $true }
+        "UpgradeSSE" { $UpgradeSSE = $true }
+        "UninstallAll" { $Uninstall = $true }
+        "Cancel" {
+            Write-Host "Autonomous action set to Cancel. Exiting." -ForegroundColor Yellow
+            exit
+        }
+        default {
+            Write-Host "Autonomous action '$AutonomousAction' is not supported in non-interactive mode." -ForegroundColor Red
+            Write-Host "Use -AutonomousAction Install, UpdateSettings, UpgradeSSE, UninstallAll, or run interactively." -ForegroundColor Yellow
+            exit 1
+        }
+    }
+}
+
 # ==================== UPDATE SAMSUNG SETTINGS MODE ====================
 if ($UpdateSettings) {
     Clear-Host
@@ -5025,14 +5203,14 @@ if ($UpdateSettings) {
     Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
     Write-Host ""
     
-    $proceed = Read-Host "Proceed? (Y/n)"
+    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
     if ($proceed -like "n*") {
         Write-Host "`nCancelled." -ForegroundColor Yellow
         exit
     }
     
     # Call the main Install-SystemSupportEngine function which handles everything properly
-    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode
+    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
     
     if ($result) {
         Write-Host "`n========================================" -ForegroundColor Green
@@ -5062,7 +5240,7 @@ if ($Uninstall) {
     Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
     Write-Host ""
     
-    $confirm = Read-Host "Are you sure you want to uninstall? (Y/N)"
+    $confirm = if ($script:IsAutonomous) { "Y" } else { Read-Host "Are you sure you want to uninstall? (Y/N)" }
     
     if ($confirm -notlike "y*") {
         Write-Host "`nUninstall cancelled." -ForegroundColor Yellow
@@ -5116,14 +5294,14 @@ if ($UpgradeSSE) {
     Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
     Write-Host ""
     
-    $proceed = Read-Host "Proceed with upgrade to 7.1.2.0? (Y/n)"
+    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with upgrade to 7.1.2.0? (Y/n)" }
     if ($proceed -like "n*") {
         Write-Host "`nUpgrade cancelled." -ForegroundColor Yellow
         exit
     }
     
     Write-Host "`n"
-    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion "7.1.2.0"
+    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion "7.1.2.0" -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
     
     if ($result) {
         Write-Host "`n========================================" -ForegroundColor Green
@@ -5294,14 +5472,14 @@ if ($alreadyInstalled) {
         Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
         Write-Host ""
         
-        $proceed = Read-Host "Proceed? (Y/n)"
+        $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
         if ($proceed -like "n*") {
             Write-Host "`nCancelled." -ForegroundColor Yellow
             exit
         }
         
         # Call the main Install-SystemSupportEngine function which handles everything properly
-        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode
+        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
         
         if ($result) {
             Write-Host "`n========================================" -ForegroundColor Green
@@ -5809,7 +5987,12 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Only prompt for model selection if not already set from reinstall/legacy
 if (-not $biosValuesToUse) {
-    $biosValuesToUse = Show-ModelSelectionMenu
+    if ($script:IsAutonomous -and $AutonomousModel) {
+        $biosValuesToUse = Resolve-AutonomousModel -ModelCode $AutonomousModel
+    }
+    elseif (-not $script:IsAutonomous) {
+        $biosValuesToUse = Show-ModelSelectionMenu
+    }
 }
 
 # ==================== STEP 3: CREATE INSTALLATION ====================
@@ -5863,7 +6046,7 @@ if ((Test-Path $legacyBatchPath) -and -not $biosValuesToUse) {
         Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from GB3U defaults" -ForegroundColor Yellow
         Write-Host ""
         
-        $preserve = Read-Host "Would you like to preserve these custom values? (Y/N)"
+        $preserve = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Would you like to preserve these custom values? (Y/N)" }
         
         if ($preserve -eq "Y" -or $preserve -eq "y") {
             $biosValuesToUse = $legacyValues.Values
@@ -5955,90 +6138,102 @@ Write-Host "Scanning for existing Samsung Settings packages..." -ForegroundColor
 Write-Host "  (Checking all users - this may take 10-30 seconds)`n" -ForegroundColor DarkGray
 
 # Warn if Samsung Settings already installed (version mismatch risk with driver-bound install)
-try {
-    # Use -AllUsers to detect system-provisioned packages (staged for SYSTEM account)
-    # These won't show up with current-user-only check
-    $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
-    
-    # Note: Get-AppxProvisionedPackage is commented out because:
-    # - Takes 2+ minutes to execute
-    # - Often fails with "Class not registered" error
-    # - Not critical since -AllUsers catches provisioned packages anyway
-    #
-    # $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
-    
-    if ($existingSettings) {
-        Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
-        
-        Write-Host "`n  Installed packages:" -ForegroundColor Cyan
-        foreach ($app in $existingSettings) {
-            $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
-            Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
-        }
-        
-        Write-Host ""
-        Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
-        Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
-        Write-Host ""
-         
-        $choice = Read-Host "Options: [U]ninstall existing packages, [C]ontinue anyway, [S]kip SSSE setup (U/C/S)"
-         
-        if ($choice -like "u*") {
-            Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
-            Write-Host "  This will try multiple methods to ensure complete removal." -ForegroundColor Gray
-            Write-Host ""
-            
-            $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
-            
-            Write-Host ""
-            Write-Host "Removal Summary:" -ForegroundColor Cyan
-            if ($removalResult.Success.Count -gt 0) {
-                Write-Host "  ✓ Successfully removed: $($removalResult.Success.Count) package(s)" -ForegroundColor Green
-                foreach ($pkg in $removalResult.Success) {
-                    Write-Host "    • $pkg" -ForegroundColor Gray
-                }
-            }
-            
-            if ($removalResult.Failed.Count -gt 0) {
-                Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
-                foreach ($pkg in $removalResult.Failed) {
-                    Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
-                }
-                Write-Host ""
-                Write-Host "  Manual removal options:" -ForegroundColor Yellow
-                Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
-                Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
-                Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
-                Write-Host ""
-                
-                $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
-                if ($continueAnyway -notlike "y*") {
-                    Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
-                    Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
-                    return
-                }
-            }
-            
-            Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
-            Write-Log "Installing System Support Engine (SSSE)"
-            Install-SystemSupportEngine -TestMode $TestMode | Out-Null
-        }
-        elseif ($choice -like "c*") {
-            Write-Host "Continuing with existing packages..." -ForegroundColor Yellow
-            Write-Log "Installing SSSE with existing Samsung Settings packages"
-            Install-SystemSupportEngine -TestMode $TestMode | Out-Null
-        }
-        else {
-            Write-Host "Skipped SSSE setup by user choice." -ForegroundColor Yellow
-            Write-Log "User chose to skip SSSE installation"
-        }
+if ($script:IsAutonomous) {
+    if ($AutonomousInstallSsse) {
+        Write-Log "Autonomous mode: installing SSSE" -Level INFO
+        Install-SystemSupportEngine -TestMode $TestMode -AutoInstall $true -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService | Out-Null
     }
     else {
-        Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+        Write-Host "Skipping System Support Engine installation (autonomous config)." -ForegroundColor Cyan
+        Write-Log "Autonomous mode: skipping SSSE installation" -Level WARNING
     }
 }
-catch {
-    Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+else {
+    try {
+        # Use -AllUsers to detect system-provisioned packages (staged for SYSTEM account)
+        # These won't show up with current-user-only check
+        $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
+        
+        # Note: Get-AppxProvisionedPackage is commented out because:
+        # - Takes 2+ minutes to execute
+        # - Often fails with "Class not registered" error
+        # - Not critical since -AllUsers catches provisioned packages anyway
+        #
+        # $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
+        
+        if ($existingSettings) {
+            Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
+            
+            Write-Host "`n  Installed packages:" -ForegroundColor Cyan
+            foreach ($app in $existingSettings) {
+                $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
+                Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
+            }
+            
+            Write-Host ""
+            Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
+            Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
+            Write-Host ""
+             
+            $choice = Read-Host "Options: [U]ninstall existing packages, [C]ontinue anyway, [S]kip SSSE setup (U/C/S)"
+             
+            if ($choice -like "u*") {
+                Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
+                Write-Host "  This will try multiple methods to ensure complete removal." -ForegroundColor Gray
+                Write-Host ""
+                
+                $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
+                
+                Write-Host ""
+                Write-Host "Removal Summary:" -ForegroundColor Cyan
+                if ($removalResult.Success.Count -gt 0) {
+                    Write-Host "  ✓ Successfully removed: $($removalResult.Success.Count) package(s)" -ForegroundColor Green
+                    foreach ($pkg in $removalResult.Success) {
+                        Write-Host "    • $pkg" -ForegroundColor Gray
+                    }
+                }
+                
+                if ($removalResult.Failed.Count -gt 0) {
+                    Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
+                    foreach ($pkg in $removalResult.Failed) {
+                        Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                    }
+                    Write-Host ""
+                    Write-Host "  Manual removal options:" -ForegroundColor Yellow
+                    Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
+                    Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
+                    Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                    Write-Host ""
+                    
+                    $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
+                    if ($continueAnyway -notlike "y*") {
+                        Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
+                        Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
+                        return
+                    }
+                }
+                
+                Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
+                Write-Log "Installing System Support Engine (SSSE)"
+                Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+            }
+            elseif ($choice -like "c*") {
+                Write-Host "Continuing with existing packages..." -ForegroundColor Yellow
+                Write-Log "Installing SSSE with existing Samsung Settings packages"
+                Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+            }
+            else {
+                Write-Host "Skipped SSSE setup by user choice." -ForegroundColor Yellow
+                Write-Log "User chose to skip SSSE installation"
+            }
+        }
+        else {
+            Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+        }
+    }
+    catch {
+        Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+    }
 }
 
 # ==================== STEP 6: PACKAGE INSTALLATION ====================
@@ -6047,62 +6242,109 @@ Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  STEP 6: Samsung Software Installation" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
-$installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
-
 $packagesToInstall = @()
 
-if ($installChoice -eq "7") {
-    Write-Host "✓ Skipping package installation" -ForegroundColor Green
-    Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
-}
-elseif ($installChoice -eq "6") {
-    # Custom selection
-    $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
-}
-else {
-    # Profile-based selection
-    $packagesToInstall = Get-PackagesByProfile -ProfileName $installChoice
-    
-    # Show what will be installed
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Installation Summary" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    
-    Write-Host "The following packages will be installed:`n" -ForegroundColor Yellow
-    
-    foreach ($pkg in $packagesToInstall) {
-        $statusColor = switch ($pkg.Status) {
-            "Working" { "Green" }
-            "RequiresExtraSteps" { "Yellow" }
-            "NotWorking" { "Red" }
-            default { "White" }
+if ($script:IsAutonomous) {
+    $packagesToInstall = Resolve-AutonomousPackages -ProfileName $AutonomousPackageProfile -PackageNames $AutonomousPackageNames
+
+    if ($AutonomousPackageProfile -eq "Skip") {
+        Write-Host "✓ Skipping package installation (autonomous config)" -ForegroundColor Green
+        Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
+    }
+    elseif ($packagesToInstall.Count -gt 0) {
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Installation Summary" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        Write-Host "The following packages will be installed:`n" -ForegroundColor Yellow
+
+        foreach ($pkg in $packagesToInstall) {
+            $statusColor = switch ($pkg.Status) {
+                "Working" { "Green" }
+                "RequiresExtraSteps" { "Yellow" }
+                "NotWorking" { "Red" }
+                default { "White" }
+            }
+
+            Write-Host "  • $($pkg.Name)" -ForegroundColor $statusColor
+
+            if ($pkg.Warning) {
+                Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
+            }
+            if ($pkg.Tip) {
+                Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+            }
+
+            if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
+                Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
+            }
         }
-        
-        Write-Host "  • $($pkg.Name)" -ForegroundColor $statusColor
-        
-        if ($pkg.Warning) {
-            Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
-        }
-        if ($pkg.Tip) {
-            Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
-        }
-        
-        if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
-            Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
+
+        Write-Host ""
+        Write-Host "Total packages: $($packagesToInstall.Count)" -ForegroundColor Cyan
+        Write-Host ""
+
+        if (-not $AutonomousConfirmPackages) {
+            Write-Host "Installation cancelled (autonomous config)." -ForegroundColor Yellow
+            $packagesToInstall = @()
         }
     }
-    
-    Write-Host ""
-    Write-Host "Total packages: $($packagesToInstall.Count)" -ForegroundColor Cyan
-    Write-Host ""
-    
-    $confirm = Read-Host "Proceed with installation? (Y/N)"
-    
-    if ($confirm -notlike "y*") {
-        Write-Host "Installation cancelled." -ForegroundColor Yellow
-        pause
-        exit
+}
+else {
+    $installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
+
+    if ($installChoice -eq "7") {
+        Write-Host "✓ Skipping package installation" -ForegroundColor Green
+        Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
+    }
+    elseif ($installChoice -eq "6") {
+        # Custom selection
+        $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
+    }
+    else {
+        # Profile-based selection
+        $packagesToInstall = Get-PackagesByProfile -ProfileName $installChoice
+        
+        # Show what will be installed
+        Clear-Host
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Installation Summary" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        Write-Host "The following packages will be installed:`n" -ForegroundColor Yellow
+        
+        foreach ($pkg in $packagesToInstall) {
+            $statusColor = switch ($pkg.Status) {
+                "Working" { "Green" }
+                "RequiresExtraSteps" { "Yellow" }
+                "NotWorking" { "Red" }
+                default { "White" }
+            }
+            
+            Write-Host "  • $($pkg.Name)" -ForegroundColor $statusColor
+            
+            if ($pkg.Warning) {
+                Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
+            }
+            if ($pkg.Tip) {
+                Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+            }
+            
+            if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
+                Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
+            }
+        }
+        
+        Write-Host ""
+        Write-Host "Total packages: $($packagesToInstall.Count)" -ForegroundColor Cyan
+        Write-Host ""
+        
+        $confirm = Read-Host "Proceed with installation? (Y/N)"
+        
+        if ($confirm -notlike "y*") {
+            Write-Host "Installation cancelled." -ForegroundColor Yellow
+            pause
+            exit
+        }
     }
 }
 
@@ -6191,7 +6433,7 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
         Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
         Write-Host ""
 
-        $setupShortcut = Read-Host "Create Desktop shortcut? (Y/N)"
+        $setupShortcut = if ($script:IsAutonomous) { if ($AutonomousCreateAiSelectShortcut) { "Y" } else { "N" } } else { Read-Host "Create Desktop shortcut? (Y/N)" }
 
         if ($setupShortcut -like "y*") {
             $WshShell = New-Object -ComObject WScript.Shell
