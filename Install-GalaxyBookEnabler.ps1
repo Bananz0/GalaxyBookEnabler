@@ -3459,12 +3459,12 @@ function Install-SystemSupportEngine {
                         Write-Host "    Installing 7.1.2.0 driver to DriverStore..." -ForegroundColor Yellow
                         
                         if (-not $TestMode) {
-                            $pnputilResult = & pnputil /add-driver "$($driverInfFile.FullName)" /install 2>&1
-                            if ($LASTEXITCODE -eq 0) {
+                            $driverAdded = Install-SSSEDriverToStore -InfPath $driverInfFile.FullName -TestMode:$false
+                            if ($driverAdded) {
                                 Write-Host "    ✓ 7.1.2.0 driver added to DriverStore" -ForegroundColor Green
                             }
                             else {
-                                Write-Host "    ⚠ Driver add had issues: $pnputilResult" -ForegroundColor Yellow
+                                Write-Host "    ⚠ 7.1.2.0 driver add had issues" -ForegroundColor Yellow
                             }
                         }
                         else {
@@ -4926,12 +4926,76 @@ function Install-SSSEDriverToStore {
 
     try {
         Write-Host "    Adding driver to driver store..." -ForegroundColor Yellow
-        $addResult = & pnputil.exe /add-driver "$InfPath" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "    ✗ Failed to add INF to store" -ForegroundColor Red
-            Write-Host "      Error: $addResult" -ForegroundColor Red
-            return $false
+
+        $dismExe = Join-Path $env:SystemRoot "System32\dism.exe"
+        $useNonInteractivePath = $script:IsAutonomous
+        $commandTimeoutSeconds = if ($script:IsAutonomous) { 120 } else { 300 }
+
+        if ($useNonInteractivePath -and (Test-Path $dismExe)) {
+            $dismOut = Join-Path $env:TEMP ("gbe-dism-driver-{0}.log" -f ([guid]::NewGuid().ToString('N')))
+            $dismErr = Join-Path $env:TEMP ("gbe-dism-driver-{0}.err.log" -f ([guid]::NewGuid().ToString('N')))
+            try {
+                $dismProc = Start-Process -FilePath $dismExe -ArgumentList @('/Online', '/Add-Driver', "/Driver:$InfPath", '/NoRestart') -PassThru -WindowStyle Hidden -RedirectStandardOutput $dismOut -RedirectStandardError $dismErr
+                $null = Wait-Process -Id $dismProc.Id -Timeout $commandTimeoutSeconds -ErrorAction SilentlyContinue
+                if (-not $dismProc.HasExited) {
+                    Stop-Process -Id $dismProc.Id -Force -ErrorAction SilentlyContinue
+                    Write-Host "    ⚠ DISM timed out after $commandTimeoutSeconds seconds; falling back to pnputil" -ForegroundColor Yellow
+                    $dismProc = $null
+                }
+
+                if ($null -eq $dismProc) {
+                    # Continue to pnputil fallback
+                }
+                else {
+                    $dismProc.Refresh()
+                }
+
+                if ($dismProc -and $dismProc.ExitCode -eq 0) {
+                    Write-Host "    ✓ Driver added to driver store (DISM)" -ForegroundColor Green
+                    return $true
+                }
+
+                $dismOutput = @()
+                if (Test-Path $dismOut) { $dismOutput += Get-Content $dismOut -ErrorAction SilentlyContinue }
+                if (Test-Path $dismErr) { $dismOutput += Get-Content $dismErr -ErrorAction SilentlyContinue }
+                if ($dismProc) {
+                    Write-Host "    ⚠ DISM add-driver failed (exit $($dismProc.ExitCode)); falling back to pnputil" -ForegroundColor Yellow
+                }
+                if ($DebugOutput -and $dismOutput) {
+                    Write-Host "      DISM output: $($dismOutput -join ' ')" -ForegroundColor DarkGray
+                }
+            }
+            finally {
+                Remove-Item $dismOut, $dismErr -Force -ErrorAction SilentlyContinue
+            }
         }
+
+        $pnputilOut = Join-Path $env:TEMP ("gbe-pnputil-driver-{0}.log" -f ([guid]::NewGuid().ToString('N')))
+        $pnputilErr = Join-Path $env:TEMP ("gbe-pnputil-driver-{0}.err.log" -f ([guid]::NewGuid().ToString('N')))
+        try {
+            $pnputilProc = Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/add-driver', $InfPath) -PassThru -WindowStyle Hidden -RedirectStandardOutput $pnputilOut -RedirectStandardError $pnputilErr
+            $null = Wait-Process -Id $pnputilProc.Id -Timeout $commandTimeoutSeconds -ErrorAction SilentlyContinue
+            if (-not $pnputilProc.HasExited) {
+                Stop-Process -Id $pnputilProc.Id -Force -ErrorAction SilentlyContinue
+                Write-Host "    ✗ pnputil timed out after $commandTimeoutSeconds seconds" -ForegroundColor Red
+                Write-Host "      This usually indicates an interactive trust/install prompt in the current host." -ForegroundColor Yellow
+                return $false
+            }
+
+            $pnputilProc.Refresh()
+            if ($pnputilProc.ExitCode -ne 0) {
+                $pnputilOutput = @()
+                if (Test-Path $pnputilOut) { $pnputilOutput += Get-Content $pnputilOut -ErrorAction SilentlyContinue }
+                if (Test-Path $pnputilErr) { $pnputilOutput += Get-Content $pnputilErr -ErrorAction SilentlyContinue }
+                Write-Host "    ✗ Failed to add INF to store" -ForegroundColor Red
+                Write-Host "      Error: $($pnputilOutput -join ' ')" -ForegroundColor Red
+                return $false
+            }
+        }
+        finally {
+            Remove-Item $pnputilOut, $pnputilErr -Force -ErrorAction SilentlyContinue
+        }
+
         Write-Host "    ✓ Driver added to driver store" -ForegroundColor Green
         return $true
     }
