@@ -180,12 +180,34 @@ jobs:
               [int]$TimeoutSeconds = 600
             )
 
+            function ConvertTo-StartProcessArguments {
+              param([string[]]$Arguments)
+
+              $quotedArguments = @()
+              foreach ($argument in $Arguments) {
+                if ($null -eq $argument) {
+                  $quotedArguments += '""'
+                  continue
+                }
+
+                if ($argument -match '[\s"]') {
+                  $quotedArguments += '"' + ($argument -replace '"', '\\"') + '"'
+                }
+                else {
+                  $quotedArguments += $argument
+                }
+              }
+
+              return $quotedArguments
+            }
+
             $stdoutPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stdout.log"
             $stderrPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stderr.log"
             $invocationArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '.\Install-GalaxyBookEnabler.ps1') + $Args
+            $escapedInvocationArgs = ConvertTo-StartProcessArguments -Arguments $invocationArgs
 
             Write-Host "Running '$Name' with timeout ${TimeoutSeconds}s..."
-            $process = Start-Process -FilePath 'pwsh' -ArgumentList $invocationArgs -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+            $process = Start-Process -FilePath 'pwsh' -ArgumentList $escapedInvocationArgs -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
             if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -234,7 +256,7 @@ jobs:
             '-FullyAutonomous',
             '-AutonomousModel', '960XGL',
             '-AutonomousPackageProfile', 'Custom',
-            '-AutonomousPackageNames', 'Samsung Account,Samsung Settings',
+            '-AutonomousPackageNames', 'Samsung Account', 'Samsung Settings',
             '-AutonomousInstallSsse:$false',
             '-AutonomousConfirmPackages:$false',
             '-DebugOutput'

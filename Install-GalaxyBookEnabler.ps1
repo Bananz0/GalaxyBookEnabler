@@ -91,6 +91,30 @@ if ($DebugOutput) {
     $DebugPreference = "Continue"
 }
 
+function ConvertTo-StartProcessArguments {
+    param(
+        [string[]]$Arguments
+    )
+
+    $quotedArguments = @()
+    foreach ($argument in $Arguments) {
+        if ($null -eq $argument) {
+            $quotedArguments += '""'
+            continue
+        }
+
+        $argumentText = $argument.ToString()
+        if ($argumentText -match '[\s"]') {
+            $quotedArguments += '"' + ($argumentText -replace '"', '\\"') + '"'
+        }
+        else {
+            $quotedArguments += $argumentText
+        }
+    }
+
+    return $quotedArguments
+}
+
 function Invoke-InteractivePause {
     if (-not $script:IsAutonomous) {
         pause
@@ -164,12 +188,7 @@ if (-not $isAdmin) {
         if ($paramValue -is [Array]) {
             if ($paramValue.Count -gt 0) {
                 $forwardedArgs += "-$paramName"
-                # Join array elements with commas for -File parameter consistency
-                $joined = ($paramValue | ForEach-Object { 
-                    $s = $_.ToString()
-                    if ($s -match ' ') { "`"$s`"" } else { $s }
-                }) -join ','
-                $forwardedArgs += $joined
+                $forwardedArgs += @($paramValue | ForEach-Object { $_.ToString() })
             }
             continue
         }
@@ -219,7 +238,8 @@ if (-not $isAdmin) {
     
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
-    Start-Process pwsh -Verb RunAs -ArgumentList $elevatedArgs -Wait
+    $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
+    Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait
     Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
     exit
 }
@@ -5606,7 +5626,8 @@ if (-not $isAdmin) {
             
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
-                Start-Process -FilePath "pwsh" -ArgumentList $elevatedArgs -Verb RunAs
+                $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
+                Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs
             }
             else {
                 # Script was piped, show manual instructions
