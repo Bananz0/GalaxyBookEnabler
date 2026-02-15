@@ -97,6 +97,17 @@ function Invoke-InteractivePause {
     }
 }
 
+function Clear-Host {
+    try {
+        Microsoft.PowerShell.Core\Clear-Host
+    }
+    catch {
+        if ($DebugOutput) {
+            Write-Host "DEBUG: Clear-Host skipped in current host: $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
+    }
+}
+
 # This script requires PowerShell 7.0+ for modern syntax and features
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host "" -ForegroundColor Red
