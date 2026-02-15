@@ -4927,53 +4927,20 @@ function Install-SSSEDriverToStore {
     try {
         Write-Host "    Adding driver to driver store..." -ForegroundColor Yellow
 
-        $dismExe = Join-Path $env:SystemRoot "System32\dism.exe"
-        $useNonInteractivePath = $script:IsAutonomous
         $commandTimeoutSeconds = if ($script:IsAutonomous) { 120 } else { 300 }
-
-        if ($useNonInteractivePath -and (Test-Path $dismExe)) {
-            $dismOut = Join-Path $env:TEMP ("gbe-dism-driver-{0}.log" -f ([guid]::NewGuid().ToString('N')))
-            $dismErr = Join-Path $env:TEMP ("gbe-dism-driver-{0}.err.log" -f ([guid]::NewGuid().ToString('N')))
-            try {
-                $dismProc = Start-Process -FilePath $dismExe -ArgumentList @('/Online', '/Add-Driver', "/Driver:$InfPath", '/NoRestart') -PassThru -WindowStyle Hidden -RedirectStandardOutput $dismOut -RedirectStandardError $dismErr
-                $null = Wait-Process -Id $dismProc.Id -Timeout $commandTimeoutSeconds -ErrorAction SilentlyContinue
-                if (-not $dismProc.HasExited) {
-                    Stop-Process -Id $dismProc.Id -Force -ErrorAction SilentlyContinue
-                    Write-Host "    ⚠ DISM timed out after $commandTimeoutSeconds seconds; falling back to pnputil" -ForegroundColor Yellow
-                    $dismProc = $null
-                }
-
-                if ($null -eq $dismProc) {
-                    # Continue to pnputil fallback
-                }
-                else {
-                    $dismProc.Refresh()
-                }
-
-                if ($dismProc -and $dismProc.ExitCode -eq 0) {
-                    Write-Host "    ✓ Driver added to driver store (DISM)" -ForegroundColor Green
-                    return $true
-                }
-
-                $dismOutput = @()
-                if (Test-Path $dismOut) { $dismOutput += Get-Content $dismOut -ErrorAction SilentlyContinue }
-                if (Test-Path $dismErr) { $dismOutput += Get-Content $dismErr -ErrorAction SilentlyContinue }
-                if ($dismProc) {
-                    Write-Host "    ⚠ DISM add-driver failed (exit $($dismProc.ExitCode)); falling back to pnputil" -ForegroundColor Yellow
-                }
-                if ($DebugOutput -and $dismOutput) {
-                    Write-Host "      DISM output: $($dismOutput -join ' ')" -ForegroundColor DarkGray
-                }
-            }
-            finally {
-                Remove-Item $dismOut, $dismErr -Force -ErrorAction SilentlyContinue
-            }
-        }
 
         $pnputilOut = Join-Path $env:TEMP ("gbe-pnputil-driver-{0}.log" -f ([guid]::NewGuid().ToString('N')))
         $pnputilErr = Join-Path $env:TEMP ("gbe-pnputil-driver-{0}.err.log" -f ([guid]::NewGuid().ToString('N')))
         try {
-            $pnputilProc = Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/add-driver', $InfPath) -PassThru -WindowStyle Hidden -RedirectStandardOutput $pnputilOut -RedirectStandardError $pnputilErr
+            if ($script:IsAutonomous) {
+                $escapedInfPath = $InfPath.Replace('"', '""')
+                $pnputilCommand = "echo Y|pnputil.exe /add-driver `"$escapedInfPath`""
+                $pnputilProc = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d', '/c', $pnputilCommand) -PassThru -WindowStyle Hidden -RedirectStandardOutput $pnputilOut -RedirectStandardError $pnputilErr
+            }
+            else {
+                $pnputilProc = Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/add-driver', $InfPath) -PassThru -WindowStyle Hidden -RedirectStandardOutput $pnputilOut -RedirectStandardError $pnputilErr
+            }
+
             $null = Wait-Process -Id $pnputilProc.Id -Timeout $commandTimeoutSeconds -ErrorAction SilentlyContinue
             if (-not $pnputilProc.HasExited) {
                 Stop-Process -Id $pnputilProc.Id -Force -ErrorAction SilentlyContinue
