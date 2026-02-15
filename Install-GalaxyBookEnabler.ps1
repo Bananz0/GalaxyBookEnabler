@@ -164,13 +164,23 @@ if (-not $isAdmin) {
         if ($paramValue -is [Array]) {
             if ($paramValue.Count -gt 0) {
                 $forwardedArgs += "-$paramName"
-                $forwardedArgs += @($paramValue | ForEach-Object { $_.ToString() })
+                # Join array elements with commas for -File parameter consistency
+                $joined = ($paramValue | ForEach-Object { 
+                    $s = $_.ToString()
+                    if ($s -match ' ') { "`"$s`"" } else { $s }
+                }) -join ','
+                $forwardedArgs += $joined
             }
             continue
         }
 
         $forwardedArgs += "-$paramName"
-        $forwardedArgs += $paramValue.ToString()
+        if ($paramValue.ToString() -match ' ') {
+            $forwardedArgs += "`"$($paramValue.ToString())`""
+        }
+        else {
+            $forwardedArgs += $paramValue.ToString()
+        }
     }
     
     # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
@@ -4583,6 +4593,20 @@ function Resolve-AutonomousPackages {
         [string]$ProfileName,
         [string[]]$PackageNames
     )
+
+    # Handle potential comma-separated strings or quoted strings when passed via -File
+    $processedNames = @()
+    if ($PackageNames) {
+        foreach ($p in $PackageNames) {
+            if ($p -match ',') {
+                $processedNames += $p -split ',' | ForEach-Object { $_.Trim().Trim('"').Trim("'") }
+            }
+            else {
+                $processedNames += $p.Trim().Trim('"').Trim("'")
+            }
+        }
+    }
+    $PackageNames = $processedNames
 
     $normalized = if ($ProfileName) { $ProfileName.ToLowerInvariant() } else { "recommended" }
 
