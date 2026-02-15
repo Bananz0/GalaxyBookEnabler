@@ -1,0 +1,48 @@
+name: Generator Tests
+on:
+  push:
+    paths:
+      - 'Generate-SamsungIdentity.ps1'
+      - 'tests/**'
+      - '.github/workflows/generator-tests.yml'
+  pull_request:
+    paths:
+      - 'Generate-SamsungIdentity.ps1'
+      - 'tests/**'
+      - '.github/workflows/generator-tests.yml'
+
+jobs:
+  generator-tests:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [void]([System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\Generate-SamsungIdentity.ps1", [ref]$null, [ref]$null))
+
+      - name: Install test modules
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $issues = Invoke-ScriptAnalyzer -Path .\Generate-SamsungIdentity.ps1 -Severity Warning,Error
+          if ($issues) {
+            $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
+            throw "PSScriptAnalyzer found $($issues.Count) issues."
+          }
+
+      - name: Pester tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-Pester -Script .\tests\Generate-SamsungIdentity.Tests.ps1 -EnableExit

@@ -30,6 +30,7 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 - **Wi-Fi Compatibility Check** - Automatically detects Intel Wi-Fi adapters and warns about Quick Share limitations
 - **System Support Engine (Advanced)** - Optional experimental feature for enhanced Samsung integration (Windows 11 only)
 - **Automated Startup** - Registry spoof runs automatically on every boot
+- **Multi Control Recovery Task** - Restarts Samsung services at startup (+5 min) with a 1-minute grace period to improve Multi Control/phone reconnection reliability
 - **Professional Installer** - Clean, color-coded UI with progress tracking
 - **Differential Install** - Skips already-installed packages for faster re-runs
 - **Test Mode** - Simulate installation without making changes to your system
@@ -71,10 +72,10 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 When running the installer on an existing installation, you have granular uninstall options:
 
 - **Reinstall (nuke + fresh install)**: Completely removes everything (preserving BIOS config), then performs a clean installation
-- **Uninstall everything**: Removes all Samsung apps, services, scheduled task, and configuration
+- **Uninstall everything**: Removes all Samsung apps, services, scheduled tasks, and configuration
   - **Nuke Mode**: Optionally delete ALL Samsung app data (caches, settings, databases) during uninstall
-- **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled task
-- **Uninstall services only**: Removes scheduled task and Samsung services while keeping apps installed
+- **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled tasks
+- **Uninstall services only**: Removes scheduled tasks and Samsung services while keeping apps installed
 
 **With gsudo (recommended for seamless elevation):**
 
@@ -402,12 +403,28 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 
 > **Note:** Desktop shortcuts use explorer.exe which adds slight overhead. PowerToys URI or AHK methods are faster.
 
+### Manual Identity Generation
+
+If you need to generate high-fidelity DMI strings manually for OpenCore or generic spoofing, use the provided utility:
+
+```powershell
+.\Generate-SamsungIdentity.ps1 -Profile Book6Ultra -IncludeFullBiosVersion
+.\Generate-SamsungIdentity.ps1 -Profile Book6Pro -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\\EFI\\OC\\config.plist"
+```
+
+This generates randomized but internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values using Samsung's documented patterns. It also derives `BoardProduct` from randomized model/suffix pairs.
+
+When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates.
+
+**Region selection** defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-CountryCode` or `-RegionCode`. Optional `-UseGeoIp` uses the public ipapi.co endpoint (no API key) to resolve country based on IP. This can affect region-locked features; for example, Samsung Phone app Messages has been observed to be available in the US but not in the UK.
+
 ## 🔧 How It Works
 
 1. **Registry Spoof**: Modifies system registry to identify as "Samsung Galaxy Book3 Ultra"
-2. **Startup Task**: Creates a scheduled task that runs the spoof on every boot
-3. **Package Installation**: Installs selected Samsung apps from Microsoft Store
-4. **Configuration**: Sets up shortcuts and configuration files
+2. **Startup Tasks**: Creates scheduled tasks that run on every boot
+3. **Multi Control Recovery**: Runs `Init-SamsungMultiControlOnLogin.ps1` at startup +5 minutes, then waits 1 minute before restarting Samsung services
+4. **Package Installation**: Installs selected Samsung apps from Microsoft Store
+5. **Configuration**: Sets up shortcuts and configuration files
 
 **Available Models**
 
@@ -499,6 +516,9 @@ Enter model number (1-22): 5
    - Creates scheduled task "GalaxyBookEnabler"
    - Runs automatically on system startup
    - Uses SYSTEM privileges for registry access
+   - Creates scheduled task "GalaxyBookEnabler-MultiControlInit"
+   - Runs `Init-SamsungMultiControlOnLogin.ps1` at startup +5 minutes
+   - Adds a 1-minute grace period before Samsung service restarts
 
 5. **AI Select Configuration (Optional)**
    - Create desktop shortcut
@@ -558,13 +578,25 @@ Enter model number (1-22): 5
 ### Apps Not Appearing
 
 - **Reboot required**: Some apps need a system restart
-- **Registry spoof**: Verify scheduled task is running
+- **Registry spoof**: Verify scheduled tasks are running
 - **Manual install**: Try installing apps individually from Microsoft Store
+
+### Multi Control Stops Working After Reboot
+
+- **Built-in recovery task**: Check Task Scheduler for `GalaxyBookEnabler-MultiControlInit`
+- **Expected timing**: Task starts at boot +5 minutes, script then waits 1 minute before restarting Samsung services
+- **Run manually**: `pwsh -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.galaxy-book-enabler\Init-SamsungMultiControlOnLogin.ps1"`
+- **Community context**: Added from user reports in [Discussion #76](https://github.com/Bananz0/GalaxyBookEnabler/discussions/76)
+- **Manual Task Scheduler fallback**:
+   - Trigger: At startup (Delay task for 5 minutes)
+   - Action: Program `pwsh.exe`
+   - Arguments: `-NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.galaxy-book-enabler\Init-SamsungMultiControlOnLogin.ps1" -GracePeriodSeconds 60`
+   - Security: Run with highest privileges as `SYSTEM`
 
 ### Scheduled Task Not Running
 
-- **Check Task Scheduler**: Look for "GalaxyBookEnabler" task
-- **Permissions**: Task must run as SYSTEM with highest privileges
+- **Check Task Scheduler**: Look for both `GalaxyBookEnabler` and `GalaxyBookEnabler-MultiControlInit`
+- **Permissions**: Tasks must run as SYSTEM with highest privileges
 - **Reinstall**: Run installer again to recreate task
 
 ### Registry Spoof Not Persistent
@@ -583,7 +615,7 @@ Enter model number (1-22): 5
 ## FAQ
 
 **Q: Is this safe to use?**
-A: Yes, it only modifies volatile registry keys that reset on reboot. The scheduled task ensures the spoof runs automatically.
+A: Yes, it only modifies volatile registry keys that reset on reboot. Scheduled tasks ensure the spoof and Multi Control service restart run automatically.
 
 **Q: Will this void my warranty?**
 A: This doesn't modify hardware or firmware. It only changes registry values.
@@ -622,7 +654,8 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 ### What Gets Updated
 
 - Registry spoof script
-- Scheduled task configuration
+- Scheduled tasks configuration
+- Multi Control init script (`Init-SamsungMultiControlOnLogin.ps1`)
 - Package definitions
 - Helper functions
 
@@ -636,7 +669,7 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 
 ### What Gets Removed
 
-- Scheduled task
+- Scheduled tasks (`GalaxyBookEnabler`, `GalaxyBookEnabler-MultiControlInit`)
 - Installation directory (`%USERPROFILE%\.galaxy-book-enabler`)
 - Desktop shortcuts (if created)
 
@@ -648,8 +681,9 @@ irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-Gal
 ### Manual Cleanup (if needed)
 
 ```powershell
-# Remove scheduled task
+# Remove scheduled tasks
 Unregister-ScheduledTask -TaskName "GalaxyBookEnabler" -Confirm:$false
+Unregister-ScheduledTask -TaskName "GalaxyBookEnabler-MultiControlInit" -Confirm:$false
 
 # Remove installation folder
 Remove-Item "$env:USERPROFILE\.galaxy-book-enabler" -Recurse -Force
@@ -668,7 +702,7 @@ Restart-Computer
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for our development process and CI requirements.
 
 1. Fork the repository
 2. Create a feature branch
@@ -682,7 +716,7 @@ Contributions are welcome! Please:
 - **Samsung Recovery**: Will never work (requires genuine Samsung hardware)
 - **Samsung Update**: Will never work (requires genuine Samsung hardware)
 - **Some features**: May require additional Samsung account setup
-- **Registry reset**: Spoof clears on reboot (handled by scheduled task)
+- **Registry reset**: Spoof clears on reboot (handled by scheduled tasks)
 
 ## Reporting Issues
 

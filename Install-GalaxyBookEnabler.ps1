@@ -91,6 +91,12 @@ if ($DebugOutput) {
     $DebugPreference = "Continue"
 }
 
+function Invoke-InteractivePause {
+    if (-not $script:IsAutonomous) {
+        pause
+    }
+}
+
 # This script requires PowerShell 7.0+ for modern syntax and features
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host "" -ForegroundColor Red
@@ -113,7 +119,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host ""
     Write-Host "After installing, run this script in PowerShell 7 (pwsh.exe)" -ForegroundColor Gray
     Write-Host ""
-    pause
+    Invoke-InteractivePause
     exit 1
 }
 
@@ -122,31 +128,78 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 
 if (-not $isAdmin) {
     Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+
+    $forwardedArgs = @()
+    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+        $paramName = $entry.Key
+        $paramValue = $entry.Value
+
+        if ($paramValue -is [System.Management.Automation.SwitchParameter]) {
+            if ($paramValue.IsPresent) {
+                $forwardedArgs += "-$paramName"
+            }
+            continue
+        }
+
+        if ($null -eq $paramValue) {
+            continue
+        }
+
+        if ($paramValue -is [bool]) {
+            $forwardedArgs += "-${paramName}:$($paramValue.ToString().ToLower())"
+            continue
+        }
+
+        if ($paramValue -is [Array]) {
+            if ($paramValue.Count -gt 0) {
+                $forwardedArgs += "-$paramName"
+                $forwardedArgs += @($paramValue | ForEach-Object { $_.ToString() })
+            }
+            continue
+        }
+
+        $forwardedArgs += "-$paramName"
+        $forwardedArgs += $paramValue.ToString()
+    }
     
     # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
     $tempScript = Join-Path $env:TEMP "GBE_Elevated_$([System.IO.Path]::GetRandomFileName()).ps1"
-    $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
-    $rerunCommand = "& '$tempScript'; Remove-Item -LiteralPath '$tempScript' -Force -ErrorAction SilentlyContinue"
+    if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+        Copy-Item -LiteralPath $PSCommandPath -Destination $tempScript -Force
+    }
+    else {
+        $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
+    }
+    $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript) + $forwardedArgs
+
+    if ($DebugOutput) {
+        Write-Host "DEBUG: Elevation args: $($elevatedArgs -join ' ')" -ForegroundColor DarkGray
+    }
     
     # Try gsudo first (faster, preserves console context)
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
     if ($gsudoPath) {
         Write-Host "  Using gsudo for elevation..." -ForegroundColor Gray
-        & gsudo pwsh -NoProfile -ExecutionPolicy Bypass -Command $rerunCommand
-        exit $LASTEXITCODE
+        & gsudo pwsh @elevatedArgs
+        $exitCode = $LASTEXITCODE
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        exit $exitCode
     }
     
     # Try sudo (Windows 11 24H2+ native sudo)
     $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
     if ($sudoPath) {
         Write-Host "  Using Windows sudo for elevation..." -ForegroundColor Gray
-        & sudo pwsh -NoProfile -ExecutionPolicy Bypass -Command $rerunCommand
-        exit $LASTEXITCODE
+        & sudo pwsh @elevatedArgs
+        $exitCode = $LASTEXITCODE
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        exit $exitCode
     }
     
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
-    Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$rerunCommand`"" -Wait
+    Start-Process pwsh -Verb RunAs -ArgumentList $elevatedArgs -Wait
+    Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
     exit
 }
 
@@ -172,10 +225,10 @@ elseif ($script:IsAutonomous) {
     $script:LogFile = Join-Path $script:LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 }
 
-if ($script:LogDirectory -and -not (Test-Path $script:LogDirectory)) {
+if ($script:LogDirectory -and -not (Test-Path $script:LogDirectory) -and -not $TestMode) {
     New-Item -Path $script:LogDirectory -ItemType Directory -Force | Out-Null
 }
-$script:LoggingEnabled = $true
+$script:LoggingEnabled = (-not $TestMode)
 
 function Write-Log {
     param(
@@ -353,6 +406,11 @@ function Update-GalaxyBookEnabler {
         [string]$DownloadUrl
     )
     
+    if ($TestMode) {
+        Write-Host "  [TEST] Would download latest version from GitHub" -ForegroundColor Gray
+        return $false
+    }
+    
     try {
         Write-Host "Downloading latest version..." -ForegroundColor Yellow
         $tempFile = Join-Path $env:TEMP "Install-GalaxyBookEnabler-Latest.ps1"
@@ -465,6 +523,7 @@ function Test-InstallationHealth {
 }
 
 function Remove-GalaxyBudsFromBluetooth {
+    param([bool]$TestMode = $false)
     <#
     .SYNOPSIS
         Removes Galaxy Buds from Windows Bluetooth using BluetoothRemoveDevice P/Invoke.
@@ -612,16 +671,21 @@ function Remove-GalaxyBudsFromBluetooth {
                 if ($isGalaxyBuds) {
                     Write-Host "    Found: $deviceName" -ForegroundColor Cyan
                     
-                    $address = $deviceInfo.Address
-                    $result = [BluetoothAPI.NativeMethods]::BluetoothRemoveDevice([ref]$address)
-                    
-                    if ($result -eq 0) {
-                        Write-Host "    ✓ Removed: $deviceName" -ForegroundColor Green
-                        $removedDevices += $deviceName
+                    if ($TestMode) {
+                        Write-Host "    [TEST] Would remove Bluetooth device: $deviceName" -ForegroundColor Gray
                     }
                     else {
-                        Write-Host "    ✗ Failed to remove: $deviceName (Error: $result)" -ForegroundColor Red
-                        $failedDevices += $deviceName
+                        $address = $deviceInfo.Address
+                        $result = [BluetoothAPI.NativeMethods]::BluetoothRemoveDevice([ref]$address)
+                        
+                        if ($result -eq 0) {
+                            Write-Host "    ✓ Removed: $deviceName" -ForegroundColor Green
+                            $removedDevices += $deviceName
+                        }
+                        else {
+                            Write-Host "    ✗ Failed to remove: $deviceName (Error: $result)" -ForegroundColor Red
+                            $failedDevices += $deviceName
+                        }
                     }
                 }
             } while ([BluetoothAPI.NativeMethods]::BluetoothFindNextDevice($findDeviceHandle, [ref]$deviceInfo))
@@ -854,7 +918,16 @@ function Stop-SamsungApps {
 # ==================== CACHE CLEARING ====================
 
 function Clear-AppCache {
-    param([string]$PackageFamily, [string]$AppName)
+    param(
+        [string]$PackageFamily, 
+        [string]$AppName,
+        [bool]$TestMode = $false
+    )
+    
+    if ($TestMode) {
+        Write-Status "[TEST] Would clear cache for $AppName" -Status INFO
+        return
+    }
     
     $basePath = Get-PackagePath $PackageFamily
     if (-not (Test-Path $basePath)) {
@@ -895,7 +968,14 @@ function Clear-AppCache {
 # ==================== DEVICE DATA CLEARING ====================
 
 function Clear-DeviceData {
+    param([bool]$TestMode = $false)
+    
     Write-Status "`n=== CLEARING DEVICE DATA ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST] Would clear all device data and databases" -Status INFO
+        return
+    }
     
     # 1. Clear BLE/BT Settings files in Samsung Settings Runtime
     $settingsRuntimePath = Get-PackagePath $SamsungPackages["SettingsRuntime"].Family
@@ -1048,7 +1128,13 @@ function Clear-DeviceData {
 # ==================== DATABASE CLEARING ====================
 
 function Clear-AllDatabases {
+    param([bool]$TestMode = $false)
     Write-Status "`n=== CLEARING ALL DATABASES ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST] Would clear all Samsung app databases" -Status INFO
+        return
+    }
     
     $targetPackages = Get-TargetPackages
     
@@ -1078,7 +1164,16 @@ function Clear-AllDatabases {
 # ==================== SETTINGS.DAT CLEARING ====================
 
 function Reset-SettingsDat {
-    param([string]$PackageFamily, [string]$AppName)
+    param(
+        [string]$PackageFamily, 
+        [string]$AppName,
+        [bool]$TestMode = $false
+    )
+    
+    if ($TestMode) {
+        Write-Status "[TEST] Would reset settings.dat for $AppName" -Status INFO
+        return
+    }
     
     $settingsPath = Join-Path (Get-PackagePath $PackageFamily) "Settings\settings.dat"
     
@@ -1105,7 +1200,13 @@ function Reset-SettingsDat {
 }
 
 function Reset-AllSettingsDat {
+    param([bool]$TestMode = $false)
     Write-Status "`n=== RESETTING ALL SETTINGS.DAT FILES ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST] Would reset all settings.dat files" -Status INFO
+        return
+    }
     
     $targetPackages = Get-TargetPackages
     
@@ -2498,22 +2599,27 @@ function Install-SystemSupportEngine {
         
         $disableOriginal = if ($AutoInstall) { if ($AutoDisableOriginalService) { "y" } else { "n" } } else { Read-Host "Disable original Samsung service? (Y/n)" }
         if ($disableOriginal -notlike "n*") {
-            Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
-            
-            if ($originalService.Status -eq 'Running') {
-                Write-Host "    Stopping service..." -ForegroundColor Gray
-                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-            }
-            
-            Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
-            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-            
-            $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-            if ($verifyDisabled.StartType -eq 'Disabled') {
-                Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
+            if ($TestMode) {
+                Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
             }
             else {
-                Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
+                Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
+                
+                if ($originalService.Status -eq 'Running') {
+                    Write-Host "    Stopping service..." -ForegroundColor Gray
+                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                }
+                
+                Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
+                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+                
+                $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($verifyDisabled.StartType -eq 'Disabled') {
+                    Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
+                }
             }
         }
         else {
@@ -2616,8 +2722,13 @@ function Install-SystemSupportEngine {
                 # Stop user-installed services only (not DriverStore)
                 foreach ($svc in $existingServices) {
                     if (-not $svc.IsDriverStore -and $svc.Status -eq 'Running') {
-                        Write-Host "  Stopping service: $($svc.Name)..." -ForegroundColor Yellow
-                        Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+                        if ($TestMode) {
+                            Write-Host "  [TEST] Would stop service: $($svc.Name)" -ForegroundColor Gray
+                        }
+                        else {
+                            Write-Host "  Stopping service: $($svc.Name)..." -ForegroundColor Yellow
+                            Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+                        }
                     }
                 }
             }
@@ -2631,12 +2742,17 @@ function Install-SystemSupportEngine {
                 # Stop and remove user services only (not DriverStore)
                 foreach ($svc in $existingServices) {
                     if (-not $svc.IsDriverStore) {
-                        if ($svc.Status -eq 'Running') {
-                            Write-Host "  Stopping service: $($svc.Name)..." -ForegroundColor Gray
-                            Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+                        if ($TestMode) {
+                            Write-Host "  [TEST] Would stop/remove service: $($svc.Name)" -ForegroundColor Gray
                         }
-                        Write-Host "  Removing service: $($svc.Name)..." -ForegroundColor Gray
-                        & sc.exe delete $svc.Name | Out-Null
+                        else {
+                            if ($svc.Status -eq 'Running') {
+                                Write-Host "  Stopping service: $($svc.Name)..." -ForegroundColor Gray
+                                Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+                            }
+                            Write-Host "  Removing service: $($svc.Name)..." -ForegroundColor Gray
+                            & sc.exe delete $svc.Name | Out-Null
+                        }
                     }
                     else {
                         Write-Host "  Skipping Windows-managed service: $($svc.Name)" -ForegroundColor DarkGray
@@ -2645,11 +2761,21 @@ function Install-SystemSupportEngine {
                 
                 # Remove installation directories
                 foreach ($install in $existingInstallations) {
-                    Write-Host "  Removing: $($install.Path)..." -ForegroundColor Gray
-                    Remove-Item -Path $install.Path -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($TestMode) {
+                        Write-Host "  [TEST] Would remove directory: $($install.Path)" -ForegroundColor Gray
+                    }
+                    else {
+                        Write-Host "  Removing: $($install.Path)..." -ForegroundColor Gray
+                        Remove-Item -Path $install.Path -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                 }
                 
-                Write-Host "  ✓ Cleanup complete" -ForegroundColor Green
+                if ($TestMode) {
+                    Write-Host "  [TEST] Cleanup complete" -ForegroundColor Gray
+                }
+                else {
+                    Write-Host "  ✓ Cleanup complete" -ForegroundColor Green
+                }
                 
                 # Use default path for clean install
                 $InstallPath = "C:\GalaxyBook"
@@ -2765,14 +2891,19 @@ function Install-SystemSupportEngine {
         
         $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { "y" } else { "n" } } else { Read-Host "Remove existing Samsung Settings packages? (Y/n)" }
         if ($removeChoice -notlike "n*") {
-            Write-Host "  Removing packages..." -ForegroundColor Yellow
-            $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
-            
-            if ($removalResult.Success.Count -gt 0) {
-                Write-Host "  ✓ Removed: $($removalResult.Success -join ', ')" -ForegroundColor Green
+            if ($TestMode) {
+                Write-Host "  [TEST] Would remove packages: $($existingSettings.Name -join ', ')" -ForegroundColor Gray
             }
-            if ($removalResult.Failed.Count -gt 0) {
-                Write-Host "  ⚠ Failed to remove some packages. You may need to remove manually." -ForegroundColor Yellow
+            else {
+                Write-Host "  Removing packages..." -ForegroundColor Yellow
+                $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
+                
+                if ($removalResult.Success.Count -gt 0) {
+                    Write-Host "  ✓ Removed: $($removalResult.Success -join ', ')" -ForegroundColor Green
+                }
+                if ($removalResult.Failed.Count -gt 0) {
+                    Write-Host "  ⚠ Failed to remove some packages. You may need to remove manually." -ForegroundColor Yellow
+                }
             }
         }
         else {
@@ -2784,11 +2915,22 @@ function Install-SystemSupportEngine {
     }
     
     $tempDir = Join-Path $env:TEMP "GalaxyBookEnabler_SSSE"
-    if (-not (Test-Path $tempDir)) {
-        New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+    if ($TestMode) {
+        Write-Host "    [TEST] Would use temp directory: $tempDir" -ForegroundColor Gray
+    }
+    else {
+        if (-not (Test-Path $tempDir)) {
+            New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+        }
     }
     
-    $cabResult = Get-SamsungDriverCab -Version $cabVersion -OutputPath $tempDir
+    if ($TestMode) {
+        Write-Host "    [TEST] Would download SSSE CAB version: $cabVersion" -ForegroundColor Gray
+        $cabResult = @{ FilePath = "SimulatedPath.cab"; Version = $cabVersion }
+    }
+    else {
+        $cabResult = Get-SamsungDriverCab -Version $cabVersion -OutputPath $tempDir
+    }
     
     if (-not $cabResult) {
         Write-Error "Failed to download CAB file"
@@ -2798,167 +2940,215 @@ function Install-SystemSupportEngine {
     # Extract and patch
     Write-Host "`nExtracting and patching binary..." -ForegroundColor Cyan
     
-    $extractResult = Expand-SSSECab -CabPath $cabResult.FilePath -ExtractRoot $tempDir
+    if ($TestMode) {
+        Write-Host "    [TEST] Would extract and patch SSSE files" -ForegroundColor Gray
+        $extractResult = @{
+            ExtractDir = "SimulatedExtractDir"
+            Level2Dir = "SimulatedLevel2Dir"
+            InfFile = [PSCustomObject]@{ Name = "oem.inf"; FullName = "Simulated.inf" }
+            CatFile = [PSCustomObject]@{ Name = "oem.cat"; FullName = "Simulated.cat" }
+        }
+    }
+    else {
+        $extractResult = Expand-SSSECab -CabPath $cabResult.FilePath -ExtractRoot $tempDir
+    }
     
     try {
         if (-not $extractResult) {
             throw "Extraction failed"
         }
     
-        $extractDir = $extractResult.ExtractDir
-        # $level1Dir = $extractResult.Level1Dir # Unused
-        $level2Dir = $extractResult.Level2Dir
-        $infFile = $extractResult.InfFile
-        $catFile = $extractResult.CatFile
-    
-        # List all files extracted
-        Write-Host "`n  Extracted files:" -ForegroundColor Cyan
-        $level2Files = Get-ChildItem -Path $level2Dir -Recurse -File
-        foreach ($file in $level2Files) {
-            Write-Host "    → $($file.Name)" -ForegroundColor Gray
+        if ($TestMode) {
+            $ssseExe = [PSCustomObject]@{ Name = "SamsungSystemSupportEngine.exe"; FullName = "Simulated.exe" }
+            $ssseService = [PSCustomObject]@{ Name = "SamsungSystemSupportService.exe"; FullName = "Simulated.exe" }
         }
-        Write-Host ""
-    
-        # Find the executables (search recursively in case they're in subdirectories)
-        $ssseExe = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
-        $ssseService = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportService.exe" -File -Recurse
-    
-        if (-not $ssseExe) {
-            Write-Host "  ✗ SamsungSystemSupportEngine.exe not found in extracted files!" -ForegroundColor Red
-            Write-Host "  Available .exe files:" -ForegroundColor Yellow
-            $exeFiles = Get-ChildItem -Path $level2Dir -Filter "*.exe" -File -Recurse
-            if ($exeFiles) {
-                foreach ($exe in $exeFiles) {
-                    Write-Host "    • $($exe.Name) in $($exe.DirectoryName)" -ForegroundColor Gray
+        else {
+            $extractDir = $extractResult.ExtractDir
+            # $level1Dir = $extractResult.Level1Dir # Unused
+            $level2Dir = $extractResult.Level2Dir
+            $infFile = $extractResult.InfFile
+            $catFile = $extractResult.CatFile
+        
+            # List all files extracted
+            Write-Host "`n  Extracted files:" -ForegroundColor Cyan
+            $level2Files = Get-ChildItem -Path $level2Dir -Recurse -File
+            foreach ($file in $level2Files) {
+                Write-Host "    → $($file.Name)" -ForegroundColor Gray
+            }
+            Write-Host ""
+        
+            # Find the executables (search recursively in case they're in subdirectories)
+            $ssseExe = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
+            $ssseService = Get-ChildItem -Path $level2Dir -Filter "SamsungSystemSupportService.exe" -File -Recurse
+        
+            if (-not $ssseExe) {
+                Write-Host "  ✗ SamsungSystemSupportEngine.exe not found in extracted files!" -ForegroundColor Red
+                Write-Host "  Available .exe files:" -ForegroundColor Yellow
+                $exeFiles = Get-ChildItem -Path $level2Dir -Filter "*.exe" -File -Recurse
+                if ($exeFiles) {
+                    foreach ($exe in $exeFiles) {
+                        Write-Host "    • $($exe.Name) in $($exe.DirectoryName)" -ForegroundColor Gray
+                    }
                 }
+                else {
+                    Write-Host "    (No .exe files found)" -ForegroundColor Gray
+                }
+                throw "SamsungSystemSupportEngine.exe not found"
             }
-            else {
-                Write-Host "    (No .exe files found)" -ForegroundColor Gray
+        
+            Write-Host "  ✓ Found executable: $($ssseExe.Name)" -ForegroundColor Green
+            if ($ssseService) {
+                Write-Host "  ✓ Found service: $($ssseService.Name)" -ForegroundColor Green
             }
-            throw "SamsungSystemSupportEngine.exe not found"
-        }
-    
-        Write-Host "  ✓ Found executable: $($ssseExe.Name)" -ForegroundColor Green
-        if ($ssseService) {
-            Write-Host "  ✓ Found service: $($ssseService.Name)" -ForegroundColor Green
         }
     
         # Create C:\SamSysSupSvc directory
         Write-Host "  [3/7] Creating installation directory..." -ForegroundColor Yellow
         if (Test-Path $InstallPath) {
-            Write-Host "  ⚠ Directory exists, backing up..." -ForegroundColor Yellow
-            $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-            $backupPath = "$InstallPath`_backup_$timestamp"
-            Copy-Item -Path $InstallPath -Destination $backupPath -Recurse -Force
-            Write-Host "  ✓ Backup created: $backupPath" -ForegroundColor Green
+            if ($TestMode) {
+                Write-Host "  [TEST] Would backup existing directory: $InstallPath" -ForegroundColor Gray
+            }
+            else {
+                Write-Host "  ⚠ Directory exists, backing up..." -ForegroundColor Yellow
+                $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+                $backupPath = "$InstallPath`_backup_$timestamp"
+                Copy-Item -Path $InstallPath -Destination $backupPath -Recurse -Force
+                Write-Host "  ✓ Backup created: $backupPath" -ForegroundColor Green
+            }
         }
     
-        New-Item -Path $InstallPath -ItemType Directory -Force | Out-Null
-        Write-Host "  ✓ Created: $InstallPath" -ForegroundColor Green
+        if ($TestMode) {
+            Write-Host "  [TEST] Would create installation directory: $InstallPath" -ForegroundColor Gray
+        }
+        else {
+            New-Item -Path $InstallPath -ItemType Directory -Force | Out-Null
+            Write-Host "  ✓ Created: $InstallPath" -ForegroundColor Green
+        }
     
         # Kill any running Samsung processes before copying
         Write-Host "  [4/7] Stopping Samsung processes..." -ForegroundColor Yellow
     
-        $samsungProcesses = @(
-            "SamsungSystemSupportEngine",
-            "SamsungSystemSupportService", 
-            "SamsungSystemSupportOSD",
-            "SamsungActiveScreen",
-            "SamsungHideWindow",
-            "SettingsEngineTest",
-            "SettingsExtensionLauncher"
-        )
-    
-        $killedProcesses = @()
-        foreach ($procName in $samsungProcesses) {
-            $processes = Get-Process -Name $procName -ErrorAction SilentlyContinue
-            if ($processes) {
-                foreach ($proc in $processes) {
-                    try {
-                        Stop-Process -Id $proc.Id -Force -ErrorAction Stop
-                        $killedProcesses += $procName
-                    }
-                    catch {
-                        Write-Host "    ⚠ Failed to stop: $procName" -ForegroundColor Yellow
+        if ($TestMode) {
+            Write-Host "    [TEST] Would stop Samsung processes" -ForegroundColor Gray
+        }
+        else {
+            $samsungProcesses = @(
+                "SamsungSystemSupportEngine",
+                "SamsungSystemSupportService", 
+                "SamsungSystemSupportOSD",
+                "SamsungActiveScreen",
+                "SamsungHideWindow",
+                "SettingsEngineTest",
+                "SettingsExtensionLauncher"
+            )
+        
+            $killedProcesses = @()
+            foreach ($procName in $samsungProcesses) {
+                $processes = Get-Process -Name $procName -ErrorAction SilentlyContinue
+                if ($processes) {
+                    foreach ($proc in $processes) {
+                        try {
+                            Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+                            $killedProcesses += $procName
+                        }
+                        catch {
+                            Write-Host "    ⚠ Failed to stop: $procName" -ForegroundColor Yellow
+                        }
                     }
                 }
             }
-        }
-    
-        if ($killedProcesses.Count -gt 0) {
-            Write-Host "    ✓ Stopped $($killedProcesses.Count) process(es)" -ForegroundColor Green
-            Start-Sleep -Seconds 2  # Give processes time to fully exit
-        }
-        else {
-            Write-Host "    ✓ No running processes found" -ForegroundColor Green
+        
+            if ($killedProcesses.Count -gt 0) {
+                Write-Host "    ✓ Stopped $($killedProcesses.Count) process(es)" -ForegroundColor Green
+                Start-Sleep -Seconds 2  # Give processes time to fully exit
+            }
+            else {
+                Write-Host "    ✓ No running processes found" -ForegroundColor Green
+            }
         }
         
         # Copy ALL files to installation directory
         Write-Host "  [5/7] Copying files to installation directory..." -ForegroundColor Yellow
         
-        # Copy all files from Level 2 (settings_x64 contents) - search recursively
-        $level2AllFiles = Get-ChildItem -Path $level2Dir -File -Recurse
-        $copyErrors = 0
-        foreach ($file in $level2AllFiles) {
-            try {
-                Copy-Item -Path $file.FullName -Destination $InstallPath -Force -ErrorAction Stop
-                Write-Host "    → $($file.Name)" -ForegroundColor Gray
-            }
-            catch {
-                Write-Host "    ✗ Failed to copy: $($file.Name)" -ForegroundColor Red
-                Write-Host "      Error: $($_.Exception.Message)" -ForegroundColor Gray
-                $copyErrors++
-            }
-        }
-        
-        # Copy driver files from Level 1 (.inf and .cat)
-        if ($infFile) {
-            Copy-Item -Path $infFile.FullName -Destination $InstallPath -Force
-            Write-Host "    → $($infFile.Name) (driver)" -ForegroundColor Gray
-        }
-        if ($catFile) {
-            Copy-Item -Path $catFile.FullName -Destination $InstallPath -Force
-            Write-Host "    → $($catFile.Name) (driver)" -ForegroundColor Gray
-        }
-        
-        if ($copyErrors -gt 0) {
-            Write-Host "  ⚠ Files copied with $copyErrors error(s)" -ForegroundColor Yellow
+        if ($TestMode) {
+            Write-Host "    [TEST] Would copy files to: $InstallPath" -ForegroundColor Gray
         }
         else {
-            Write-Host "  ✓ All files copied" -ForegroundColor Green
+            # Copy all files from Level 2 (settings_x64 contents) - search recursively
+            $level2AllFiles = Get-ChildItem -Path $level2Dir -File -Recurse
+            $copyErrors = 0
+            foreach ($file in $level2AllFiles) {
+                try {
+                    Copy-Item -Path $file.FullName -Destination $InstallPath -Force -ErrorAction Stop
+                    Write-Host "    → $($file.Name)" -ForegroundColor Gray
+                }
+                catch {
+                    Write-Host "    ✗ Failed to copy: $($file.Name)" -ForegroundColor Red
+                    Write-Host "      Error: $($_.Exception.Message)" -ForegroundColor Gray
+                    $copyErrors++
+                }
+            }
+            
+            # Copy driver files from Level 1 (.inf and .cat)
+            if ($infFile) {
+                Copy-Item -Path $infFile.FullName -Destination $InstallPath -Force
+                Write-Host "    → $($infFile.Name) (driver)" -ForegroundColor Gray
+            }
+            if ($catFile) {
+                Copy-Item -Path $catFile.FullName -Destination $InstallPath -Force
+                Write-Host "    → $($catFile.Name) (driver)" -ForegroundColor Gray
+            }
+            
+            if ($copyErrors -gt 0) {
+                Write-Host "  ⚠ Files copied with $copyErrors error(s)" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "  ✓ All files copied" -ForegroundColor Green
+            }
         }
         
         # Patch the executable
         Write-Host "  [6/7] Patching binary..." -ForegroundColor Yellow
         
-        $targetExePath = Join-Path $InstallPath "SamsungSystemSupportEngine.exe"
-        $patchResult = Update-SSSEBinary -ExePath $targetExePath
+        if ($TestMode) {
+            Write-Host "    [TEST] Would patch binary: SamsungSystemSupportEngine.exe" -ForegroundColor Gray
+            $patchResult = $true
+        }
+        else {
+            $targetExePath = Join-Path $InstallPath "SamsungSystemSupportEngine.exe"
+            $patchResult = Update-SSSEBinary -ExePath $targetExePath
+        }
 
         if (-not $patchResult) {
             Write-Host "  ✗ Patching failed - cleaning up installation..." -ForegroundColor Red
             
-            # Stop and remove any services that may have been partially configured
-            $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
-            foreach ($svcName in $serviceNames) {
-                $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-                if ($svc) {
-                    Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
-                    & sc.exe delete $svcName 2>&1 | Out-Null
-                    Write-Host "    ✓ Service '$svcName' removed" -ForegroundColor Green
+            if ($TestMode) {
+                Write-Host "    [TEST] Patching failed - would perform cleanup" -ForegroundColor Gray
+            }
+            else {
+                # Stop and remove any services that may have been partially configured
+                $serviceNames = @("GBeSupportService", "SamsungSystemSupportEngine", "SamsungSystemSupportService")
+                foreach ($svcName in $serviceNames) {
+                    $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                    if ($svc) {
+                        Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+                        & sc.exe delete $svcName 2>&1 | Out-Null
+                        Write-Host "    ✓ Service '$svcName' removed" -ForegroundColor Green
+                    }
                 }
-            }
-            
-            # Remove installation folder
-            if (Test-Path $InstallPath) {
-                Remove-Item -Path $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Host "    ✓ Installation folder removed" -ForegroundColor Green
-            }
-            
-            # Remove user folder (.galaxy-book-enabler)
-            $userFolder = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
-            if (Test-Path $userFolder) {
-                Remove-Item -Path $userFolder -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Host "    ✓ User folder removed" -ForegroundColor Green
+                
+                # Remove installation folder
+                if (Test-Path $InstallPath) {
+                    Remove-Item -Path $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "    ✓ Installation folder removed" -ForegroundColor Green
+                }
+                
+                # Remove user folder (.galaxy-book-enabler)
+                $userFolder = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
+                if (Test-Path $userFolder) {
+                    Remove-Item -Path $userFolder -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "    ✓ User folder removed" -ForegroundColor Green
+                }
             }
             
             Write-Error "Binary patching failed - cannot continue with unpatched Samsung System Support Engine"
@@ -3279,7 +3469,9 @@ function Install-SystemSupportEngine {
                 }
                 
                 # Cleanup
-                Remove-Item $driverExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not $TestMode) {
+                    Remove-Item $driverExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
 
                 # ==============================================================================
                 # DUAL-VERSION PHASE 2: Core Apps & Binary Replacement
@@ -3291,64 +3483,101 @@ function Install-SystemSupportEngine {
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
-                try {
-                    # Samsung Settings AppID
-                    $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
-                    Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
-                    Write-Host "  ✓ Samsung Settings launched" -ForegroundColor Green
-                    
-                    # Wait for user confirmation or delay
-                    Write-Host "`n  IMPORTANT: Check if Samsung Settings opened." -ForegroundColor Yellow
-                    Write-Host "  Please follow these steps to sync your devices:" -ForegroundColor Cyan
-                    Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
-                    Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
-                    Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
-                    Write-Host "    4. Click on it to open Samsung Cloud" -ForegroundColor White
-                    Write-Host "    5. Click 'Sync now'" -ForegroundColor White
-                    Write-Host "    6. Verify it shows your paired Samsung devices" -ForegroundColor White
-                    Write-Host "       (Note: Buds2/3 (Pro/Non-Pro) may not appear if they don't support multipoint)" -ForegroundColor Gray
-                    Write-Host ""
-                    Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
-                    Read-Host
+                if ($TestMode) {
+                    Write-Host "  [TEST] Would launch Samsung Settings app" -ForegroundColor Gray
                 }
-                catch {
-                    Write-Warning "Failed to launch Samsung Settings: $_"
-                    Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
-                    Write-Host "  Then follow the sync instructions above." -ForegroundColor Gray
-                    Read-Host "  Press Enter when ready..."
+                else {
+                    try {
+                        # Samsung Settings AppID
+                        $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
+                        Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+                        Write-Host "  ✓ Samsung Settings launched" -ForegroundColor Green
+                        
+                        # Wait for user confirmation or delay
+                        Write-Host "`n  IMPORTANT: Check if Samsung Settings opened." -ForegroundColor Yellow
+                        Write-Host "  Please follow these steps to sync your devices:" -ForegroundColor Cyan
+                        Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
+                        Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
+                        Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
+                        Write-Host "    4. Click on it to open Samsung Cloud" -ForegroundColor White
+                        Write-Host "    5. Click 'Sync now'" -ForegroundColor White
+                        Write-Host "    6. Verify it shows your paired Samsung devices" -ForegroundColor White
+                        Write-Host "       (Note: Buds2/3 (Pro/Non-Pro) may not appear if they don't support multipoint)" -ForegroundColor Gray
+                        Write-Host ""
+                        Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
+                        if (-not $AutoInstall) { Read-Host }
+                    }
+                    catch {
+                        Write-Warning "Failed to launch Samsung Settings: $_"
+                        Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
+                        Write-Host "  Then follow the sync instructions above." -ForegroundColor Gray
+                        if (-not $AutoInstall) { Read-Host "  Press Enter when ready..." }
+                    }
                 }
                 
                 # 3. Stop Services & Processes
                 Write-Host "`n  [DUAL-VERSION] Stopping services for binary replacement..." -ForegroundColor Cyan
-                Stop-SamsungProcesses
-                Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
+                if (-not $TestMode) {
+                    Stop-SamsungProcesses -TestMode $TestMode
+                    Stop-Service -Name "GBeSupportService" -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 2
+                }
+                else {
+                    Write-Host "  [TEST] Would stop Samsung processes and GBeSupportService" -ForegroundColor Gray
+                }
                 
                 # 4. Extract 7.1.2.0 Binary
                 Write-Host "`n  [DUAL-VERSION] Extracting 7.1.2.0 binary..." -ForegroundColor Cyan
-                $extract7Result = Expand-SSSECab -CabPath $driverCabResult.FilePath -ExtractRoot $tempDir
+                if ($TestMode) {
+                    Write-Host "    [TEST] Would extract 7.1.2.0 binary" -ForegroundColor Gray
+                    $extract7Result = @{ Level2Dir = "Simulated" }
+                }
+                else {
+                    $extract7Result = Expand-SSSECab -CabPath $driverCabResult.FilePath -ExtractRoot $tempDir
+                }
                 
                 if ($extract7Result) {
-                    $ssseExe7 = Get-ChildItem -Path $extract7Result.Level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
+                    if ($TestMode) {
+                        $ssseExe7 = [PSCustomObject]@{ Name = "SamsungSystemSupportEngine.exe"; FullName = "Simulated.exe" }
+                    }
+                    else {
+                        $ssseExe7 = Get-ChildItem -Path $extract7Result.Level2Dir -Filter "SamsungSystemSupportEngine.exe" -File -Recurse
+                    }
                     
                     if ($ssseExe7) {
                         # 5. Patch 7.1.2.0 Binary
                         Write-Host "    Patching 7.1.2.0 binary..." -ForegroundColor Yellow
-                        $patch7Result = Update-SSSEBinary -ExePath $ssseExe7.FullName
+                        if ($TestMode) {
+                            Write-Host "    [TEST] Would patch 7.1.2.0 binary" -ForegroundColor Gray
+                            $patch7Result = $true
+                        }
+                        else {
+                            $patch7Result = Update-SSSEBinary -ExePath $ssseExe7.FullName
+                        }
                         
                         if ($patch7Result) {
                             # 6. Replace Binary
                             Write-Host "    Replacing binary in $InstallPath..." -ForegroundColor Yellow
-                            Copy-Item -Path $ssseExe7.FullName -Destination $InstallPath -Force
-                            Write-Host "    ✓ Binary replaced with 7.1.2.0 version" -ForegroundColor Green
+                            if ($TestMode) {
+                                Write-Host "    [TEST] Would replace binary with 7.1.2.0 version" -ForegroundColor Gray
+                            }
+                            else {
+                                Copy-Item -Path $ssseExe7.FullName -Destination $InstallPath -Force
+                                Write-Host "    ✓ Binary replaced with 7.1.2.0 version" -ForegroundColor Green
+                            }
                             
                             # Update installed version tracker
                             $installedVersion = $driverVersion
                             
                             # 7. Restart Service
                             Write-Host "    Restarting service..." -ForegroundColor Yellow
-                            Start-Service -Name "GBeSupportService"
-                            Write-Host "    ✓ Service restarted" -ForegroundColor Green
+                            if ($TestMode) {
+                                Write-Host "    [TEST] Would restart GBeSupportService" -ForegroundColor Gray
+                            }
+                            else {
+                                Start-Service -Name "GBeSupportService"
+                                Write-Host "    ✓ Service restarted" -ForegroundColor Green
+                            }
                         }
                         else {
                             Write-Error "Failed to patch 7.1.2.0 binary"
@@ -3443,25 +3672,30 @@ function Install-SystemSupportEngine {
         
         foreach ($pkg in $samsungPackages) {
             Write-Host "  Installing $($pkg.Name)..." -ForegroundColor Gray
-            try {
-                $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
-                
-                if ($installOutput -match "Successfully installed|Installation completed successfully") {
-                    Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
-                }
-                elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
-                    Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
-                }
-                elseif ($installOutput -match "0x80d03805|0x80D03805") {
-                    Write-Host "    ⚠ Store connection error - will install after reboot" -ForegroundColor Yellow
-                }
-                else {
-                    Write-Host "    ⚠ $($pkg.Name) - may install automatically after reboot" -ForegroundColor Yellow
-                }
+            if ($TestMode) {
+                Write-Host "    [TEST] Would install $($pkg.Name) via winget" -ForegroundColor Gray
             }
-            catch {
-                Write-Host "    ⚠ Could not install $($pkg.Name) automatically" -ForegroundColor Yellow
-                Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
+            else {
+                try {
+                    $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
+                    
+                    if ($installOutput -match "Successfully installed|Installation completed successfully") {
+                        Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
+                    }
+                    elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
+                        Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
+                    }
+                    elseif ($installOutput -match "0x80d03805|0x80D03805") {
+                        Write-Host "    ⚠ Store connection error - will install after reboot" -ForegroundColor Yellow
+                    }
+                    else {
+                        Write-Host "    ⚠ $($pkg.Name) - may install automatically after reboot" -ForegroundColor Yellow
+                    }
+                }
+                catch {
+                    Write-Host "    ⚠ Could not install $($pkg.Name) automatically" -ForegroundColor Yellow
+                    Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
+                }
             }
         }
         
@@ -3492,8 +3726,10 @@ function Install-SystemSupportEngine {
             Write-Host "`n✓ You are running the latest SSSE version ($finalVersion)" -ForegroundColor Green
         }
         
-        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        if (-not $AutoInstall) {
+            Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        }
         
         return $true
         
@@ -3504,16 +3740,20 @@ function Install-SystemSupportEngine {
         Write-Host $_.ScriptStackTrace -ForegroundColor Gray
         
         # Cleanup on error
-        if (Test-Path $extractDir) {
-            Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $TestMode) {
+            if (Test-Path $extractDir) {
+                Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
         
         Write-Host "`nInstallation was unsuccessful." -ForegroundColor Red
         Write-Host "Files may be partially copied to: $InstallPath" -ForegroundColor Yellow
         Write-Host "You can manually clean up if needed." -ForegroundColor Gray
         
-        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        if (-not $AutoInstall) {
+            Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        }
         
         return $false
     }
@@ -3524,7 +3764,15 @@ function Stop-SamsungProcesses {
     .SYNOPSIS
         Stops all Samsung processes to prevent file locks during uninstall
     #>
+    param(
+        [bool]$TestMode = $false
+    )
     
+    if ($TestMode) {
+        Write-Host "  [TEST] Would stop Samsung processes" -ForegroundColor Gray
+        return
+    }
+
     $samsungProcesses = @(
         "SamsungSystemSupportEngine",
         "SamsungSystemSupportService",
@@ -4949,7 +5197,8 @@ function Get-LegacyBiosValues {
 function New-RegistrySpoofBatch {
     param (
         [string]$OutputPath,
-        [hashtable]$BiosValues = $null
+        [hashtable]$BiosValues = $null,
+        [bool]$TestMode = $false
     )
     
     # Default values (Galaxy Book3 Ultra)
@@ -5073,7 +5322,129 @@ REM Registry spoof complete!
 REM ============================================================================
 "@
     
-    $batchContent | Set-Content $OutputPath -Encoding ASCII
+    if ($TestMode) {
+        Write-Host "    [TEST] Would write registry batch to: $OutputPath" -ForegroundColor Gray
+    }
+    else {
+        $batchContent | Set-Content $OutputPath -Encoding ASCII
+    }
+}
+
+function New-MultiControlInitScript {
+    param (
+        [string]$OutputPath,
+        [bool]$TestMode = $false
+    )
+
+    $scriptContent = @'
+[CmdletBinding()]
+param(
+    [int]$GracePeriodSeconds = 60
+)
+
+$ErrorActionPreference = "Stop"
+$LogDir = "C:\GalaxyBook\Logs"
+$LogFile = Join-Path -Path $LogDir -ChildPath "Init-SamsungMultiControlOnLogin.log"
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS")]
+        [string]$Level = "INFO"
+    )
+
+    $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $entry = "[$timestamp] [$Level] $Message"
+
+    Write-Host $entry -ForegroundColor Cyan
+
+    try {
+        if (-not (Test-Path -Path $LogDir)) {
+            New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+        }
+        Add-Content -Path $LogFile -Value $entry -Encoding UTF8
+    }
+    catch {
+        Write-Warning "Could not write to log file: $($_.Exception.Message)"
+    }
+}
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+
+if (-not $isAdmin) {
+    Write-Log "Script requires Administrator privileges. Exiting." -Level ERROR
+    exit 1
+}
+
+Write-Log "Script started"
+
+if ($GracePeriodSeconds -gt 0) {
+    Write-Log "Waiting $GracePeriodSeconds second(s) before restarting Samsung services."
+    Start-Sleep -Seconds $GracePeriodSeconds
+}
+
+try {
+    $serviceMap = @{}
+
+    foreach ($service in (Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue)) {
+        $serviceMap[$service.Name] = $service
+    }
+
+    foreach ($service in (Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue)) {
+        $serviceMap[$service.Name] = $service
+    }
+
+    if ($serviceMap.Count -eq 0) {
+        Write-Log "No Samsung services found on this machine." -Level WARNING
+        Write-Log "Script finished"
+        exit 0
+    }
+
+    foreach ($service in ($serviceMap.Values | Sort-Object -Property Name -Unique)) {
+        try {
+            Write-Log "Attempting to restart: $($service.Name) ($($service.Status))"
+            Restart-Service -Name $service.Name -Force -ErrorAction Stop
+
+            $updatedService = Get-Service -Name $service.Name -ErrorAction SilentlyContinue
+            if ($updatedService) {
+                Write-Log "Success: $($service.Name) is now $($updatedService.Status)" -Level SUCCESS
+            }
+            else {
+                Write-Log "Success: $($service.Name) restarted." -Level SUCCESS
+            }
+        }
+        catch {
+            Write-Log "Failed to restart $($service.Name). Error: $($_.Exception.Message)" -Level WARNING
+
+            try {
+                $currentState = (Get-Service -Name $service.Name -ErrorAction Stop).Status
+                if ($currentState -eq 'Stopped') {
+                    Write-Log "Attempting to start $($service.Name) instead..."
+                    Start-Service -Name $service.Name -ErrorAction Stop
+                    Write-Log "Success: $($service.Name) started." -Level SUCCESS
+                }
+            }
+            catch {
+                Write-Log "Could not start $($service.Name). Error: $($_.Exception.Message)" -Level ERROR
+            }
+        }
+    }
+}
+catch {
+    Write-Log "Unexpected error: $($_.Exception.Message)" -Level ERROR
+}
+
+Write-Log "Script finished"
+'@
+
+    if ($TestMode) {
+        Write-Host "    [TEST] Would write MultiControl script to: $OutputPath" -ForegroundColor Gray
+    }
+    else {
+        $scriptContent | Set-Content -Path $OutputPath -Encoding UTF8
+    }
 }
 
 # Check if running as administrator
@@ -5105,40 +5476,65 @@ if (-not $isAdmin) {
     }
     
     Write-Host ""
+
+    $arguments = @()
+    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+        $paramName = $entry.Key
+        $paramValue = $entry.Value
+
+        if ($paramValue -is [System.Management.Automation.SwitchParameter]) {
+            if ($paramValue.IsPresent) {
+                $arguments += "-$paramName"
+            }
+            continue
+        }
+
+        if ($null -eq $paramValue) {
+            continue
+        }
+
+        if ($paramValue -is [bool]) {
+            $arguments += "-${paramName}:$($paramValue.ToString().ToLower())"
+            continue
+        }
+
+        if ($paramValue -is [Array]) {
+            if ($paramValue.Count -gt 0) {
+                $arguments += "-$paramName"
+                $arguments += @($paramValue | ForEach-Object { $_.ToString() })
+            }
+            continue
+        }
+
+        $arguments += "-$paramName"
+        $arguments += $paramValue.ToString()
+    }
     
     try {
         if ($hasSudo) {
             # Use sudo for seamless elevation
             $scriptPath = $MyInvocation.MyCommand.Path
-            $arguments = $MyInvocation.BoundParameters.GetEnumerator() | ForEach-Object {
-                if ($_.Value -is [switch] -and $_.Value) {
-                    "-$($_.Key)"
-                }
-            }
             
             # Re-launch with sudo
             if ($scriptPath) {
-                & $sudoCommand pwsh -NoProfile -ExecutionPolicy Bypass -File "`"$scriptPath`"" @arguments
+                $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
+                & $sudoCommand pwsh @elevatedArgs
             }
             else {
                 # Script was piped (irm | iex), need to re-download
                 Write-Host "⚠ Cannot auto-elevate piped script with sudo" -ForegroundColor Yellow
                 Write-Host "Please run as administrator or download the script first." -ForegroundColor Gray
-                pause
+                Invoke-InteractivePause
                 exit
             }
         }
         else {
             # Use traditional UAC elevation
             $scriptPath = $MyInvocation.MyCommand.Path
-            $arguments = $MyInvocation.BoundParameters.GetEnumerator() | ForEach-Object {
-                if ($_.Value -is [switch] -and $_.Value) {
-                    "-$($_.Key)"
-                }
-            }
             
             if ($scriptPath) {
-                Start-Process -FilePath "pwsh" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" $($arguments -join ' ')" -Verb RunAs
+                $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
+                Start-Process -FilePath "pwsh" -ArgumentList $elevatedArgs -Verb RunAs
             }
             else {
                 # Script was piped, show manual instructions
@@ -5148,7 +5544,7 @@ if (-not $isAdmin) {
                 Write-Host "  1. Download the script first, then run as administrator" -ForegroundColor Gray
                 Write-Host "  2. Install gsudo: winget install gerardog.gsudo" -ForegroundColor Gray
                 Write-Host "     Then run: irm <url> | gsudo pwsh" -ForegroundColor Gray
-                pause
+                Invoke-InteractivePause
                 exit
             }
         }
@@ -5161,14 +5557,17 @@ if (-not $isAdmin) {
         Write-Host ""
         Write-Host "Please run PowerShell as Administrator manually:" -ForegroundColor Yellow
         Write-Host "  Right-click PowerShell → Run as Administrator" -ForegroundColor Gray
-        pause
+        Invoke-InteractivePause
         exit
     }
 }
 
 $taskName = "GalaxyBookEnabler"
+$multiControlTaskName = "GalaxyBookEnabler-MultiControlInit"
+$scheduledTaskNames = @($taskName, $multiControlTaskName)
 $installPath = Join-Path $env:USERPROFILE ".galaxy-book-enabler"
 $batchScriptPath = Join-Path $installPath "GalaxyBookSpoof.bat"
+$multiControlScriptPath = Join-Path $installPath "Init-SamsungMultiControlOnLogin.ps1"
 $configPath = Join-Path $installPath "gbe-config.json"
 
 if ($script:IsAutonomous -and $AutonomousAction -ne "Install") {
@@ -5223,7 +5622,7 @@ if ($UpdateSettings) {
         Write-Host "  Check the output above for details." -ForegroundColor Gray
     }
     
-    pause
+    Invoke-InteractivePause
     exit
 }
 
@@ -5235,7 +5634,7 @@ if ($Uninstall) {
     Write-Host "========================================`n" -ForegroundColor Red
     
     Write-Host "This will remove:" -ForegroundColor Yellow
-    Write-Host "  • Scheduled task: $taskName" -ForegroundColor Gray
+    Write-Host "  • Scheduled tasks: $($scheduledTaskNames -join ', ')" -ForegroundColor Gray
     Write-Host "  • Installation folder: $installPath" -ForegroundColor Gray
     Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
     Write-Host ""
@@ -5244,27 +5643,60 @@ if ($Uninstall) {
     
     if ($confirm -notlike "y*") {
         Write-Host "`nUninstall cancelled." -ForegroundColor Yellow
-        pause
+        Invoke-InteractivePause
         exit
     }
     
-    Write-Host "`nUninstalling..." -ForegroundColor Yellow
+    if ($TestMode) {
+        Write-Host "`n[TEST MODE] Simulating uninstallation..." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "`nUninstalling..." -ForegroundColor Yellow
+    }
     
-    # Remove scheduled task
-    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($existingTask) {
-        Write-Host "  Removing scheduled task..." -ForegroundColor Gray
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-        Write-Host "  ✓ Task removed" -ForegroundColor Green
+    # Remove scheduled tasks
+    $removedTaskCount = 0
+    foreach ($scheduledTaskName in $scheduledTaskNames) {
+        $existingTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+        if ($existingTask) {
+            if ($removedTaskCount -eq 0) {
+                if ($TestMode) {
+                    Write-Host "  [TEST] Would remove scheduled tasks:" -ForegroundColor Gray
+                }
+                else {
+                    Write-Host "  Removing scheduled tasks..." -ForegroundColor Gray
+                }
+            }
+            
+            if ($TestMode) {
+                Write-Host "  [TEST] Would remove: $scheduledTaskName" -ForegroundColor Gray
+            }
+            else {
+                Unregister-ScheduledTask -TaskName $scheduledTaskName -Confirm:$false
+                Write-Host "  ✓ Task removed: $scheduledTaskName" -ForegroundColor Green
+            }
+            $removedTaskCount++
+        }
     }
     
     # Remove installation folder
     if (Test-Path $installPath) {
-        Write-Host "  Removing installation folder..." -ForegroundColor Gray
-        Remove-Item -Path $installPath -Recurse -Force
-        Write-Host "  ✓ Folder removed" -ForegroundColor Green
+        if ($TestMode) {
+            Write-Host "  [TEST] Would remove installation folder: $installPath" -ForegroundColor Gray
+        }
+        else {
+            Write-Host "  Removing installation folder..." -ForegroundColor Gray
+            Remove-Item -Path $installPath -Recurse -Force
+            Write-Host "  ✓ Folder removed" -ForegroundColor Green
+        }
     }
     
+    if ($TestMode) {
+        Write-Host "`n[TEST MODE] Uninstall simulation complete!" -ForegroundColor Magenta
+        Invoke-InteractivePause
+        exit
+    }
+
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "  Uninstall Complete!" -ForegroundColor Green
     Write-Host "========================================`n" -ForegroundColor Green
@@ -5272,7 +5704,7 @@ if ($Uninstall) {
     Write-Host "Note: Registry spoof will remain until you reboot." -ForegroundColor Yellow
     Write-Host "After rebooting, Samsung features will no longer work.`n" -ForegroundColor Gray
     
-    pause
+    Invoke-InteractivePause
     exit
 }
 
@@ -5317,7 +5749,7 @@ if ($UpgradeSSE) {
         Write-Host "Please try running the full installer instead." -ForegroundColor Yellow
     }
     
-    pause
+    Invoke-InteractivePause
     exit
 }
 
@@ -5390,6 +5822,9 @@ if ($alreadyInstalled) {
     
     # Check for updates from GitHub
     Write-Host "`nChecking for updates..." -ForegroundColor Cyan
+    if ($DebugOutput) {
+        Write-Host "DEBUG: IsAutonomous=$script:IsAutonomous FullyAutonomous=$($FullyAutonomous.IsPresent) AutonomousAction=$AutonomousAction" -ForegroundColor DarkGray
+    }
     $updateCheck = Test-UpdateAvailable
     
     if ($updateCheck.Available) {
@@ -5418,7 +5853,13 @@ if ($alreadyInstalled) {
         Write-Host "  [10] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-10]"
+        if ($script:IsAutonomous) {
+            $choice = "2"
+            Write-Host "[AUTONOMOUS] Selecting option [2] Update to installer version" -ForegroundColor Gray
+        }
+        else {
+            $choice = Read-Host "Enter choice [1-10]"
+        }
         
         if ($choice -eq "1") {
             if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
@@ -5450,7 +5891,13 @@ if ($alreadyInstalled) {
         Write-Host "  [9] Cancel" -ForegroundColor Gray
         Write-Host ""
         
-        $choice = Read-Host "Enter choice [1-9]"
+        if ($script:IsAutonomous) {
+            $choice = "1"
+            Write-Host "[AUTONOMOUS] Selecting option [1] Update to installer version" -ForegroundColor Gray
+        }
+        else {
+            $choice = Read-Host "Enter choice [1-9]"
+        }
     }
     
     # Handle "Manage Packages" option - same action for both menus
@@ -5492,7 +5939,7 @@ if ($alreadyInstalled) {
             Write-Host "  Check the output above for details." -ForegroundColor Gray
         }
         
-        pause
+        Invoke-InteractivePause
         exit
     }
     
@@ -5605,7 +6052,7 @@ if ($alreadyInstalled) {
                     Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
                     Write-Host "  Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Cyan
                     Write-Host ""
-                    $preserveChoice = Read-Host "Keep your custom config? ([Y]=Keep custom, N=Use default GB3U)"
+                    $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Keep your custom config? ([Y]=Keep custom, N=Use default GB3U)" }
                     
                     if ($preserveChoice -eq "" -or $preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
                         $biosValuesToUse = $backupBiosValues.Values
@@ -5642,7 +6089,7 @@ if ($alreadyInstalled) {
                 Write-Host "  5. Perform a fresh installation" -ForegroundColor White
                 Write-Host ""
                 
-                $confirmReinstall = Read-Host "Proceed with full reinstall? (Y/n)"
+                $confirmReinstall = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with full reinstall? (Y/n)" }
             if ($confirmReinstall -like "n*") {
                 Write-Host "`nCancelled." -ForegroundColor Yellow
                 exit
@@ -5668,7 +6115,7 @@ if ($alreadyInstalled) {
             # Ask about preserving config NOW before nuking
             if ($backupBiosValues -and $backupBiosValues.IsCustom) {
                 Write-Host ""
-                $preserveChoice = Read-Host "  Keep your custom BIOS config after reinstall? ([Y]=Keep, N=Use default GB3U)"
+                $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "  Keep your custom BIOS config after reinstall? ([Y]=Keep, N=Use default GB3U)" }
                 
                 if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
                     $biosValuesToUse = $backupBiosValues.Values
@@ -5708,12 +6155,14 @@ if ($alreadyInstalled) {
                 Write-Host "    ✓ No services to remove" -ForegroundColor Green
             }
             
-            # Step 4: Remove scheduled task and folders
-            Write-Host "`n  [4/5] Removing scheduled task & folders..." -ForegroundColor Cyan
-            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($existingTask) {
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                Write-Host "    ✓ Scheduled task removed" -ForegroundColor Green
+            # Step 4: Remove scheduled tasks and folders
+            Write-Host "`n  [4/5] Removing scheduled tasks & folders..." -ForegroundColor Cyan
+            foreach ($scheduledTaskName in $scheduledTaskNames) {
+                $existingTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $scheduledTaskName -Confirm:$false
+                    Write-Host "    ✓ Scheduled task removed: $scheduledTaskName" -ForegroundColor Green
+                }
             }
             
             Write-Host "    Stopping Samsung processes..." -ForegroundColor Gray
@@ -5753,7 +6202,7 @@ if ($alreadyInstalled) {
                 Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
                 Write-Host "  • All Samsung apps" -ForegroundColor Gray
                 Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
-                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • Scheduled tasks ($($scheduledTaskNames -join ', '))" -ForegroundColor Gray
                 Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
                 Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
                 exit
@@ -5782,11 +6231,13 @@ if ($alreadyInstalled) {
                 Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
             }
             
-            # Remove scheduled task
-            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($existingTask) {
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                Write-Host "  ✓ Task removed" -ForegroundColor Green
+            # Remove scheduled tasks
+            foreach ($scheduledTaskName in $scheduledTaskNames) {
+                $existingTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $scheduledTaskName -Confirm:$false
+                    Write-Host "  ✓ Task removed: $scheduledTaskName" -ForegroundColor Green
+                }
             }
             
             Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
@@ -5841,7 +6292,7 @@ if ($alreadyInstalled) {
             if ($TestMode) {
                 Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
                 Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
-                Write-Host "  • Scheduled task" -ForegroundColor Gray
+                Write-Host "  • Scheduled tasks ($($scheduledTaskNames -join ', '))" -ForegroundColor Gray
                 Write-Host "  • User folder and SSSE folder" -ForegroundColor Gray
                 Write-Host "`n[TEST MODE] No changes applied" -ForegroundColor Yellow
                 exit
@@ -5862,11 +6313,13 @@ if ($alreadyInstalled) {
                 Write-Host "  ✓ Samsung services removed" -ForegroundColor Green
             }
             
-            # Remove scheduled task
-            $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($existingTask) {
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-                Write-Host "  ✓ Task removed" -ForegroundColor Green
+            # Remove scheduled tasks
+            foreach ($scheduledTaskName in $scheduledTaskNames) {
+                $existingTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+                if ($existingTask) {
+                    Unregister-ScheduledTask -TaskName $scheduledTaskName -Confirm:$false
+                    Write-Host "  ✓ Task removed: $scheduledTaskName" -ForegroundColor Green
+                }
             }
             
             Write-Host "  Stopping Samsung processes..." -ForegroundColor Gray
@@ -6000,8 +6453,17 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  STEP 3: Setting Up Files" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
+if ($TestMode) {
+    Write-Host "[TEST MODE] Simulating file creation..." -ForegroundColor Yellow
+}
+
 if (-not (Test-Path $installPath)) {
-    New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+    if ($TestMode) {
+        Write-Host "  [TEST] Would create folder: $installPath" -ForegroundColor Gray
+    }
+    else {
+        New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+    }
 }
 
 # Check for legacy v1.x installation
@@ -6063,8 +6525,15 @@ if ((Test-Path $legacyBatchPath) -and -not $biosValuesToUse) {
 }
 
 # Create the batch file for registry spoofing
-Write-Host "Creating registry spoof script..." -ForegroundColor Yellow
-New-RegistrySpoofBatch -OutputPath $batchScriptPath -BiosValues $biosValuesToUse
+if ($TestMode) {
+    Write-Host "  [TEST] Would create registry spoof script: $batchScriptPath" -ForegroundColor Gray
+    Write-Host "  [TEST] Would create Multi Control init script: $multiControlScriptPath" -ForegroundColor Gray
+}
+else {
+    Write-Host "Creating registry spoof script..." -ForegroundColor Yellow
+    New-RegistrySpoofBatch -OutputPath $batchScriptPath -BiosValues $biosValuesToUse
+    New-MultiControlInitScript -OutputPath $multiControlScriptPath
+}
 
 if ($biosValuesToUse) {
     Write-Host "✓ Registry spoof script created (custom values preserved)" -ForegroundColor Green
@@ -6072,34 +6541,45 @@ if ($biosValuesToUse) {
 else {
     Write-Host "✓ Registry spoof script created (Galaxy Book3 Ultra)" -ForegroundColor Green
 }
+Write-Host "✓ Multi Control init script created" -ForegroundColor Green
 
 # Clean up legacy installation if it exists
 if (Test-Path $legacyPath) {
-    Write-Host "Cleaning up legacy installation files..." -ForegroundColor Yellow
-    try {
-        Remove-Item $legacyPath -Recurse -Force -ErrorAction Stop
-        Write-Host "✓ Legacy files removed" -ForegroundColor Green
+    if ($TestMode) {
+        Write-Host "  [TEST] Would remove legacy installation: $legacyPath" -ForegroundColor Gray
     }
-    catch {
-        Write-Host "⚠ Could not remove legacy files: $_" -ForegroundColor Yellow
-        Write-Host "  You can manually delete: $legacyPath" -ForegroundColor Gray
+    else {
+        Write-Host "Cleaning up legacy installation files..." -ForegroundColor Yellow
+        try {
+            Remove-Item $legacyPath -Recurse -Force -ErrorAction Stop
+            Write-Host "✓ Legacy files removed" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "⚠ Could not remove legacy files: $_" -ForegroundColor Yellow
+            Write-Host "  You can manually delete: $legacyPath" -ForegroundColor Gray
+        }
     }
 }
 
 # Save configuration
-$config = @{
-    InstalledVersion = $SCRIPT_VERSION
-    InstallDate      = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    WiFiAdapter      = $wifiCheck.AdapterName
-    IsIntelWiFi      = $wifiCheck.IsIntel
+if ($TestMode) {
+    Write-Host "  [TEST] Would save configuration: $configPath" -ForegroundColor Gray
 }
+else {
+    $config = @{
+        InstalledVersion = $SCRIPT_VERSION
+        InstallDate      = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        WiFiAdapter      = $wifiCheck.AdapterName
+        IsIntelWiFi      = $wifiCheck.IsIntel
+    }
 
-$config | ConvertTo-Json | Set-Content $configPath
-Write-Host "✓ Configuration saved" -ForegroundColor Green
+    $config | ConvertTo-Json | Set-Content $configPath
+    Write-Host "✓ Configuration saved" -ForegroundColor Green
+}
 
 # ==================== STEP 4: SCHEDULED TASK ====================
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  STEP 4: Creating Startup Task" -ForegroundColor Cyan
+Write-Host "  STEP 4: Creating Startup Tasks" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 if ($TestMode) {
@@ -6107,12 +6587,22 @@ if ($TestMode) {
     Write-Host "  Would create task: $taskName" -ForegroundColor Gray
     Write-Host "  Would execute: $batchScriptPath" -ForegroundColor Gray
     Write-Host "  Would run as: SYSTEM (at startup + 10s delay)" -ForegroundColor Gray
+    Write-Host "  Would create task: $multiControlTaskName" -ForegroundColor Gray
+    Write-Host "  Would execute: pwsh -File $multiControlScriptPath -GracePeriodSeconds 60" -ForegroundColor Gray
+    Write-Host "  Would run as: SYSTEM (at startup + 5m delay, then 1m grace in script)" -ForegroundColor Gray
 }
 else {
-    # Remove existing task if present
-    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($existingTask) {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    # Remove existing tasks if present
+    foreach ($scheduledTaskName in $scheduledTaskNames) {
+        $existingTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+        if ($existingTask) {
+            if ($TestMode) {
+                Write-Host "  [TEST] Would remove existing task: $scheduledTaskName" -ForegroundColor Gray
+            }
+            else {
+                Unregister-ScheduledTask -TaskName $scheduledTaskName -Confirm:$false
+            }
+        }
     }
 
     $taskDescription = "Spoofs system as Samsung Galaxy Book to enable Samsung features"
@@ -6124,8 +6614,22 @@ else {
 
     Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 
+    $pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $pwshPath) {
+        $pwshPath = Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe"
+    }
+
+    $multiControlDescription = "Restarts Samsung services after startup to improve Multi Control stability (Discussion #76)"
+    $multiControlAction = New-ScheduledTaskAction -Execute $pwshPath -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$multiControlScriptPath`" -GracePeriodSeconds 60"
+    $multiControlTrigger = New-ScheduledTaskTrigger -AtStartup
+    $multiControlTrigger.Delay = "PT5M"
+
+    Register-ScheduledTask -TaskName $multiControlTaskName -Description $multiControlDescription -Action $multiControlAction -Trigger $multiControlTrigger -Principal $principal -Settings $settings | Out-Null
+
     Write-Host "✓ Scheduled task created" -ForegroundColor Green
     Write-Host "  The spoof will run automatically on startup" -ForegroundColor Gray
+    Write-Host "✓ Multi Control startup task created" -ForegroundColor Green
+    Write-Host "  Samsung services restart at startup +5m (with +1m grace inside script)" -ForegroundColor Gray
 }
 
 # ==================== STEP 5: SYSTEM SUPPORT ENGINE (OPTIONAL/ADVANCED) ====================
@@ -6179,37 +6683,42 @@ else {
              
             if ($choice -like "u*") {
                 Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
-                Write-Host "  This will try multiple methods to ensure complete removal." -ForegroundColor Gray
-                Write-Host ""
-                
-                $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
-                
-                Write-Host ""
-                Write-Host "Removal Summary:" -ForegroundColor Cyan
-                if ($removalResult.Success.Count -gt 0) {
-                    Write-Host "  ✓ Successfully removed: $($removalResult.Success.Count) package(s)" -ForegroundColor Green
-                    foreach ($pkg in $removalResult.Success) {
-                        Write-Host "    • $pkg" -ForegroundColor Gray
-                    }
+                if ($TestMode) {
+                    Write-Host "  [TEST] Would uninstall $($existingSettings.Count) Samsung Settings packages" -ForegroundColor Gray
                 }
-                
-                if ($removalResult.Failed.Count -gt 0) {
-                    Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
-                    foreach ($pkg in $removalResult.Failed) {
-                        Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
-                    }
-                    Write-Host ""
-                    Write-Host "  Manual removal options:" -ForegroundColor Yellow
-                    Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
-                    Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
-                    Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                else {
+                    Write-Host "  This will try multiple methods to ensure complete removal." -ForegroundColor Gray
                     Write-Host ""
                     
-                    $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
-                    if ($continueAnyway -notlike "y*") {
-                        Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
-                        Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
-                        return
+                    $removalResult = Remove-SamsungSettingsPackages -Packages $existingSettings
+                    
+                    Write-Host ""
+                    Write-Host "Removal Summary:" -ForegroundColor Cyan
+                    if ($removalResult.Success.Count -gt 0) {
+                        Write-Host "  ✓ Successfully removed: $($removalResult.Success.Count) package(s)" -ForegroundColor Green
+                        foreach ($pkg in $removalResult.Success) {
+                            Write-Host "    • $pkg" -ForegroundColor Gray
+                        }
+                    }
+                    
+                    if ($removalResult.Failed.Count -gt 0) {
+                        Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
+                        foreach ($pkg in $removalResult.Failed) {
+                            Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                        }
+                        Write-Host ""
+                        Write-Host "  Manual removal options:" -ForegroundColor Yellow
+                        Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
+                        Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
+                        Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                        Write-Host ""
+                        
+                        $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
+                        if ($continueAnyway -notlike "y*") {
+                            Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
+                            Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
+                            return
+                        }
                     }
                 }
                 
@@ -6342,7 +6851,7 @@ else {
         
         if ($confirm -notlike "y*") {
             Write-Host "Installation cancelled." -ForegroundColor Yellow
-            pause
+            Invoke-InteractivePause
             exit
         }
     }
@@ -6385,8 +6894,13 @@ if ($packagesToInstall.Count -gt 0) {
 
         # Create launcher scripts in C:\GalaxyBook
         $aiSelectLauncherDir = "C:\GalaxyBook"
-        if (-not (Test-Path $aiSelectLauncherDir)) {
-            New-Item -Path $aiSelectLauncherDir -ItemType Directory -Force | Out-Null
+        if ($TestMode) {
+            Write-Host "  [TEST] Would create folder: $aiSelectLauncherDir" -ForegroundColor Gray
+        }
+        else {
+            if (-not (Test-Path $aiSelectLauncherDir)) {
+                New-Item -Path $aiSelectLauncherDir -ItemType Directory -Force | Out-Null
+            }
         }
         
         # Create .bat launcher (fastest, no window)
@@ -6395,7 +6909,12 @@ if ($packagesToInstall.Count -gt 0) {
 @echo off
 start "" shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
 "@
-        $batContent | Set-Content -Path $batLauncherPath -Encoding ASCII
+        if ($TestMode) {
+            Write-Host "  [TEST] Would create launcher script: $batLauncherPath" -ForegroundColor Gray
+        }
+        else {
+            $batContent | Set-Content -Path $batLauncherPath -Encoding ASCII
+        }
         
         # Create .ps1 launcher (nicer, hidden window)
         $ps1LauncherPath = Join-Path $aiSelectLauncherDir "AISelect.ps1"
@@ -6404,7 +6923,12 @@ start "" shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App
 # Use with PowerToys Keyboard Manager for fastest launch
 Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
 "@
-        $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
+        if ($TestMode) {
+            Write-Host "  [TEST] Would create launcher script: $ps1LauncherPath" -ForegroundColor Gray
+        }
+        else {
+            $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
+        }
         
         Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
         Write-Host "    $batLauncherPath" -ForegroundColor Gray
@@ -6436,13 +6960,18 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
         $setupShortcut = if ($script:IsAutonomous) { if ($AutonomousCreateAiSelectShortcut) { "Y" } else { "N" } } else { Read-Host "Create Desktop shortcut? (Y/N)" }
 
         if ($setupShortcut -like "y*") {
-            $WshShell = New-Object -ComObject WScript.Shell
-            $shortcutPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "AI Select.lnk")
-            $shortcut = $WshShell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = "explorer.exe"
-            $shortcut.Arguments = "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
-            $shortcut.IconLocation = "shell32.dll,23"
-            $shortcut.Save()
+            if ($TestMode) {
+                Write-Host "  [TEST] Would create desktop shortcut: AI Select" -ForegroundColor Gray
+            }
+            else {
+                $WshShell = New-Object -ComObject WScript.Shell
+                $shortcutPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "AI Select.lnk")
+                $shortcut = $WshShell.CreateShortcut($shortcutPath)
+                $shortcut.TargetPath = "explorer.exe"
+                $shortcut.Arguments = "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App"
+                $shortcut.IconLocation = "shell32.dll,23"
+                $shortcut.Save()
+            }
             
             Write-Host "✓ Desktop shortcut created!" -ForegroundColor Green
             Write-Host "  Right-click it → Properties → Set 'Shortcut key' (e.g., Ctrl+Alt+S)" -ForegroundColor Gray
@@ -6520,29 +7049,39 @@ else {
     }
 }
 
-Write-Host "`nCreating Samsung System Support Service (dummy)..." -ForegroundColor Yellow
-$dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-if (-not $dummyService) {
-    & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= disabled 2>&1 | Out-Null
-    Write-Host "✓ Dummy service created (disabled)" -ForegroundColor Green
+if ($TestMode) {
+    Write-Host "  [TEST] Would create dummy service: SamsungSystemSupportService" -ForegroundColor Gray
 }
 else {
-    # Ensure existing service is disabled
-    $currentStartType = (Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue).StartType
-    if ($currentStartType -ne 'Disabled') {
-        Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-        Write-Host "✓ Service already exists (set to disabled)" -ForegroundColor Green
+    Write-Host "`nCreating Samsung System Support Service (dummy)..." -ForegroundColor Yellow
+    $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+    if (-not $dummyService) {
+        & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= disabled 2>&1 | Out-Null
+        Write-Host "✓ Dummy service created (disabled)" -ForegroundColor Green
     }
     else {
-        Write-Host "✓ Service already exists (disabled)" -ForegroundColor Green
+        # Ensure existing service is disabled
+        $currentStartType = (Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue).StartType
+        if ($currentStartType -ne 'Disabled') {
+            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+            Write-Host "✓ Service already exists (set to disabled)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✓ Service already exists (disabled)" -ForegroundColor Green
+        }
     }
 }
 
-Write-Host "`nStopping all Samsung processes..." -ForegroundColor Yellow
-Stop-SamsungProcesses
-# Also catch any remaining Samsung processes by wildcard
-Get-Process -Name 'Samsung*', 'QuickShare*', 'MultiControl*', 'SmartSelect*', 'AISelect*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Write-Host "✓ Samsung processes stopped" -ForegroundColor Green
+if ($TestMode) {
+    Write-Host "  [TEST] Would stop Samsung processes" -ForegroundColor Gray
+}
+else {
+    Write-Host "`nStopping all Samsung processes..." -ForegroundColor Yellow
+    Stop-SamsungProcesses -TestMode $TestMode
+    # Also catch any remaining Samsung processes by wildcard
+    Get-Process -Name 'Samsung*', 'QuickShare*', 'MultiControl*', 'SmartSelect*', 'AISelect*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Write-Host "✓ Samsung processes stopped" -ForegroundColor Green
+}
 
 # ==================== COMPLETION ====================
 if ($TestMode) {
@@ -6607,12 +7146,17 @@ else {
 
     # Launch Galaxy Book Experience to show available Samsung apps
     Write-Host "`nLaunching Galaxy Book Experience..." -ForegroundColor Cyan
-    try {
-        Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g!App"
-        Write-Host "  ✓ Galaxy Book Experience opened - explore available Samsung apps!" -ForegroundColor Green
+    if ($TestMode) {
+        Write-Host "  [TEST] Would launch Galaxy Book Experience app" -ForegroundColor Gray
     }
-    catch {
-        Write-Host "  Note: Galaxy Book Experience will be available after reboot" -ForegroundColor Yellow
+    else {
+        try {
+            Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SamsungWelcome_3c1yjt4zspk6g!App"
+            Write-Host "  ✓ Galaxy Book Experience opened - explore available Samsung apps!" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "  Note: Galaxy Book Experience will be available after reboot" -ForegroundColor Yellow
+        }
     }
 }
 

@@ -1,0 +1,90 @@
+name: Autonomous Action Checks
+
+on:
+  pull_request:
+    paths:
+      - 'Install-GalaxyBookEnabler.ps1'
+      - '.github/workflows/autonomous-actions-check.yml'
+      - '.github/workflows/installer-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  autonomous-actions:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run bounded autonomous action checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+
+          function Invoke-GbeCommand {
+            param(
+              [Parameter(Mandatory = $true)][string]$Name,
+              [Parameter(Mandatory = $true)][string[]]$Args,
+              [int]$TimeoutSeconds = 480
+            )
+
+            $stdoutPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stdout.log"
+            $stderrPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stderr.log"
+            $invocationArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '.\Install-GalaxyBookEnabler.ps1') + $Args
+
+            Write-Host "Running '$Name' with timeout ${TimeoutSeconds}s..."
+            $process = Start-Process -FilePath 'pwsh' -ArgumentList $invocationArgs -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+            if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              Write-Host "--- $Name STDOUT (tail) ---"
+              if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Tail 120 }
+              Write-Host "--- $Name STDERR (tail) ---"
+              if (Test-Path $stderrPath) { Get-Content $stderrPath -Tail 120 }
+              throw "Autonomous command '$Name' timed out after $TimeoutSeconds seconds."
+            }
+
+            if ($process.ExitCode -ne 0) {
+              Write-Host "--- $Name STDOUT (tail) ---"
+              if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Tail 120 }
+              Write-Host "--- $Name STDERR (tail) ---"
+              if (Test-Path $stderrPath) { Get-Content $stderrPath -Tail 120 }
+              throw "Autonomous command '$Name' failed with exit code $($process.ExitCode)."
+            }
+
+            Write-Host "✓ '$Name' completed successfully."
+          }
+
+          Invoke-GbeCommand -Name 'UpdateSettings' -Args @(
+            '-TestMode',
+            '-FullyAutonomous',
+            '-AutonomousAction', 'UpdateSettings',
+            '-AutonomousSsseStrategy', 'Stable',
+            '-DebugOutput'
+          )
+
+          Invoke-GbeCommand -Name 'UpgradeSSE' -Args @(
+            '-TestMode',
+            '-FullyAutonomous',
+            '-AutonomousAction', 'UpgradeSSE',
+            '-DebugOutput'
+          )
+
+          Invoke-GbeCommand -Name 'UninstallAll' -Args @(
+            '-TestMode',
+            '-FullyAutonomous',
+            '-AutonomousAction', 'UninstallAll',
+            '-DebugOutput'
+          )
+
+          Invoke-GbeCommand -Name 'CustomPackageArrayRegression' -Args @(
+            '-TestMode',
+            '-FullyAutonomous',
+            '-AutonomousModel', '960XGL',
+            '-AutonomousPackageProfile', 'Custom',
+            '-AutonomousPackageNames', 'Samsung Account', 'Samsung Settings',
+            '-AutonomousInstallSsse:$false',
+            '-AutonomousConfirmPackages:$false',
+            '-DebugOutput'
+          )
