@@ -3954,10 +3954,11 @@ function Uninstall-SamsungApps {
     }
     
     $samsungPackages = Get-AppxPackage | Where-Object { 
-        $_.Name -like "*Samsung*" -or 
-        $_.Name -like "*Galaxy*" -or
-        $_.Name -like "*16297BCCB59BC*" -or
-        $_.Name -like "*4438638898209*"
+        ($_.Name -like "*Samsung*" -or 
+         $_.Name -like "*Galaxy*" -or
+         $_.Name -like "*16297BCCB59BC*" -or
+         $_.Name -like "*4438638898209*") -and
+        $_.Name -notlike "*Internet*"
     }
     
     foreach ($pkg in $samsungPackages) {
@@ -5431,11 +5432,16 @@ try {
     $serviceMap = @{}
 
     foreach ($service in (Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue)) {
-        $serviceMap[$service.Name] = $service
+        # Exclude Samsung Internet services which can cause issues if restarted during login
+        if ($service.DisplayName -notlike "*Internet*") {
+            $serviceMap[$service.Name] = $service
+        }
     }
 
     foreach ($service in (Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue)) {
-        $serviceMap[$service.Name] = $service
+        if ($service.Name -notlike "*Internet*") {
+            $serviceMap[$service.Name] = $service
+        }
     }
 
     if ($serviceMap.Count -eq 0) {
