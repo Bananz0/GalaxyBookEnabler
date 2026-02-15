@@ -256,7 +256,8 @@ jobs:
             '-FullyAutonomous',
             '-AutonomousModel', '960XGL',
             '-AutonomousPackageProfile', 'Custom',
-            '-AutonomousPackageNames', 'Samsung Account', 'Samsung Settings',
+            '-AutonomousPackageNames', 'Samsung Account',
+            '-AutonomousPackageNames', 'Samsung Settings',
             '-AutonomousInstallSsse:$false',
             '-AutonomousConfirmPackages:$false',
             '-DebugOutput'
