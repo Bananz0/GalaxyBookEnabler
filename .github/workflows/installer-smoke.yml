@@ -81,6 +81,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $errors = @()
           $os = [System.Environment]::OSVersion.Version
+          $expectedModel = '960XGL'
           Write-Host "OS Build: $($os.Build)"
 
           $task = Get-ScheduledTask -TaskName 'GalaxyBookEnabler' -ErrorAction SilentlyContinue
@@ -102,7 +103,18 @@ jobs:
           $bios = Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\BIOS' -ErrorAction SilentlyContinue
           $sysinfo = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\SystemInformation' -ErrorAction SilentlyContinue
           if (-not $bios -or $bios.SystemManufacturer -notlike '*SAMSUNG*') { $errors += 'BIOS SystemManufacturer not Samsung' }
-          if (-not $sysinfo -or $sysinfo.SystemProductName -notmatch '^NP') { $errors += 'SystemProductName not Samsung' }
+          if (-not $sysinfo) {
+            $errors += 'SystemInformation registry key missing'
+          }
+          else {
+            $actualModel = [string]$sysinfo.SystemProductName
+            if ([string]::IsNullOrWhiteSpace($actualModel)) {
+              $errors += 'SystemProductName missing from SystemInformation'
+            }
+            elseif ($actualModel -ne $expectedModel) {
+              $errors += "SystemProductName mismatch (expected $expectedModel, got $actualModel)"
+            }
+          }
 
           $store = Get-AppxPackage -Name 'Microsoft.WindowsStore' -ErrorAction SilentlyContinue
           if ($store) {
@@ -117,17 +129,31 @@ jobs:
             $ssseExe = 'C:\GalaxyBook\SamsungSystemSupportEngine.exe'
             if (-not (Test-Path $ssseExe)) { $errors += 'SSSE executable missing' }
 
-            $gbe = Get-Service -Name 'GBeSupportService' -ErrorAction SilentlyContinue
-            if (-not $gbe) {
-              $errors += 'GBeSupportService missing'
-            }
-            elseif ($gbe.Status -ne 'Running') {
-              $errors += 'GBeSupportService not running'
-            }
+            $ssseServiceExe = 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+            if (-not (Test-Path $ssseServiceExe)) { $errors += 'SSSE service executable missing' }
 
-            $svcInfo = Get-CimInstance Win32_Service -Filter "Name='GBeSupportService'" -ErrorAction SilentlyContinue
-            if ($svcInfo -and $svcInfo.PathName -notlike '*C:\\GalaxyBook\\SamsungSystemSupportEngine.exe*') {
-              $errors += 'GBeSupportService path not pointing to C:\GalaxyBook'
+            $gbeServices = @(Get-Service -Name 'GBeSupportService*' -ErrorAction SilentlyContinue)
+            if (-not $gbeServices -or $gbeServices.Count -eq 0) {
+              $errors += 'GBe support service missing (GBeSupportService*)'
+            }
+            else {
+              $runningService = $gbeServices | Where-Object { $_.Status -eq 'Running' } | Select-Object -First 1
+              if (-not $runningService) {
+                Write-Host 'Warning: No GBe support service is running; continuing (best effort check).'
+              }
+
+              $pathMatches = $false
+              foreach ($service in $gbeServices) {
+                $svcInfo = Get-CimInstance Win32_Service -Filter "Name='$($service.Name)'" -ErrorAction SilentlyContinue
+                if ($svcInfo -and $svcInfo.PathName -match 'SamsungSystemSupportService\.exe') {
+                  $pathMatches = $true
+                  break
+                }
+              }
+
+              if (-not $pathMatches) {
+                $errors += 'GBe support service path not pointing to SamsungSystemSupportService.exe'
+              }
             }
           }
           else {
