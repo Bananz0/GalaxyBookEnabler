@@ -253,6 +253,7 @@ if (-not $isAdmin) {
 $SCRIPT_VERSION = "3.1.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+$LATEST_SSSE_VERSION = "8.0.5.0"
 
 # LOGGING SETUP
 $script:LogFile = Join-Path $env:TEMP "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
@@ -2848,7 +2849,7 @@ function Install-SystemSupportEngine {
     else {
         Write-Host ""
         Write-Host "  Recommended: In-place upgrade strategy" -ForegroundColor Green
-        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest 7.1.2.0" -ForegroundColor Gray
+        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest $LATEST_SSSE_VERSION" -ForegroundColor Gray
         Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
         Write-Host ""
 
@@ -2856,10 +2857,10 @@ function Install-SystemSupportEngine {
             switch ($AutoStrategy) {
                 "Dual" {
                     $cabVersion = "6.1.8.0"
-                    $driverVersion = "7.1.2.0"
+                    $driverVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
                     $useDualVersionStrategy = $true
-                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> 7.1.2.0)" -ForegroundColor Green
+                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> $LATEST_SSSE_VERSION)" -ForegroundColor Green
                 }
                 "Stable" {
                     $cabVersion = "6.3.3.0"
@@ -2868,7 +2869,7 @@ function Install-SystemSupportEngine {
                     Write-Host "  ✓ Auto-selected stable version: $cabVersion" -ForegroundColor Cyan
                 }
                 "Latest" {
-                    $cabVersion = "7.1.2.0"
+                    $cabVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
                     $useDualVersionStrategy = $false
                     Write-Host "  ✓ Auto-selected latest version: $cabVersion" -ForegroundColor Cyan
@@ -2892,14 +2893,14 @@ function Install-SystemSupportEngine {
                 Write-Host ""
                 Write-Host "  Available versions:" -ForegroundColor Yellow
                 Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
-                Write-Host "    [2] 7.1.2.0 - Latest" -ForegroundColor White
+                Write-Host "    [2] $LATEST_SSSE_VERSION - Latest" -ForegroundColor White
                 Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
                 Write-Host ""
                 
                 $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
                 
                 $cabVersion = switch ($versionChoice) {
-                    "2" { "7.1.2.0" }
+                    "2" { $LATEST_SSSE_VERSION }
                     "3" { $null }  # Will show interactive menu
                     default { "6.3.3.0" }
                 }
@@ -2913,10 +2914,10 @@ function Install-SystemSupportEngine {
             else {
                 # Use dual-version strategy
                 $cabVersion = "6.1.8.0"  # Primary version for patched exe
-                $driverVersion = "7.1.2.0"  # Driver version for DriverStore
+                $driverVersion = $LATEST_SSSE_VERSION  # Driver version for DriverStore and binary replacement
                 $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
                 $useDualVersionStrategy = $true
-                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to 7.1.2.0" -ForegroundColor Green
+                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to $LATEST_SSSE_VERSION" -ForegroundColor Green
             }
         }
     }
@@ -3475,15 +3476,15 @@ function Install-SystemSupportEngine {
             }
         }
         
-        # DUAL-VERSION STRATEGY: Download and install 7.1.2.0 driver-only
+        # DUAL-VERSION STRATEGY: Download and install latest driver-only
         if ($useDualVersionStrategy) {
-            Write-Host "`n  [DUAL-VERSION] Downloading 7.1.2.0 driver..." -ForegroundColor Cyan
+            Write-Host "`n  [DUAL-VERSION] Downloading $driverVersion driver..." -ForegroundColor Cyan
             
             $driverCabResult = Get-SamsungDriverCab -Version $driverVersion -OutputPath $tempDir
             
             if ($driverCabResult) {
-                # Extract just the driver files from 7.1.2.0
-                $driverExtractDir = Join-Path $extractDir "Driver_7120"
+                # Extract just the driver files from the latest version
+                $driverExtractDir = Join-Path $extractDir "Driver_Latest"
                 New-Item -Path $driverExtractDir -ItemType Directory -Force | Out-Null
                 
                 $expandResult = & expand.exe "$($driverCabResult.FilePath)" -F:* "$driverExtractDir" 2>&1
@@ -3491,27 +3492,27 @@ function Install-SystemSupportEngine {
                     $driverInfFile = Get-ChildItem -Path $driverExtractDir -Filter "*.inf" -File | Select-Object -First 1
                     
                     if ($driverInfFile) {
-                        Write-Host "    Installing 7.1.2.0 driver to DriverStore..." -ForegroundColor Yellow
+                        Write-Host "    Installing $driverVersion driver to DriverStore..." -ForegroundColor Yellow
                         
                         if (-not $TestMode) {
                             $driverAdded = Install-SSSEDriverToStore -InfPath $driverInfFile.FullName -TestMode:$false
                             if ($driverAdded) {
-                                Write-Host "    ✓ 7.1.2.0 driver added to DriverStore" -ForegroundColor Green
+                                Write-Host "    ✓ $driverVersion driver added to DriverStore" -ForegroundColor Green
                             }
                             else {
-                                Write-Host "    ⚠ 7.1.2.0 driver add had issues" -ForegroundColor Yellow
+                                Write-Host "    ⚠ $driverVersion driver add had issues" -ForegroundColor Yellow
                             }
                         }
                         else {
-                            Write-Host "    [TEST] Would add 7.1.2.0 driver to DriverStore" -ForegroundColor Gray
+                            Write-Host "    [TEST] Would add $driverVersion driver to DriverStore" -ForegroundColor Gray
                         }
                     }
                     else {
-                        Write-Host "    ⚠ No .inf file found in 7.1.2.0 CAB" -ForegroundColor Yellow
+                        Write-Host "    ⚠ No .inf file found in $driverVersion CAB" -ForegroundColor Yellow
                     }
                 }
                 else {
-                    Write-Host "    ⚠ Failed to extract 7.1.2.0 CAB: $expandResult" -ForegroundColor Yellow
+                    Write-Host "    ⚠ Failed to extract $driverVersion CAB: $expandResult" -ForegroundColor Yellow
                 }
                 
                 # Cleanup
@@ -3572,10 +3573,10 @@ function Install-SystemSupportEngine {
                     Write-Host "  [TEST] Would stop Samsung processes and GBeSupportService" -ForegroundColor Gray
                 }
                 
-                # 4. Extract 7.1.2.0 Binary
-                Write-Host "`n  [DUAL-VERSION] Extracting 7.1.2.0 binary..." -ForegroundColor Cyan
+                # 4. Extract latest binary
+                Write-Host "`n  [DUAL-VERSION] Extracting $driverVersion binary..." -ForegroundColor Cyan
                 if ($TestMode) {
-                    Write-Host "    [TEST] Would extract 7.1.2.0 binary" -ForegroundColor Gray
+                    Write-Host "    [TEST] Would extract $driverVersion binary" -ForegroundColor Gray
                     $extract7Result = @{ Level2Dir = "Simulated" }
                 }
                 else {
@@ -3591,10 +3592,10 @@ function Install-SystemSupportEngine {
                     }
                     
                     if ($ssseExe7) {
-                        # 5. Patch 7.1.2.0 Binary
-                        Write-Host "    Patching 7.1.2.0 binary..." -ForegroundColor Yellow
+                        # 5. Patch latest binary
+                        Write-Host "    Patching $driverVersion binary..." -ForegroundColor Yellow
                         if ($TestMode) {
-                            Write-Host "    [TEST] Would patch 7.1.2.0 binary" -ForegroundColor Gray
+                            Write-Host "    [TEST] Would patch $driverVersion binary" -ForegroundColor Gray
                             $patch7Result = $true
                         }
                         else {
@@ -3605,11 +3606,11 @@ function Install-SystemSupportEngine {
                             # 6. Replace Binary
                             Write-Host "    Replacing binary in $InstallPath..." -ForegroundColor Yellow
                             if ($TestMode) {
-                                Write-Host "    [TEST] Would replace binary with 7.1.2.0 version" -ForegroundColor Gray
+                                Write-Host "    [TEST] Would replace binary with $driverVersion version" -ForegroundColor Gray
                             }
                             else {
                                 Copy-Item -Path $ssseExe7.FullName -Destination $InstallPath -Force
-                                Write-Host "    ✓ Binary replaced with 7.1.2.0 version" -ForegroundColor Green
+                                Write-Host "    ✓ Binary replaced with $driverVersion version" -ForegroundColor Green
                             }
                             
                             # Update installed version tracker
@@ -3626,19 +3627,19 @@ function Install-SystemSupportEngine {
                             }
                         }
                         else {
-                            Write-Error "Failed to patch 7.1.2.0 binary"
+                            Write-Error "Failed to patch $driverVersion binary"
                         }
                     }
                     else {
-                        Write-Error "SamsungSystemSupportEngine.exe not found in 7.1.2.0 CAB"
+                        Write-Error "SamsungSystemSupportEngine.exe not found in $driverVersion CAB"
                     }
                 }
                 else {
-                    Write-Error "Failed to extract 7.1.2.0 CAB"
+                    Write-Error "Failed to extract $driverVersion CAB"
                 }
             }
             else {
-                Write-Host "    ⚠ Failed to download 7.1.2.0 driver CAB" -ForegroundColor Yellow
+                Write-Host "    ⚠ Failed to download $driverVersion driver CAB" -ForegroundColor Yellow
             }
         }
         
@@ -3765,7 +3766,7 @@ function Install-SystemSupportEngine {
         if ($finalVersion -and $finalVersion -like "6.*") {
             Write-Host "`n💡 UPGRADE TIP:" -ForegroundColor Cyan
             Write-Host "  You installed SSSE version $finalVersion (stable, compatible)" -ForegroundColor White
-            Write-Host "  Later, you can upgrade to 7.1.2.0 for new features:" -ForegroundColor White
+            Write-Host "  Later, you can upgrade to $LATEST_SSSE_VERSION for new features:" -ForegroundColor White
             Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Yellow
         }
         elseif ($finalVersion) {
@@ -5817,7 +5818,7 @@ if ($UpgradeSSE) {
     Write-Host "========================================`n" -ForegroundColor Yellow
     
     Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
-    Write-Host "to the latest version (7.1.2.0) without going through" -ForegroundColor White
+    Write-Host "to the latest version ($LATEST_SSSE_VERSION) without going through" -ForegroundColor White
     Write-Host "the full installation process.`n" -ForegroundColor White
     
     Write-Host "Prerequisites:" -ForegroundColor Cyan
@@ -5826,20 +5827,20 @@ if ($UpgradeSSE) {
     Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
     Write-Host ""
     
-    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with upgrade to 7.1.2.0? (Y/n)" }
+    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with upgrade to $LATEST_SSSE_VERSION? (Y/n)" }
     if ($proceed -like "n*") {
         Write-Host "`nUpgrade cancelled." -ForegroundColor Yellow
         exit
     }
     
     Write-Host "`n"
-    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion "7.1.2.0" -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
+    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion $LATEST_SSSE_VERSION -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
     
     if ($result) {
         Write-Host "`n========================================" -ForegroundColor Green
         Write-Host "  Upgrade Complete!" -ForegroundColor Green
         Write-Host "========================================`n" -ForegroundColor Green
-        Write-Host "SSSE has been upgraded to version 7.1.2.0" -ForegroundColor Cyan
+        Write-Host "SSSE has been upgraded to version $LATEST_SSSE_VERSION" -ForegroundColor Cyan
         Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
     }
     else {
