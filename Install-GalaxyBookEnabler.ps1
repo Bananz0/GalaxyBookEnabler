@@ -188,7 +188,12 @@ if (-not $isAdmin) {
         if ($paramValue -is [Array]) {
             if ($paramValue.Count -gt 0) {
                 $forwardedArgs += "-$paramName"
-                $forwardedArgs += @($paramValue | ForEach-Object { $_.ToString() })
+                # Join array elements with commas for -File parameter consistency
+                $joined = ($paramValue | ForEach-Object { 
+                    $s = $_.ToString()
+                    if ($s -match ' ') { "`"$s`"" } else { $s }
+                }) -join ','
+                $forwardedArgs += $joined
             }
             continue
         }
@@ -239,9 +244,9 @@ if (-not $isAdmin) {
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
     $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-    Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait
+    $elevatedProcess = Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
     Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
-    exit
+    exit $elevatedProcess.ExitCode
 }
 
 # VERSION CONSTANT
@@ -5611,6 +5616,7 @@ if (-not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 & $sudoCommand pwsh @elevatedArgs
+                exit $LASTEXITCODE
             }
             else {
                 # Script was piped (irm | iex), need to re-download
@@ -5627,7 +5633,8 @@ if (-not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-                Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs
+                $elevatedProcess = Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
+                exit $elevatedProcess.ExitCode
             }
             else {
                 # Script was piped, show manual instructions
@@ -6834,7 +6841,8 @@ else {
         }
     }
     catch {
-        Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+        Write-Host "⚠ Failed to inspect existing Samsung Settings packages. Skipping SSSE setup to avoid version conflicts." -ForegroundColor Yellow
+        Write-Log "Skipping SSSE setup because Samsung Settings precheck failed: $($_.Exception.Message)" -Level ERROR
     }
 }
 
