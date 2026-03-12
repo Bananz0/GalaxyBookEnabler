@@ -1,5 +1,6 @@
 # Galaxy Book Enabler Installer/Uninstaller
 # Enables Samsung Galaxy Book features on non-Galaxy Book devices
+# Copyright (c) 2023-2026 Glen Muthoka Mutinda
 
 <#
 .SYNOPSIS
@@ -80,12 +81,22 @@ param(
     [bool]$AutonomousConfirmPackages = $true,
     [bool]$AutonomousCreateAiSelectShortcut = $false,
     [bool]$AutonomousPreserveLegacy = $true,
+    [ValidateSet("Locale", "GeoIp")]
+    [string]$AutonomousRegionSource = "Locale",
+    [string]$AutonomousCountryCode,
+    [string]$AutonomousRegion,
+    [string]$AutonomousRegionPreference,
+    [switch]$ConfigurationOnly,
+    [string]$ConfigurationPath,
+    [switch]$SkipConfigurationBackup,
+    [string]$ConfigurationBackupSuffix,
     [string]$LogDirectory,
     [string]$LogPath,
     [switch]$DebugOutput
 )
 
 $script:IsAutonomous = $FullyAutonomous.IsPresent
+$script:IsConfigurationOnly = $ConfigurationOnly.IsPresent
 if ($DebugOutput) {
     $VerbosePreference = "Continue"
     $DebugPreference = "Continue"
@@ -161,7 +172,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 # Self-elevation: Try gsudo first (preserves console), fallback to native UAC
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if (-not $isAdmin) {
+if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
 
     $forwardedArgs = @()
@@ -268,7 +279,7 @@ elseif ($LogDirectory) {
     $script:LogDirectory = $LogDirectory
     $script:LogFile = Join-Path $LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 }
-elseif ($script:IsAutonomous) {
+elseif ($script:IsAutonomous -and -not $script:IsConfigurationOnly) {
     $script:LogDirectory = "C:\GalaxyBook\Logs"
     $script:LogFile = Join-Path $script:LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 }
@@ -412,6 +423,763 @@ $GalaxyBookModels = @{
     '960XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '960XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PAMA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XHA-KG2DE'; EnclosureKind = 10 }
 }
 
+
+function Normalize-SelectorValue {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $null
+    }
+
+    return (($Value -replace '^NP', '') -replace '[^A-Za-z0-9]', '').ToUpperInvariant()
+}
+
+$YearCodeMap = @{
+    2020 = "N"
+    2021 = "R"
+    2022 = "T"
+    2023 = "W"
+    2024 = "X"
+    2025 = "Y"
+    2026 = "A"
+}
+
+$RegionCatalog = @(
+    @{ Code = "US"; Continent = "NorthAmerica"; Countries = @("US") },
+    @{ Code = "CA"; Continent = "NorthAmerica"; Countries = @("CA") },
+    @{ Code = "MX"; Continent = "NorthAmerica"; Countries = @("MX") },
+    @{ Code = "BR"; Continent = "SouthAmerica"; Countries = @("BR") },
+    @{ Code = "CL"; Continent = "SouthAmerica"; Countries = @("CL") },
+    @{ Code = "UK"; Continent = "Europe"; Countries = @("UK", "GB", "IE") },
+    @{ Code = "DE"; Continent = "Europe"; Countries = @("DE") },
+    @{ Code = "FR"; Continent = "Europe"; Countries = @("FR") },
+    @{ Code = "IT"; Continent = "Europe"; Countries = @("IT") },
+    @{ Code = "SE"; Continent = "Europe"; Countries = @("SE") },
+    @{ Code = "HK"; Continent = "Asia"; Countries = @("HK") },
+    @{ Code = "TW"; Continent = "Asia"; Countries = @("TW") },
+    @{ Code = "CN"; Continent = "Asia"; Countries = @("CN") },
+    @{ Code = "KR"; Continent = "Asia"; Countries = @("KR") },
+    @{ Code = "SG"; Continent = "Asia"; Countries = @("SG") },
+    @{ Code = "MY"; Continent = "Asia"; Countries = @("MY") },
+    @{ Code = "TH"; Continent = "Asia"; Countries = @("TH") },
+    @{ Code = "VN"; Continent = "Asia"; Countries = @("VN") },
+    @{ Code = "IN"; Continent = "Asia"; Countries = @("IN") },
+    @{ Code = "AU"; Continent = "Oceania"; Countries = @("AU", "NZ") }
+)
+
+$GalaxyBookFamilies = @(
+    [ordered]@{ Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 1 },
+    [ordered]@{ Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 2 },
+    [ordered]@{ Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 3 },
+    [ordered]@{ Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 4 },
+    [ordered]@{ Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 5 },
+    [ordered]@{ Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 6 },
+    [ordered]@{ Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 7 },
+    [ordered]@{ Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 8 },
+    [ordered]@{ Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 9 },
+    [ordered]@{ Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 10 },
+    [ordered]@{ Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 11 },
+    [ordered]@{ Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 12 },
+    [ordered]@{ Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 13 },
+    [ordered]@{ Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 14 },
+    [ordered]@{ Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 15 },
+    [ordered]@{ Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 16 }
+)
+
+$GalaxyBookFamilyAliasMap = @{}
+foreach ($family in $GalaxyBookFamilies) {
+    foreach ($alias in @($family.Label) + $family.Aliases) {
+        $GalaxyBookFamilyAliasMap[(Normalize-SelectorValue -Value $alias)] = $family.Label
+    }
+}
+
+function Get-RandomChoice {
+    param([string[]]$Items)
+
+    if (-not $Items -or $Items.Count -eq 0) {
+        return $null
+    }
+
+    return $Items[(Get-Random -Minimum 0 -Maximum $Items.Count)]
+}
+
+function Convert-ToHexDword {
+    param($Value)
+
+    if ($Value -is [string] -and $Value -match '^0x') {
+        return $Value
+    }
+
+    return ('0x{0:x2}' -f [int]$Value)
+}
+
+function Normalize-Continent {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $null
+    }
+
+    $normalized = ($Value -replace "\s", "").ToLowerInvariant()
+    switch ($normalized) {
+        "northamerica" { return "NorthAmerica" }
+        "southamerica" { return "SouthAmerica" }
+        "europe" { return "Europe" }
+        "asia" { return "Asia" }
+        "oceania" { return "Oceania" }
+        "africa" { return "Africa" }
+        default { return $null }
+    }
+}
+
+function Resolve-GeoIpCountry {
+    param([int]$TimeoutSec = 4)
+
+    try {
+        $response = Invoke-RestMethod -Uri "https://ipapi.co/json/" -TimeoutSec $TimeoutSec -ErrorAction Stop
+        if ($response -and $response.country_code) {
+            return $response.country_code.ToUpperInvariant()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Resolve-CountryCode {
+    param(
+        [string]$SelectedCountry,
+        [switch]$UseGeoIp,
+        [int]$GeoIpTimeoutSec = 4
+    )
+
+    if ($SelectedCountry) {
+        return $SelectedCountry.ToUpperInvariant()
+    }
+
+    $country = $null
+    if ($UseGeoIp) {
+        $country = Resolve-GeoIpCountry -TimeoutSec $GeoIpTimeoutSec
+    }
+
+    if (-not $country) {
+        try {
+            $region = New-Object System.Globalization.RegionInfo((Get-Culture).Name)
+            $country = $region.TwoLetterISORegionName.ToUpperInvariant()
+        }
+        catch {
+            $country = $null
+        }
+    }
+
+    if (-not $country) {
+        $country = Resolve-GeoIpCountry -TimeoutSec $GeoIpTimeoutSec
+    }
+
+    return $country
+}
+
+function Resolve-Continent {
+    param([string]$Country)
+
+    if (-not $Country) {
+        return $null
+    }
+
+    $match = $RegionCatalog | Where-Object { $_.Countries -contains $Country -or $_.Code -eq $Country } | Select-Object -First 1
+    return $match.Continent
+}
+
+function Resolve-RegionCode {
+    param(
+        [string]$SelectedRegion,
+        [string]$Country,
+        [string]$Continent,
+        [string]$BaseBoardProduct,
+        [string]$RegionPreference
+    )
+
+    if ($SelectedRegion) {
+        return $SelectedRegion.ToUpperInvariant()
+    }
+
+    if ($BaseBoardProduct -and $BaseBoardProduct -match "^[A-Z]{2}[A-Z0-9]{6}-[A-Z0-9]{3}(?<region>[A-Z]{2})$") {
+        return $Matches.region
+    }
+
+    if ($Country) {
+        $countryCode = $Country.ToUpperInvariant()
+        if ($countryCode -eq "GB") {
+            $countryCode = "UK"
+        }
+
+        $direct = $RegionCatalog | Where-Object { $_.Code -eq $countryCode } | Select-Object -First 1
+        if ($direct) {
+            return $direct.Code
+        }
+
+        $match = $RegionCatalog | Where-Object { $_.Countries -contains $Country.ToUpperInvariant() } | Select-Object -First 1
+        if ($match) {
+            return $match.Code
+        }
+    }
+
+    $normalizedContinent = Normalize-Continent -Value $Continent
+    if (-not $normalizedContinent) {
+        $normalizedContinent = Resolve-Continent -Country $Country
+    }
+
+    if ($normalizedContinent -eq "Africa") {
+        $normalizedContinent = "Europe"
+    }
+
+    if ($normalizedContinent) {
+        $options = $RegionCatalog | Where-Object { $_.Continent -eq $normalizedContinent }
+        if ($options) {
+            $optionCodes = $options | ForEach-Object { $_.Code }
+            if ($RegionPreference) {
+                $prefs = $RegionPreference -split ',' | ForEach-Object { $_.Trim().ToUpperInvariant() } | Where-Object { $_ -ne '' }
+                foreach ($pref in $prefs) {
+                    if ($optionCodes -contains $pref) {
+                        return $pref
+                    }
+
+                    $mapped = ($RegionCatalog | Where-Object { $_.Countries -contains $pref } | Select-Object -First 1).Code
+                    if ($mapped -and $optionCodes -contains $mapped) {
+                        return $mapped
+                    }
+                }
+            }
+
+            return Get-RandomChoice -Items ($optionCodes)
+        }
+    }
+
+    return "US"
+}
+
+function Resolve-YearCode {
+    param([int]$Year)
+
+    if ($YearCodeMap.ContainsKey($Year)) {
+        return $YearCodeMap[$Year]
+    }
+
+    throw "Unsupported year $Year."
+}
+
+function Resolve-BiosDate {
+    param([int]$Year)
+
+    $start = Get-Date -Year $Year -Month 1 -Day 5
+    $end = Get-Date -Year $Year -Month 12 -Day 20
+    $range = ($end - $start).Days
+    $offset = Get-Random -Minimum 0 -Maximum ($range + 1)
+    return $start.AddDays($offset).ToString("yyMMdd")
+}
+
+function Resolve-BiosReleaseDate {
+    param([string]$BiosDate)
+
+    $year = [int]("20" + $BiosDate.Substring(0, 2))
+    $month = [int]$BiosDate.Substring(2, 2)
+    $day = [int]$BiosDate.Substring(4, 2)
+
+    return "{0:D2}/{1:D2}/{2:D4}" -f $month, $day, $year
+}
+
+function Convert-HexStringToBytes {
+    param([string]$HexString)
+
+    $clean = ($HexString -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+    if ($clean.Length -ne 12) {
+        throw "RomHex must be 12 hex characters."
+    }
+
+    $bytes = New-Object byte[] 6
+    for ($i = 0; $i -lt 6; $i++) {
+        $bytes[$i] = [Convert]::ToByte($clean.Substring($i * 2, 2), 16)
+    }
+
+    return $bytes
+}
+
+function Convert-BytesToHexString {
+    param([byte[]]$Bytes)
+
+    return ($Bytes | ForEach-Object { $_.ToString("X2") }) -join ""
+}
+
+function Resolve-RomBytes {
+    param([string]$RomHex)
+
+    if ($RomHex) {
+        return Convert-HexStringToBytes -HexString $RomHex
+    }
+
+    $bytes = New-Object byte[] 6
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return $bytes
+}
+
+function New-SamsungSerial {
+    param([string]$YearCode)
+
+    $factory = Get-RandomChoice -Items @("R5", "R6", "R7", "KS", "RP")
+    $month = Get-RandomChoice -Items @("1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C")
+    $sequence = "{0:D5}" -f (Get-Random -Minimum 1 -Maximum 99999)
+    $suffix = Get-RandomChoice -Items @("F", "W", "X", "A")
+
+    return "$factory" + "X9FD" + "$YearCode$month$sequence$suffix"
+}
+
+function Update-ConfigurationFile {
+    param(
+        [string]$ConfigurationPath,
+        [System.Collections.IDictionary]$ConfigurationData,
+        [switch]$SkipBackup,
+        [string]$BackupSuffix
+    )
+
+    if (-not (Test-Path -Path $ConfigurationPath)) {
+        throw "ConfigurationPath not found: $ConfigurationPath"
+    }
+
+    $resolvedPath = (Resolve-Path -Path $ConfigurationPath).Path
+    $backupPath = $null
+
+    if (-not $SkipBackup) {
+        $suffix = if ($BackupSuffix) { $BackupSuffix } else { Get-Date -Format "yyyyMMdd-HHmmss" }
+        $backupPath = "$resolvedPath.bak.$suffix"
+        Copy-Item -Path $resolvedPath -Destination $backupPath -Force
+    }
+
+    $content = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+
+    $replaceKey = {
+        param([string]$Source, [string]$Section, [string]$Key, [string]$Value, [string]$Type)
+        if ($null -eq $Value -or $Value -eq "") { return $Source }
+
+        $sectionPattern = "(?s)(<key>$Section</key>\s*<dict>)(.*?)(</dict>)"
+        if ($Source -match $sectionPattern) {
+            $sectionInside = $Matches[2]
+            $keyPattern = "(?s)(<key>$Key</key>\s*<$Type>).*?(</$Type>)"
+            if ($sectionInside -match $keyPattern) {
+                $newSectionInside = $sectionInside -replace $keyPattern, ('${1}' + $Value + '${2}')
+                return $Source.Replace($sectionInside, $newSectionInside)
+            }
+        }
+
+        return $Source
+    }
+
+    $genericData = $ConfigurationData.PlatformInfo.Generic
+    $smbiosData = $ConfigurationData.SMBIOS
+
+    $content = &$replaceKey $content "Generic" "MLB" $genericData.MLB "string"
+    $content = &$replaceKey $content "Generic" "ROM" $genericData.ROM "data"
+    $content = &$replaceKey $content "Generic" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "Generic" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "Generic" "SystemProductName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "PlatformName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "SystemProductName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "DataHub" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "DataHub" "BoardProduct" $smbiosData.BoardProduct "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "MLB" $genericData.MLB "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "ROM" $genericData.ROM "data"
+    $content = &$replaceKey $content "PlatformNVRAM" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSReleaseDate" $smbiosData.BIOSReleaseDate "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSVendor" $smbiosData.BIOSVendor "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSVersion" $smbiosData.BIOSVersion "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardManufacturer" $smbiosData.BoardManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardProduct" $smbiosData.BoardProduct "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardSerialNumber" $smbiosData.BoardSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "ChassisManufacturer" $smbiosData.ChassisManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "ChassisSerialNumber" $smbiosData.ChassisSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemFamily" $smbiosData.SystemFamily "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemManufacturer" $smbiosData.SystemManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemProductName" $smbiosData.SystemProductName "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemSKUNumber" $smbiosData.SystemSKUNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemSerialNumber" $smbiosData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemUUID" $smbiosData.SystemUUID "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemVersion" $smbiosData.SystemVersion "string"
+
+    [System.IO.File]::WriteAllText($resolvedPath, $content, (New-Object System.Text.UTF8Encoding($false)))
+
+    return $backupPath
+}
+
+function Get-GalaxyBookSelection {
+    param([string]$Selector)
+
+    if (-not $Selector) {
+        return $null
+    }
+
+    $normalized = Normalize-SelectorValue -Value $Selector
+    if ($normalized -and $GalaxyBookModels.ContainsKey($normalized)) {
+        return [ordered]@{
+            Label  = $normalized
+            Family = $GalaxyBookModels[$normalized].SystemFamily
+            Models = @($normalized)
+        }
+    }
+
+    if ($GalaxyBookFamilyAliasMap.ContainsKey($normalized)) {
+        $label = $GalaxyBookFamilyAliasMap[$normalized]
+        $family = $GalaxyBookFamilies | Where-Object { $_.Label -eq $label } | Select-Object -First 1
+        if ($family) {
+            return [ordered]@{
+                Label  = $family.Label
+                Family = $family.Label
+                Models = @($family.Models)
+            }
+        }
+    }
+
+    $validFamilies = ($GalaxyBookFamilies | Sort-Object Order | ForEach-Object { $_.Label }) -join ", "
+    $validCodes = ($GalaxyBookModels.Keys | Sort-Object) -join ", "
+    throw "AutonomousModel '$Selector' is not a known selection. Families: $validFamilies. Codes: $validCodes"
+}
+
+function Resolve-ModelBlueprint {
+    param([string]$ModelCode)
+
+    if (-not $GalaxyBookModels.ContainsKey($ModelCode)) {
+        throw "Model '$ModelCode' is not available."
+    }
+
+    $entry = $GalaxyBookModels[$ModelCode]
+    if ($entry.ProductSku -notmatch '^SCAI-(?<segment>[A-Z0-9]{4})-(?<config>[A-Z0-9]{4})-(?<platform>[A-Z0-9]{4})-P(?<bios>[A-Z0-9]{3})$') {
+        throw "Model '$ModelCode' has invalid metadata."
+    }
+
+    $segment = $Matches.segment
+    $config = $Matches.config
+    $platform = $Matches.platform
+    $biosCode = $Matches.bios
+    $biosShort = if ($entry.BIOSVersion -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } else { "P00$biosCode" }
+    $biosRevision = if ($biosShort -match '^P(?<revision>\d{2})') { $Matches.revision } else { '00' }
+    $biosDate = if ($entry.BIOSVersion -match '\.(?<date>\d{6})\.') { $Matches.date } else { Resolve-BiosDate -Year (Get-Date).Year }
+    $biosLine = if ($entry.BIOSVersion -match '\.(?<line>[A-Z0-9]{2})$') { $Matches.line } else { $null }
+
+    $baseBoardPrefix = $null
+    $baseBoardSuffix = $null
+    $supportsRegion = $false
+    if ($entry.BaseBoardProduct -match '^(?<prefix>[A-Z]{2})(?<model>[A-Z0-9]{6})-(?<suffix>[A-Z0-9]{3})(?<region>[A-Z]{2})$') {
+        $baseBoardPrefix = $Matches.prefix
+        $baseBoardSuffix = $Matches.suffix
+        $supportsRegion = $true
+    }
+    elseif ($entry.BaseBoardProduct -match '^(?<prefix>[A-Z]{2})(?<model>[A-Z0-9]{6})-(?<suffix>[A-Z0-9]{3,4})$') {
+        $baseBoardPrefix = $Matches.prefix
+        $baseBoardSuffix = $Matches.suffix
+    }
+
+    return [ordered]@{
+        ModelCode             = $ModelCode
+        SystemFamily          = $entry.SystemFamily
+        SystemProductName     = $entry.SystemProductName
+        BIOSVendor            = $entry.BIOSVendor
+        SystemManufacturer    = $entry.SystemManufacturer
+        BaseBoardManufacturer = $entry.BaseBoardManufacturer
+        BIOSMajorRelease      = Convert-ToHexDword -Value $entry.BIOSMajorRelease
+        BIOSMinorRelease      = Convert-ToHexDword -Value $entry.BIOSMinorRelease
+        EnclosureKind         = Convert-ToHexDword -Value $entry.EnclosureKind
+        Segment               = $segment
+        Config                = $config
+        Platform              = $platform
+        BiosCode              = $biosCode
+        BiosShort             = $biosShort
+        BiosRevision          = $biosRevision
+        SampleBiosDate        = $biosDate
+        SampleBiosLine        = $biosLine
+        BaseBoardPrefix       = $baseBoardPrefix
+        BaseBoardSuffix       = $baseBoardSuffix
+        SupportsRegionBoard   = $supportsRegion
+        BaseBoardProduct      = $entry.BaseBoardProduct
+        Year                  = [int]("20" + $biosDate.Substring(0, 2))
+    }
+}
+
+function New-GeneratedIdentityData {
+    param(
+        [string]$Selector,
+        [string]$SelectedCountry,
+        [string]$SelectedRegion,
+        [string]$RegionPreference,
+        [switch]$UseGeoIp,
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $selection = Get-GalaxyBookSelection -Selector $Selector
+    if (-not $selection) {
+        return $null
+    }
+
+    $modelCode = if ($selection.Models.Count -eq 1) { $selection.Models[0] } else { Get-RandomChoice -Items $selection.Models }
+    $blueprint = Resolve-ModelBlueprint -ModelCode $modelCode
+    $countryCode = Resolve-CountryCode -SelectedCountry $SelectedCountry -UseGeoIp:$UseGeoIp
+    $regionCode = Resolve-RegionCode -SelectedRegion $SelectedRegion -Country $countryCode -Continent $null -BaseBoardProduct $null -RegionPreference $RegionPreference
+    $biosDate = Resolve-BiosDate -Year $blueprint.Year
+    $biosBuild = "{0:D3}" -f (Get-Random -Minimum 1 -Maximum 999)
+    $biosLine = Get-RandomChoice -Items ((@($blueprint.SampleBiosLine, "PS", "HQ", "SH", "SX", "ZQ") | Where-Object { $_ } | Select-Object -Unique))
+    $biosVersionFull = "$($blueprint.BiosShort).$biosBuild.$biosDate.$biosLine"
+    $baseBoardProduct = if ($blueprint.SupportsRegionBoard -and $blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
+        "$($blueprint.BaseBoardPrefix)$modelCode-$($blueprint.BaseBoardSuffix)$regionCode"
+    }
+    elseif ($blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
+        "$($blueprint.BaseBoardPrefix)$modelCode-$($blueprint.BaseBoardSuffix)"
+    }
+    else {
+        $blueprint.BaseBoardProduct
+    }
+
+    $yearCode = Resolve-YearCode -Year $blueprint.Year
+    $serial = New-SamsungSerial -YearCode $yearCode
+    $systemUuid = [guid]::NewGuid().ToString()
+    $romBytes = Resolve-RomBytes
+    $romHex = Convert-BytesToHexString -Bytes $romBytes
+    $romBase64 = [Convert]::ToBase64String($romBytes)
+    $biosReleaseDate = Resolve-BiosReleaseDate -BiosDate $biosDate
+    $systemSku = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+    $biosValues = @{
+        BIOSVendor            = $blueprint.BIOSVendor
+        BIOSVersion           = $biosVersionFull
+        BIOSMajorRelease      = $blueprint.BIOSMajorRelease
+        BIOSMinorRelease      = $blueprint.BIOSMinorRelease
+        SystemManufacturer    = $blueprint.SystemManufacturer
+        SystemFamily          = $selection.Family
+        SystemProductName     = $blueprint.SystemProductName
+        ProductSku            = $systemSku
+        EnclosureKind         = $blueprint.EnclosureKind
+        BaseBoardManufacturer = $blueprint.BaseBoardManufacturer
+        BaseBoardProduct      = $baseBoardProduct
+    }
+
+    $output = [ordered]@{
+        ResolvedFamily     = $selection.Family
+        ResolvedModelCode  = $modelCode
+        SystemSKU          = $systemSku
+        SystemFamily       = $selection.Family
+        SystemProductName  = $blueprint.SystemProductName
+        BaseBoardProduct   = $baseBoardProduct
+        RegionCode         = $regionCode
+        CountryCode        = $countryCode
+        BIOSVersion        = $blueprint.BiosShort
+        BIOSVersionFull    = $biosVersionFull
+        BIOSReleaseDate    = $biosReleaseDate
+        SerialNumber       = $serial
+        SystemUUID         = $systemUuid
+        ROMHex             = $romHex
+        ROMBase64          = $romBase64
+        MLB                = $serial
+        BiosValues         = $biosValues
+    }
+
+    $output.ConfigurationData = [ordered]@{
+        PlatformInfo = [ordered]@{
+            Generic = [ordered]@{
+                MLB = $serial
+                ROM = $romBase64
+                SystemSerialNumber = $serial
+                SystemUUID = $systemUuid
+                SystemProductName = $blueprint.SystemProductName
+            }
+        }
+        SMBIOS = [ordered]@{
+            BIOSReleaseDate = $biosReleaseDate
+            BIOSVendor = $blueprint.BIOSVendor
+            BIOSVersion = $biosVersionFull
+            BoardManufacturer = $blueprint.BaseBoardManufacturer
+            BoardProduct = $baseBoardProduct
+            BoardSerialNumber = $serial
+            ChassisManufacturer = $blueprint.SystemManufacturer
+            ChassisSerialNumber = $serial
+            SystemFamily = $selection.Family
+            SystemManufacturer = $blueprint.SystemManufacturer
+            SystemProductName = $blueprint.SystemProductName
+            SystemSKUNumber = $systemSku
+            SystemSerialNumber = $serial
+            SystemUUID = $systemUuid
+            SystemVersion = $blueprint.BiosShort
+        }
+    }
+
+    if ($ConfigurationPath) {
+        $backupPath = Update-ConfigurationFile -ConfigurationPath $ConfigurationPath -ConfigurationData $output.ConfigurationData -SkipBackup:$SkipConfigurationBackup -BackupSuffix $ConfigurationBackupSuffix
+        $output.ConfigurationUpdate = [ordered]@{
+            ConfigurationPath = (Resolve-Path -Path $ConfigurationPath).Path
+            BackupPath = $backupPath
+        }
+    }
+
+    return $output
+}
+
+function Show-ArrowMenu {
+    param(
+        [string]$Title,
+        [string]$Prompt,
+        [object[]]$Items,
+        [int]$DefaultIndex = 0,
+        [switch]$AllowEscape
+    )
+
+    if (-not $Items -or $Items.Count -eq 0) {
+        throw "No menu items were provided."
+    }
+
+    $index = [Math]::Max(0, [Math]::Min($DefaultIndex, $Items.Count - 1))
+    while ($true) {
+        Clear-Host
+        Write-Host ""
+        if ($Title) {
+            Write-Host $Title -ForegroundColor Cyan
+            Write-Host ""
+        }
+        if ($Prompt) {
+            Write-Host $Prompt -ForegroundColor Yellow
+            Write-Host ""
+        }
+
+        for ($i = 0; $i -lt $Items.Count; $i++) {
+            $item = $Items[$i]
+            $label = if ($item.PSObject.Properties.Match('Label').Count -gt 0) { $item.Label } else { [string]$item }
+            $description = if ($item.PSObject.Properties.Match('Description').Count -gt 0) { $item.Description } else { $null }
+            $prefix = if ($i -eq $index) { '> ' } else { '  ' }
+            $color = if ($i -eq $index) { 'Green' } else { 'White' }
+            Write-Host "$prefix$label" -ForegroundColor $color
+            if ($description) {
+                Write-Host "  $description" -ForegroundColor DarkGray
+            }
+        }
+
+        Write-Host ""
+        Write-Host "Use ↑/↓ and Enter" -ForegroundColor DarkGray
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        switch ($key.VirtualKeyCode) {
+            38 { $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 } }
+            40 { $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 } }
+            13 { return $Items[$index] }
+            27 {
+                if ($AllowEscape) {
+                    return $null
+                }
+            }
+        }
+    }
+}
+
+function Show-RegionMenu {
+    $items = $RegionCatalog | Sort-Object Code | ForEach-Object {
+        [pscustomobject]@{
+            Label = "$($_.Code) - $($_.Continent)"
+            Description = ($_.Countries -join ", ")
+            Code = $_.Code
+        }
+    }
+
+    $selection = Show-ArrowMenu -Title "Region" -Prompt "Choose the region to use." -Items $items
+    return $selection.Code
+}
+
+function Resolve-InteractiveIdentityData {
+    param(
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $menuItems = @()
+    $menuItems += $GalaxyBookFamilies | Sort-Object Order | ForEach-Object {
+        [pscustomobject]@{
+            Label = $_.Label
+            Description = ($_.Models -join ', ')
+            Selector = $_.Label
+        }
+    }
+    $menuItems += [pscustomobject]@{
+        Label = 'Legacy Default'
+        Description = 'Galaxy Book3 Ultra'
+        Selector = '960XFH'
+    }
+
+    $selectedModel = Show-ArrowMenu -Title "Galaxy Book Model Selection" -Prompt "Choose the profile to use." -Items $menuItems
+    if (-not $selectedModel) {
+        return $null
+    }
+
+    $detectedCountry = Resolve-CountryCode
+    $detectedRegion = Resolve-RegionCode -Country $detectedCountry
+    $regionChoice = Show-ArrowMenu -Title "Region Selection" -Prompt "Detected: $detectedCountry / $detectedRegion" -Items @(
+        [pscustomobject]@{ Label = 'Use detected'; Description = "$detectedCountry / $detectedRegion"; Mode = 'Detected' },
+        [pscustomobject]@{ Label = 'Use GeoIP'; Description = 'Try a network lookup'; Mode = 'GeoIp' },
+        [pscustomobject]@{ Label = 'Choose manually'; Description = 'Pick a region'; Mode = 'Manual' }
+    )
+
+    $selectedCountry = $detectedCountry
+    $selectedRegion = $detectedRegion
+    $useGeoIp = $false
+    switch ($regionChoice.Mode) {
+        'GeoIp' {
+            $useGeoIp = $true
+            $selectedCountry = Resolve-CountryCode -UseGeoIp
+            $selectedRegion = Resolve-RegionCode -Country $selectedCountry
+        }
+        'Manual' {
+            $selectedRegion = Show-RegionMenu
+            if ($selectedRegion -eq 'UK') {
+                $selectedCountry = 'GB'
+            }
+            else {
+                $selectedCountry = $selectedRegion
+            }
+        }
+    }
+
+    return New-GeneratedIdentityData -Selector $selectedModel.Selector -SelectedCountry $selectedCountry -SelectedRegion $selectedRegion -UseGeoIp:$useGeoIp -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+}
+
+function Invoke-ConfigurationMode {
+    param(
+        [string]$Selector,
+        [string]$SelectedCountry,
+        [string]$SelectedRegion,
+        [string]$RegionPreference,
+        [ValidateSet("Locale", "GeoIp")]
+        [string]$RegionSource = "Locale",
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $result = if ($script:IsAutonomous -or $Selector) {
+        New-GeneratedIdentityData -Selector $Selector -SelectedCountry $SelectedCountry -SelectedRegion $SelectedRegion -RegionPreference $RegionPreference -UseGeoIp:($RegionSource -eq 'GeoIp') -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    }
+    else {
+        Resolve-InteractiveIdentityData -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    }
+
+    if (-not $result) {
+        return $null
+    }
+
+    Write-Host ""
+    Write-Host "Resolved: $($result.ResolvedFamily) ($($result.ResolvedModelCode))" -ForegroundColor Green
+    Write-Host "Region: $($result.RegionCode)" -ForegroundColor Gray
+    if ($result.ConfigurationUpdate) {
+        Write-Host "Configuration saved" -ForegroundColor Green
+    }
+
+    return $result
+}
 
 function Test-UpdateAvailable {
     try {
@@ -5178,82 +5946,18 @@ function Test-IntelBluetooth {
 }
 
 function Show-ModelSelectionMenu {
-    <#
-    .SYNOPSIS
-        Display interactive menu for Galaxy Book model selection
-    .DESCRIPTION
-        Shows categorized menu of 21 Galaxy Book models and returns selected model's registry values
-    #>
-    
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Select Galaxy Book Model to Spoof" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    
-    Write-Host "Available Models:" -ForegroundColor Yellow
-    Write-Host ""
-    
-    # Group models by family for easier selection
-    $modelGroups = @{
-        'Galaxy Book5'        = @('960XHA', '940XHA', '960QHA', '750QHA')
-        'Galaxy Book4'        = @('960XGL', '960XGK', '940XGK', '960QGK', '750XGK', '750XGL', '750QGK')
-        'Galaxy Book3'        = @('960XFH', '960XFG', '960QFG', '750XFG', '750XFH', '730QFG')
-        'Galaxy Book2/Series' = @('950XGK', '930XDB', '935QDC', '930SBE')
+    $result = Resolve-InteractiveIdentityData
+    if (-not $result) {
+        return $null
     }
-    
-    $index = 1
-    $modelIndex = @{}
-    
-    foreach ($group in $modelGroups.GetEnumerator() | Sort-Object { 
-            # Custom sort: Book5 > Book4 > Book3 > Book2
-            switch ($_.Key) {
-                'Galaxy Book5' { 1 }
-                'Galaxy Book4' { 2 }
-                'Galaxy Book3' { 3 }
-                'Galaxy Book2/Series' { 4 }
-            }
-        }) {
-        Write-Host "  $($group.Key):" -ForegroundColor Magenta
-        
-        foreach ($model in $group.Value) {
-            $modelData = $GalaxyBookModels[$model]
-            $displayName = "$model - $($modelData.SystemFamily)"
-            Write-Host ("    {0,2}. {1}" -f $index, $displayName) -ForegroundColor White
-            $modelIndex[$index] = $model
-            $index++
-        }
-        Write-Host ""
-    }
-    
-    Write-Host "  Default:" -ForegroundColor Magenta
-    Write-Host "    22. Galaxy Book3 Ultra (960XFH) - Legacy Default" -ForegroundColor Gray
+
+    Write-Host "`n✓ Selected: $($result.ResolvedFamily) - $($result.ResolvedModelCode)" -ForegroundColor Green
+    Write-Host "  Product: $($result.SystemProductName)" -ForegroundColor Gray
+    Write-Host "  BIOS: $($result.BIOSVersionFull)" -ForegroundColor Gray
+    Write-Host "  Region: $($result.RegionCode)" -ForegroundColor Gray
     Write-Host ""
-    
-    # Get user selection
-    do {
-        $selection = Read-Host "Enter model number (1-22)"
-        
-        if ($selection -eq '22') {
-            # Legacy default - return null to use old default values
-            Write-Host "`n✓ Using legacy default: Galaxy Book3 Ultra (960XFH)" -ForegroundColor Green
-            return $null
-        }
-        
-        $selectedNumber = [int]$selection
-        if ($modelIndex.ContainsKey($selectedNumber)) {
-            $selectedModel = $modelIndex[$selectedNumber]
-            $selectedData = $GalaxyBookModels[$selectedModel]
-            
-            Write-Host "`n✓ Selected: $selectedModel - $($selectedData.SystemFamily)" -ForegroundColor Green
-            Write-Host "  Product: $($selectedData.SystemProductName)" -ForegroundColor Gray
-            Write-Host "  BIOS: $($selectedData.BIOSVersion)" -ForegroundColor Gray
-            Write-Host ""
-            
-            return $selectedData
-        }
-        else {
-            Write-Host "Invalid selection. Please enter a number between 1 and 22." -ForegroundColor Red
-        }
-    } while ($true)
+
+    return $result.BiosValues
 }
 
 function Resolve-AutonomousModel {
@@ -5263,13 +5967,12 @@ function Resolve-AutonomousModel {
         return $null
     }
 
-    $key = $ModelCode.ToUpperInvariant()
-    if (-not $GalaxyBookModels.ContainsKey($key)) {
-        $valid = ($GalaxyBookModels.Keys | Sort-Object) -join ", "
-        throw "AutonomousModel '$ModelCode' is not a known model. Valid values: $valid"
+    $result = New-GeneratedIdentityData -Selector $ModelCode -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -UseGeoIp:($AutonomousRegionSource -eq 'GeoIp')
+    if (-not $result) {
+        return $null
     }
 
-    return $GalaxyBookModels[$key]
+    return $result.BiosValues
 }
 
 function Get-LegacyBiosValues {
@@ -5625,8 +6328,9 @@ Write-Log "Script finished"
 
 # Check if running as administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$requiresAdmin = -not $script:IsConfigurationOnly
 
-if (-not $isAdmin) {
+if ($requiresAdmin -and -not $isAdmin) {
     Write-Host "⚠ Administrator privileges required" -ForegroundColor Yellow
     Write-Host ""
     
@@ -5764,6 +6468,15 @@ if ($script:IsAutonomous -and $AutonomousAction -ne "Install") {
             exit 1
         }
     }
+}
+
+if ($script:IsConfigurationOnly) {
+    $configurationResult = Invoke-ConfigurationMode -Selector $AutonomousModel -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -RegionSource $AutonomousRegionSource -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    if ($null -eq $configurationResult) {
+        exit 1
+    }
+
+    return $configurationResult
 }
 
 # ==================== UPDATE SAMSUNG SETTINGS MODE ====================
