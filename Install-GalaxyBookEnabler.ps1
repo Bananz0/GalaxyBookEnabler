@@ -90,13 +90,56 @@ param(
     [string]$ConfigurationPath,
     [switch]$SkipConfigurationBackup,
     [string]$ConfigurationBackupSuffix,
+    [string]$Profile,
+    [string]$CountryCode,
+    [string]$RegionCode,
+    [string]$RegionPreference,
+    [switch]$UseGeoIp,
+    [string]$ConfigPath,
+    [switch]$WriteConfigPlist,
+    [switch]$SkipConfigBackup,
+    [string]$ConfigBackupSuffix,
+    [switch]$IncludeFullBiosVersion,
     [string]$LogDirectory,
     [string]$LogPath,
     [switch]$DebugOutput
 )
 
 $script:IsAutonomous = $FullyAutonomous.IsPresent
-$script:IsConfigurationOnly = $ConfigurationOnly.IsPresent
+$script:IsConfigurationOnly = $ConfigurationOnly.IsPresent -or
+    $WriteConfigPlist.IsPresent -or
+    $PSBoundParameters.ContainsKey('Profile') -or
+    $PSBoundParameters.ContainsKey('CountryCode') -or
+    $PSBoundParameters.ContainsKey('RegionCode') -or
+    $PSBoundParameters.ContainsKey('RegionPreference') -or
+    $UseGeoIp.IsPresent -or
+    $PSBoundParameters.ContainsKey('ConfigPath')
+
+if (-not $AutonomousModel -and $Profile) {
+    $AutonomousModel = $Profile
+}
+if (-not $AutonomousCountryCode -and $CountryCode) {
+    $AutonomousCountryCode = $CountryCode
+}
+if (-not $AutonomousRegion -and $RegionCode) {
+    $AutonomousRegion = $RegionCode
+}
+if (-not $AutonomousRegionPreference -and $RegionPreference) {
+    $AutonomousRegionPreference = $RegionPreference
+}
+if (-not $ConfigurationPath -and $ConfigPath) {
+    $ConfigurationPath = $ConfigPath
+}
+if (-not $SkipConfigurationBackup -and $SkipConfigBackup) {
+    $SkipConfigurationBackup = $true
+}
+if (-not $ConfigurationBackupSuffix -and $ConfigBackupSuffix) {
+    $ConfigurationBackupSuffix = $ConfigBackupSuffix
+}
+if ($UseGeoIp) {
+    $AutonomousRegionSource = "GeoIp"
+}
+
 if ($DebugOutput) {
     $VerbosePreference = "Continue"
     $DebugPreference = "Continue"
@@ -913,6 +956,7 @@ function New-GeneratedIdentityData {
         [string]$SelectedRegion,
         [string]$RegionPreference,
         [switch]$UseGeoIp,
+        [switch]$IncludeFullBiosVersion,
         [string]$ConfigurationPath,
         [switch]$SkipConfigurationBackup,
         [string]$ConfigurationBackupSuffix
@@ -963,6 +1007,7 @@ function New-GeneratedIdentityData {
         BaseBoardProduct      = $baseBoardProduct
     }
 
+    $biosVersionForConfiguration = if ($IncludeFullBiosVersion) { $biosVersionFull } else { $blueprint.BiosShort }
     $output = [ordered]@{
         ResolvedFamily     = $selection.Family
         ResolvedModelCode  = $modelCode
@@ -973,7 +1018,7 @@ function New-GeneratedIdentityData {
         RegionCode         = $regionCode
         CountryCode        = $countryCode
         BIOSVersion        = $blueprint.BiosShort
-        BIOSVersionFull    = $biosVersionFull
+        BIOSVersionFull    = $(if ($IncludeFullBiosVersion) { $biosVersionFull } else { $null })
         BIOSReleaseDate    = $biosReleaseDate
         SerialNumber       = $serial
         SystemUUID         = $systemUuid
@@ -996,7 +1041,7 @@ function New-GeneratedIdentityData {
         SMBIOS = [ordered]@{
             BIOSReleaseDate = $biosReleaseDate
             BIOSVendor = $blueprint.BIOSVendor
-            BIOSVersion = $biosVersionFull
+            BIOSVersion = $biosVersionForConfiguration
             BoardManufacturer = $blueprint.BaseBoardManufacturer
             BoardProduct = $baseBoardProduct
             BoardSerialNumber = $serial
@@ -1092,6 +1137,7 @@ function Show-RegionMenu {
 
 function Resolve-InteractiveIdentityData {
     param(
+        [switch]$IncludeFullBiosVersion,
         [string]$ConfigurationPath,
         [switch]$SkipConfigurationBackup,
         [string]$ConfigurationBackupSuffix
@@ -1144,7 +1190,7 @@ function Resolve-InteractiveIdentityData {
         }
     }
 
-    return New-GeneratedIdentityData -Selector $selectedModel.Selector -SelectedCountry $selectedCountry -SelectedRegion $selectedRegion -UseGeoIp:$useGeoIp -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    return New-GeneratedIdentityData -Selector $selectedModel.Selector -SelectedCountry $selectedCountry -SelectedRegion $selectedRegion -UseGeoIp:$useGeoIp -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
 }
 
 function Invoke-ConfigurationMode {
@@ -1155,16 +1201,17 @@ function Invoke-ConfigurationMode {
         [string]$RegionPreference,
         [ValidateSet("Locale", "GeoIp")]
         [string]$RegionSource = "Locale",
+        [switch]$IncludeFullBiosVersion,
         [string]$ConfigurationPath,
         [switch]$SkipConfigurationBackup,
         [string]$ConfigurationBackupSuffix
     )
 
     $result = if ($script:IsAutonomous -or $Selector) {
-        New-GeneratedIdentityData -Selector $Selector -SelectedCountry $SelectedCountry -SelectedRegion $SelectedRegion -RegionPreference $RegionPreference -UseGeoIp:($RegionSource -eq 'GeoIp') -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+        New-GeneratedIdentityData -Selector $Selector -SelectedCountry $SelectedCountry -SelectedRegion $SelectedRegion -RegionPreference $RegionPreference -UseGeoIp:($RegionSource -eq 'GeoIp') -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
     }
     else {
-        Resolve-InteractiveIdentityData -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+        Resolve-InteractiveIdentityData -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
     }
 
     if (-not $result) {
@@ -5953,7 +6000,7 @@ function Show-ModelSelectionMenu {
 
     Write-Host "`n✓ Selected: $($result.ResolvedFamily) - $($result.ResolvedModelCode)" -ForegroundColor Green
     Write-Host "  Product: $($result.SystemProductName)" -ForegroundColor Gray
-    Write-Host "  BIOS: $($result.BIOSVersionFull)" -ForegroundColor Gray
+    Write-Host "  BIOS: $(if ($result.BIOSVersionFull) { $result.BIOSVersionFull } else { $result.BiosValues.BIOSVersion })" -ForegroundColor Gray
     Write-Host "  Region: $($result.RegionCode)" -ForegroundColor Gray
     Write-Host ""
 
@@ -6471,7 +6518,12 @@ if ($script:IsAutonomous -and $AutonomousAction -ne "Install") {
 }
 
 if ($script:IsConfigurationOnly) {
-    $configurationResult = Invoke-ConfigurationMode -Selector $AutonomousModel -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -RegionSource $AutonomousRegionSource -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    if ($WriteConfigPlist -and -not $ConfigurationPath) {
+        Write-Host "ConfigPath is required when using -WriteConfigPlist." -ForegroundColor Red
+        exit 1
+    }
+
+    $configurationResult = Invoke-ConfigurationMode -Selector $AutonomousModel -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -RegionSource $AutonomousRegionSource -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
     if ($null -eq $configurationResult) {
         exit 1
     }

@@ -117,7 +117,7 @@ Run the installer non-interactively with all options specified up front:
 ```powershell
 .\Install-GalaxyBookEnabler.ps1 `
    -FullyAutonomous `
-   -AutonomousModel 960XGL `
+   -AutonomousModel Book4Pro `
    -AutonomousPackageProfile Recommended `
    -AutonomousInstallSsse:$true `
    -AutonomousSsseStrategy Dual `
@@ -130,7 +130,7 @@ Run the installer non-interactively with all options specified up front:
 Notes:
 - `-AutonomousPackageProfile` supports: `Core`, `Recommended`, `RecommendedPlus`, `Full`, `Everything`, `Custom`, `Skip`.
 - For `Custom`, pass `-AutonomousPackageNames` with package names/IDs.
-- `-AutonomousModel` must match a model code from the model list (e.g., `960XGL`, `960XGK`).
+- `-AutonomousModel` accepts either an exact model code (for example `960XGL`) or a family/profile selection (for example `Book4Pro` or `Galaxy Book4 Pro`).
 - `-AutonomousAction` supports: `Install` (default), `UpdateSettings`, `UpgradeSSE`, `UninstallAll`, `Cancel`.
 - Logs default to `C:\GalaxyBook\Logs` in autonomous mode unless `-LogPath` or `-LogDirectory` is supplied.
 
@@ -405,22 +405,22 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 
 ### Manual Identity Generation
 
-If you need to generate high-fidelity DMI strings manually for OpenCore or generic spoofing, use the provided utility:
+If you need to generate high-fidelity DMI strings manually for OpenCore or generic spoofing, use the installer directly:
 
 ```powershell
-.\Generate-SamsungIdentity.ps1 -Profile Book6Ultra -IncludeFullBiosVersion
-.\Generate-SamsungIdentity.ps1 -Profile Book6Pro -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\\EFI\\OC\\config.plist"
+.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -IncludeFullBiosVersion
+.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\\EFI\\OC\\config.plist"
 ```
 
-This generates randomized but internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values using Samsung's documented patterns. It also derives `BoardProduct` from randomized model/suffix pairs.
+This generates randomized but internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values using the installer's inline resolver.
 
 When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates.
 
-**Region selection** defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-CountryCode` or `-RegionCode`. Optional `-UseGeoIp` uses the public ipapi.co endpoint (no API key) to resolve country based on IP. This can affect region-locked features; for example, Samsung Phone app Messages has been observed to be available in the US but not in the UK.
+**Region selection** defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-CountryCode` or `-RegionCode`. Optional `-UseGeoIp` uses the public ipapi.co endpoint (no API key) to resolve country based on IP.
 
 ## 🔧 How It Works
 
-1. **Registry Spoof**: Modifies system registry to identify as "Samsung Galaxy Book3 Ultra"
+1. **Registry Spoof**: Modifies system registry to identify as a Samsung Galaxy Book profile
 2. **Startup Tasks**: Creates scheduled tasks that run on every boot
 3. **Multi Control Recovery**: Runs `Init-SamsungMultiControlOnLogin.ps1` at startup +5 minutes, then waits 1 minute before restarting Samsung services
 4. **Package Installation**: Installs selected Samsung apps from Microsoft Store
@@ -430,8 +430,6 @@ When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy a
 
 | Model   | Family                              | Gen  |
 |---------|-------------------------------------|------|
-| 960XKB  | Galaxy Book6 Ultra                  | 2026 |
-| 960XKA  | Galaxy Book6 Pro                    | 2026 |
 | 960XHA  | Galaxy Book5 Pro                    | 2025 |
 | 940XHA  | Galaxy Book5 Pro                    | 2025 |
 | 960QHA  | Galaxy Book5 Pro 360                | 2025 |

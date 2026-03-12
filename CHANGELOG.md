@@ -5,6 +5,38 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-03-12
+
+### Added
+
+- **Fully Autonomous installer mode** - Non-interactive installation path with explicit autonomous parameters and documentation
+- **Continuous Regression Suite** - Added `.github/workflows/continuous-regression.yml` for ongoing migration/autonomous regression coverage
+
+### Changed
+
+- Inlined the identity resolver into `Install-GalaxyBookEnabler.ps1`
+- Expanded `-AutonomousModel` to accept family/profile selections in addition to exact model codes
+- Switched model and region selection flow to arrow-key navigation
+- Refined package name parsing and normalization across installer and autonomous workflows
+- Refactored autonomous/elevation argument handling for safer quoting and consistent forwarding
+- Updated autonomous package name handling in installer/workflows for clearer, consistent behavior
+- Refactored SSSE driver install flow to prioritize DISM with `pnputil` fallback and improved autonomous behavior
+- Updated SSSE support target to include the latest version.
+- Added copyright headers to the main installer script and key GitHub workflows
+- Updated license attribution to `Copyright (c) 2023-2026 Glen Muthoka Mutinda`
+
+### Fixed
+
+- Added defensive error handling around `Clear-Host` to avoid host-specific failures
+- Excluded Samsung Internet services from package/service management to reduce login-time issues
+- Improved binary patching reliability for SSSE patch application paths
+- Enhanced installer smoke validation for system model and GBe support service path/status checks
+
+### Documentation
+
+- Updated README for fully autonomous usage and scheduled task behavior (including Multi Control recovery details)
+- Updated CI/workflow documentation to reflect autonomous and continuous regression coverage
+
 ## [3.1.0] - 2026-01-10
 
 ### Added
@@ -474,9 +506,11 @@ If you modified QS.bat with custom device names (e.g., different Galaxy Book mod
 
 ---
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2026-03-12
 
-[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.0.0...HEAD
+[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.0...v3.1.1
+[3.1.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.5.0...v3.0.0
 [2.5.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.2.0...v2.4.0
