@@ -17,13 +17,13 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-> **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
+> **See what's new:** [Changelog](CHANGELOG.md) | [Explainer](Explainer.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
 
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
 - **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app
-- **Auto-Elevation** - Automatically requests admin rights (supports gsudo and Windows 11 native sudo)
+- **Auto-Elevation** - Automatically requests admin rights
 - **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
@@ -58,14 +58,27 @@ After installing, use `pwsh` (PowerShell 7) instead of `powershell` (Windows Pow
 
 ## Quick Start
 
+Best practice: download `Install-GalaxyBookEnabler.ps1` first and run it locally from PowerShell 7. The `irm` path is supported, but local use is the preferred path.
+
 ### One-Line Install (from GitHub)
 
 ```powershell
-# Run in PowerShell 7 (pwsh)
 irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
 ```
 
 *The installer will automatically request administrator privileges if needed.*
+
+### Save Locally First
+
+```powershell
+irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 -OutFile .\Install-GalaxyBookEnabler.ps1
+```
+
+Then run:
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1
+```
 
 ### Uninstall Options
 
@@ -76,16 +89,6 @@ When running the installer on an existing installation, you have granular uninst
   - **Nuke Mode**: Optionally delete ALL Samsung app data (caches, settings, databases) during uninstall
 - **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled tasks
 - **Uninstall services only**: Removes scheduled tasks and Samsung services while keeping apps installed
-
-**With gsudo (recommended for seamless elevation):**
-
-```powershell
-# Install gsudo first (one-time)
-winget install gerardog.gsudo
-
-# Then install Galaxy Book Enabler with automatic elevation
-irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | gsudo pwsh
-```
 
 ### Manual Install
 
@@ -115,16 +118,7 @@ Test mode simulates the entire installation without making any actual changes. P
 Run the installer non-interactively with all options specified up front:
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 `
-   -FullyAutonomous `
-   -AutonomousModel Book4Pro `
-   -AutonomousPackageProfile Recommended `
-   -AutonomousInstallSsse:$true `
-   -AutonomousSsseStrategy Dual `
-   -AutonomousConfirmPackages:$true `
-   -AutonomousCreateAiSelectShortcut:$false `
-   -DebugOutput `
-   -LogDirectory "C:\GalaxyBook\Logs"
+.\Install-GalaxyBookEnabler.ps1 -FullyAutonomous -AutonomousModel Book4Pro -AutonomousPackageProfile Recommended -AutonomousInstallSsse:$true -AutonomousSsseStrategy Dual -AutonomousConfirmPackages:$true -AutonomousCreateAiSelectShortcut:$false -DebugOutput -LogDirectory "C:\GalaxyBook\Logs"
 ```
 
 Notes:

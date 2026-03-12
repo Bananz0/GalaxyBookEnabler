@@ -442,28 +442,35 @@ function Write-LogHardwareInfo {
 
 
 # Galaxy Book Model Database
-$GalaxyBookModels = @{
-    '730QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03VAE.330.230322.PL'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 360'; SystemProductName = '730QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PVAE'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP730QFG-KB1UK'; EnclosureKind = 31 }
-    '750QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03RHC.170.240226.HC'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 360'; SystemProductName = '750QGK'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRHC'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QGK-KG2US'; EnclosureKind = 31 }
-    '750QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04RHG.270.250515.SX'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 360'; SystemProductName = '750QHA'; ProductSku = 'SCAI-A5A5-A5A5-LNLM-PRHG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QHA-KA1US'; EnclosureKind = 31 }
-    '750XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFL.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFG'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFL'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFG-KA3SE'; EnclosureKind = 10 }
-    '750XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFH'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFM'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFH-XF1BR'; EnclosureKind = 10 }
-    '750XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGK'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGK-KG1IT'; EnclosureKind = 10 }
-    '750XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGL'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGL-XG1BR'; EnclosureKind = 10 }
-    '930SBE' = @{ BIOSVendor = 'American Megatrends Inc.'; BIOSVersion = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Notebook 9 Series'; SystemProductName = '930SBE/931SBE/930SBV'; ProductSku = 'SCAI-A5A5-A5A5-A5A5-PAGW'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NT930SBE-K716'; EnclosureKind = 31 }
-    '930XDB' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '930XDB/931XDB/930XDY'; ProductSku = 'SCAI-A5A5-A5A5-TGL3-PRFX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP930XDB-KF6IT'; EnclosureKind = 10 }
-    '935QDC' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '935QDC'; ProductSku = 'SCAI-A5A5-A5A5-TGL4-PAKJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP935QDC-KE2US'; EnclosureKind = 31 }
-    '940XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '940XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PVAG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XGK-KG1FR'; EnclosureKind = 10 }
-    '940XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '940XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PVAJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XHA-KG3IT'; EnclosureKind = 10 }
-    '950XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book2 Pro Special Edition'; SystemProductName = '950XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHD'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP950XGK-KA2FR'; EnclosureKind = 10 }
-    '960QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro 360'; SystemProductName = '960QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PALN'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP964QFG-KA1IT'; EnclosureKind = 31 }
-    '960QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro 360'; SystemProductName = '960QGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHB'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QGK-KG1IT'; EnclosureKind = 31 }
-    '960QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro 360'; SystemProductName = '960QHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PALY'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QHA-KG2UK'; EnclosureKind = 31 }
-    '960XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro'; SystemProductName = '960XFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRGU'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFG-KC2CL'; EnclosureKind = 10 }
-    '960XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Ultra'; SystemProductName = '960XFH'; ProductSku = 'SCAI-ICPS-A5A5-RPLH-PALQ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFH-XA2BR'; EnclosureKind = 10 }
-    '960XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '960XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGK-KG1UK'; EnclosureKind = 10 }
-    '960XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Ultra'; SystemProductName = '960XGL'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PALX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGL-XG2BR'; EnclosureKind = 10 }
-    '960XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '960XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PAMA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XHA-KG2DE'; EnclosureKind = 10 }
+$SamsungModelDefaults = [ordered]@{
+    BIOSVendor            = 'American Megatrends International, LLC.'
+    SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+    BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+    BaseBoardPrefix       = 'NP'
+}
+
+$GalaxyBookModelBlueprints = [ordered]@{
+    '730QFG' = @{ FamilyKey = 'Book3360'; BIOSVersionSample = 'P03VAE.330.230322.PL'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'VAE'; BoardSuffix = 'KB1'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750QGK' = @{ FamilyKey = 'Book4360'; BIOSVersionSample = 'P03RHC.170.240226.HC'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'RHC'; BoardSuffix = 'KG2'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750QHA' = @{ FamilyKey = 'Book5360'; BIOSVersionSample = 'P04RHG.270.250515.SX'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'RHG'; BoardSuffix = 'KA1'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750XFG' = @{ FamilyKey = 'Book3'; BIOSVersionSample = 'P09CFL.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'CFL'; BoardSuffix = 'KA3'; BoardRegion = 'SE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XFH' = @{ FamilyKey = 'Book3'; BIOSVersionSample = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'CFM'; BoardSuffix = 'XF1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XGK' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XGL' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'XG1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '930SBE' = @{ FamilyKey = 'Notebook9Series'; BIOSVendor = 'American Megatrends Inc.'; BIOSVersionSample = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'A5A5'; BiosCode = 'AGW'; ProductName = '930SBE/931SBE/930SBV'; BoardPrefix = 'NT'; BoardSuffix = 'K716'; SupportsRegionBoard = $false; EnclosureKind = 31 }
+    '930XDB' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL3'; BiosCode = 'RFX'; ProductName = '930XDB/931XDB/930XDY'; BoardSuffix = 'KF6'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '935QDC' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL4'; BiosCode = 'AKJ'; BoardSuffix = 'KE2'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '940XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'VAG'; BoardSuffix = 'KG1'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '940XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'VAJ'; BoardSuffix = 'KG3'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '950XGK' = @{ FamilyKey = 'Book2Pro'; BIOSVersionSample = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHD'; BoardSuffix = 'KA2'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960QFG' = @{ FamilyKey = 'Book3Pro360'; BIOSVersionSample = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'ALN'; BoardModel = '964QFG'; BoardSuffix = 'KA1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960QGK' = @{ FamilyKey = 'Book4Pro360'; BIOSVersionSample = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHB'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960QHA' = @{ FamilyKey = 'Book5Pro360'; BIOSVersionSample = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'ALY'; BoardSuffix = 'KG2'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960XFG' = @{ FamilyKey = 'Book3Pro'; BIOSVersionSample = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'RGU'; BoardSuffix = 'KC2'; BoardRegion = 'CL'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XFH' = @{ FamilyKey = 'Book3Ultra'; BIOSVersionSample = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLH'; BiosCode = 'ALQ'; BoardSuffix = 'XA2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHA'; BoardSuffix = 'KG1'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XGL' = @{ FamilyKey = 'Book4Ultra'; BIOSVersionSample = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'ALX'; BoardSuffix = 'XG2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'AMA'; BoardSuffix = 'KG2'; BoardRegion = 'DE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
 }
 
 
@@ -511,28 +518,62 @@ $RegionCatalog = @(
 )
 
 $GalaxyBookFamilies = @(
-    [ordered]@{ Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 1 },
-    [ordered]@{ Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 2 },
-    [ordered]@{ Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 3 },
-    [ordered]@{ Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 4 },
-    [ordered]@{ Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 5 },
-    [ordered]@{ Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 6 },
-    [ordered]@{ Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 7 },
-    [ordered]@{ Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 8 },
-    [ordered]@{ Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 9 },
-    [ordered]@{ Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 10 },
-    [ordered]@{ Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 11 },
-    [ordered]@{ Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 12 },
-    [ordered]@{ Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 13 },
-    [ordered]@{ Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 14 },
-    [ordered]@{ Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 15 },
-    [ordered]@{ Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 16 }
+    [ordered]@{ Key = 'Book5Pro'; Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 1 },
+    [ordered]@{ Key = 'Book5Pro360'; Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 2 },
+    [ordered]@{ Key = 'Book5360'; Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 3 },
+    [ordered]@{ Key = 'Book4Ultra'; Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 4 },
+    [ordered]@{ Key = 'Book4Pro'; Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 5 },
+    [ordered]@{ Key = 'Book4Pro360'; Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 6 },
+    [ordered]@{ Key = 'Book4'; Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 7 },
+    [ordered]@{ Key = 'Book4360'; Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 8 },
+    [ordered]@{ Key = 'Book3Ultra'; Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 9 },
+    [ordered]@{ Key = 'Book3Pro'; Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 10 },
+    [ordered]@{ Key = 'Book3Pro360'; Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 11 },
+    [ordered]@{ Key = 'Book3'; Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 12 },
+    [ordered]@{ Key = 'Book3360'; Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 13 },
+    [ordered]@{ Key = 'Book2Pro'; Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 14 },
+    [ordered]@{ Key = 'GalaxyBookSeries'; Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 15 },
+    [ordered]@{ Key = 'Notebook9Series'; Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 16 }
 )
 
+$GalaxyBookFamilyByKey = @{}
 $GalaxyBookFamilyAliasMap = @{}
 foreach ($family in $GalaxyBookFamilies) {
-    foreach ($alias in @($family.Label) + $family.Aliases) {
+    $GalaxyBookFamilyByKey[$family.Key] = $family
+    foreach ($alias in @($family.Key, $family.Label) + $family.Aliases) {
         $GalaxyBookFamilyAliasMap[(Normalize-SelectorValue -Value $alias)] = $family.Label
+    }
+}
+
+$GalaxyBookModels = [ordered]@{}
+foreach ($modelCode in $GalaxyBookModelBlueprints.Keys) {
+    $blueprint = $GalaxyBookModelBlueprints[$modelCode]
+    $family = $GalaxyBookFamilyByKey[$blueprint.FamilyKey]
+    if (-not $family) {
+        throw "Model '$modelCode' references unknown family '$($blueprint.FamilyKey)'."
+    }
+
+    $boardPrefix = if ($blueprint.BoardPrefix) { $blueprint.BoardPrefix } else { $SamsungModelDefaults.BaseBoardPrefix }
+    $boardModel = if ($blueprint.BoardModel) { $blueprint.BoardModel } else { $modelCode }
+    $baseBoardProduct = if ($blueprint.SupportsRegionBoard) {
+        "$boardPrefix$boardModel-$($blueprint.BoardSuffix)$($blueprint.BoardRegion)"
+    }
+    else {
+        "$boardPrefix$boardModel-$($blueprint.BoardSuffix)"
+    }
+
+    $GalaxyBookModels[$modelCode] = [ordered]@{
+        BIOSVendor            = if ($blueprint.BIOSVendor) { $blueprint.BIOSVendor } else { $SamsungModelDefaults.BIOSVendor }
+        BIOSVersion           = $blueprint.BIOSVersionSample
+        BIOSMajorRelease      = $blueprint.BIOSMajorRelease
+        BIOSMinorRelease      = $blueprint.BIOSMinorRelease
+        SystemManufacturer    = if ($blueprint.SystemManufacturer) { $blueprint.SystemManufacturer } else { $SamsungModelDefaults.SystemManufacturer }
+        SystemFamily          = $family.Label
+        SystemProductName     = if ($blueprint.ProductName) { $blueprint.ProductName } else { $modelCode }
+        ProductSku            = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+        BaseBoardManufacturer = if ($blueprint.BaseBoardManufacturer) { $blueprint.BaseBoardManufacturer } else { $SamsungModelDefaults.BaseBoardManufacturer }
+        BaseBoardProduct      = $baseBoardProduct
+        EnclosureKind         = $blueprint.EnclosureKind
     }
 }
 
@@ -864,10 +905,11 @@ function Get-GalaxyBookSelection {
     }
 
     $normalized = Normalize-SelectorValue -Value $Selector
-    if ($normalized -and $GalaxyBookModels.ContainsKey($normalized)) {
+    if ($normalized -and $GalaxyBookModelBlueprints.Contains($normalized)) {
+        $family = $GalaxyBookFamilyByKey[$GalaxyBookModelBlueprints[$normalized].FamilyKey]
         return [ordered]@{
             Label  = $normalized
-            Family = $GalaxyBookModels[$normalized].SystemFamily
+            Family = $family.Label
             Models = @($normalized)
         }
     }
@@ -892,44 +934,40 @@ function Get-GalaxyBookSelection {
 function Resolve-ModelBlueprint {
     param([string]$ModelCode)
 
-    if (-not $GalaxyBookModels.ContainsKey($ModelCode)) {
+    if (-not $GalaxyBookModelBlueprints.Contains($ModelCode)) {
         throw "Model '$ModelCode' is not available."
     }
 
-    $entry = $GalaxyBookModels[$ModelCode]
-    if ($entry.ProductSku -notmatch '^SCAI-(?<segment>[A-Z0-9]{4})-(?<config>[A-Z0-9]{4})-(?<platform>[A-Z0-9]{4})-P(?<bios>[A-Z0-9]{3})$') {
+    $entry = $GalaxyBookModelBlueprints[$ModelCode]
+    $family = $GalaxyBookFamilyByKey[$entry.FamilyKey]
+    if (-not $family) {
         throw "Model '$ModelCode' has invalid metadata."
     }
 
-    $segment = $Matches.segment
-    $config = $Matches.config
-    $platform = $Matches.platform
-    $biosCode = $Matches.bios
-    $biosShort = if ($entry.BIOSVersion -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } else { "P00$biosCode" }
+    $segment = $entry.Segment
+    $config = $entry.Config
+    $platform = $entry.Platform
+    $biosCode = $entry.BiosCode
+    $biosShort = if ($entry.BIOSVersionSample -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } else { "P00$biosCode" }
     $biosRevision = if ($biosShort -match '^P(?<revision>\d{2})') { $Matches.revision } else { '00' }
-    $biosDate = if ($entry.BIOSVersion -match '\.(?<date>\d{6})\.') { $Matches.date } else { Resolve-BiosDate -Year (Get-Date).Year }
-    $biosLine = if ($entry.BIOSVersion -match '\.(?<line>[A-Z0-9]{2})$') { $Matches.line } else { $null }
-
-    $baseBoardPrefix = $null
-    $baseBoardSuffix = $null
-    $supportsRegion = $false
-    if ($entry.BaseBoardProduct -match '^(?<prefix>[A-Z]{2})(?<model>[A-Z0-9]{6})-(?<suffix>[A-Z0-9]{3})(?<region>[A-Z]{2})$') {
-        $baseBoardPrefix = $Matches.prefix
-        $baseBoardSuffix = $Matches.suffix
-        $supportsRegion = $true
+    $biosDate = if ($entry.BIOSVersionSample -match '\.(?<date>\d{6})\.') { $Matches.date } else { Resolve-BiosDate -Year (Get-Date).Year }
+    $biosLine = if ($entry.BIOSVersionSample -match '\.(?<line>[A-Z0-9]{2})$') { $Matches.line } else { $null }
+    $baseBoardPrefix = if ($entry.BoardPrefix) { $entry.BoardPrefix } else { $SamsungModelDefaults.BaseBoardPrefix }
+    $baseBoardModel = if ($entry.BoardModel) { $entry.BoardModel } else { $ModelCode }
+    $baseBoardProduct = if ($entry.SupportsRegionBoard) {
+        "$baseBoardPrefix$baseBoardModel-$($entry.BoardSuffix)$($entry.BoardRegion)"
     }
-    elseif ($entry.BaseBoardProduct -match '^(?<prefix>[A-Z]{2})(?<model>[A-Z0-9]{6})-(?<suffix>[A-Z0-9]{3,4})$') {
-        $baseBoardPrefix = $Matches.prefix
-        $baseBoardSuffix = $Matches.suffix
+    else {
+        "$baseBoardPrefix$baseBoardModel-$($entry.BoardSuffix)"
     }
 
     return [ordered]@{
         ModelCode             = $ModelCode
-        SystemFamily          = $entry.SystemFamily
-        SystemProductName     = $entry.SystemProductName
-        BIOSVendor            = $entry.BIOSVendor
-        SystemManufacturer    = $entry.SystemManufacturer
-        BaseBoardManufacturer = $entry.BaseBoardManufacturer
+        SystemFamily          = $family.Label
+        SystemProductName     = $(if ($entry.ProductName) { $entry.ProductName } else { $ModelCode })
+        BIOSVendor            = $(if ($entry.BIOSVendor) { $entry.BIOSVendor } else { $SamsungModelDefaults.BIOSVendor })
+        SystemManufacturer    = $(if ($entry.SystemManufacturer) { $entry.SystemManufacturer } else { $SamsungModelDefaults.SystemManufacturer })
+        BaseBoardManufacturer = $(if ($entry.BaseBoardManufacturer) { $entry.BaseBoardManufacturer } else { $SamsungModelDefaults.BaseBoardManufacturer })
         BIOSMajorRelease      = Convert-ToHexDword -Value $entry.BIOSMajorRelease
         BIOSMinorRelease      = Convert-ToHexDword -Value $entry.BIOSMinorRelease
         EnclosureKind         = Convert-ToHexDword -Value $entry.EnclosureKind
@@ -942,9 +980,10 @@ function Resolve-ModelBlueprint {
         SampleBiosDate        = $biosDate
         SampleBiosLine        = $biosLine
         BaseBoardPrefix       = $baseBoardPrefix
-        BaseBoardSuffix       = $baseBoardSuffix
-        SupportsRegionBoard   = $supportsRegion
-        BaseBoardProduct      = $entry.BaseBoardProduct
+        BaseBoardModel        = $baseBoardModel
+        BaseBoardSuffix       = $entry.BoardSuffix
+        SupportsRegionBoard   = [bool]$entry.SupportsRegionBoard
+        BaseBoardProduct      = $baseBoardProduct
         Year                  = [int]("20" + $biosDate.Substring(0, 2))
     }
 }
@@ -976,10 +1015,10 @@ function New-GeneratedIdentityData {
     $biosLine = Get-RandomChoice -Items ((@($blueprint.SampleBiosLine, "PS", "HQ", "SH", "SX", "ZQ") | Where-Object { $_ } | Select-Object -Unique))
     $biosVersionFull = "$($blueprint.BiosShort).$biosBuild.$biosDate.$biosLine"
     $baseBoardProduct = if ($blueprint.SupportsRegionBoard -and $blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
-        "$($blueprint.BaseBoardPrefix)$modelCode-$($blueprint.BaseBoardSuffix)$regionCode"
+        "$($blueprint.BaseBoardPrefix)$($blueprint.BaseBoardModel)-$($blueprint.BaseBoardSuffix)$regionCode"
     }
     elseif ($blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
-        "$($blueprint.BaseBoardPrefix)$modelCode-$($blueprint.BaseBoardSuffix)"
+        "$($blueprint.BaseBoardPrefix)$($blueprint.BaseBoardModel)-$($blueprint.BaseBoardSuffix)"
     }
     else {
         $blueprint.BaseBoardProduct
@@ -1074,7 +1113,10 @@ function Show-ArrowMenu {
         [string]$Prompt,
         [object[]]$Items,
         [int]$DefaultIndex = 0,
-        [switch]$AllowEscape
+        [switch]$AllowEscape,
+        [switch]$ShowNumbers,
+        [switch]$AllowNumberInput,
+        [scriptblock]$RenderHeader
     )
 
     if (-not $Items -or $Items.Count -eq 0) {
@@ -1082,38 +1124,106 @@ function Show-ArrowMenu {
     }
 
     $index = [Math]::Max(0, [Math]::Min($DefaultIndex, $Items.Count - 1))
+    $numberInputEnabled = $AllowNumberInput.IsPresent -or $ShowNumbers.IsPresent
+    $numberBuffer = ""
+
+    $syncIndexFromNumberBuffer = {
+        param([string]$Buffer)
+
+        if ([string]::IsNullOrWhiteSpace($Buffer)) {
+            return
+        }
+
+        $parsedValue = 0
+        if ([int]::TryParse($Buffer, [ref]$parsedValue) -and $parsedValue -ge 1 -and $parsedValue -le $Items.Count) {
+            $index = $parsedValue - 1
+        }
+    }
+
     while ($true) {
         Clear-Host
-        Write-Host ""
-        if ($Title) {
-            Write-Host $Title -ForegroundColor Cyan
-            Write-Host ""
+        if ($RenderHeader) {
+            & $RenderHeader
         }
-        if ($Prompt) {
-            Write-Host $Prompt -ForegroundColor Yellow
+        else {
             Write-Host ""
+            if ($Title) {
+                Write-Host $Title -ForegroundColor Cyan
+                Write-Host ""
+            }
+            if ($Prompt) {
+                Write-Host $Prompt -ForegroundColor Yellow
+                Write-Host ""
+            }
         }
 
         for ($i = 0; $i -lt $Items.Count; $i++) {
             $item = $Items[$i]
             $label = if ($item.PSObject.Properties.Match('Label').Count -gt 0) { $item.Label } else { [string]$item }
             $description = if ($item.PSObject.Properties.Match('Description').Count -gt 0) { $item.Description } else { $null }
+            $numberPrefix = if ($ShowNumbers) { "[{0}] " -f ($i + 1) } else { "" }
             $prefix = if ($i -eq $index) { '> ' } else { '  ' }
-            $color = if ($i -eq $index) { 'Green' } else { 'White' }
-            Write-Host "$prefix$label" -ForegroundColor $color
+            $baseColor = if ($item.PSObject.Properties.Match('Color').Count -gt 0 -and $item.Color) { $item.Color } else { 'White' }
+            $selectedColor = if ($item.PSObject.Properties.Match('SelectedColor').Count -gt 0 -and $item.SelectedColor) { $item.SelectedColor } else { 'Green' }
+            $color = if ($i -eq $index) { $selectedColor } else { $baseColor }
+            Write-Host "$prefix$numberPrefix$label" -ForegroundColor $color
             if ($description) {
                 Write-Host "  $description" -ForegroundColor DarkGray
             }
         }
 
         Write-Host ""
-        Write-Host "Use ↑/↓ and Enter" -ForegroundColor DarkGray
+        $instructionParts = @("Use ↑/↓ and Enter")
+        if ($numberInputEnabled) {
+            $instructionParts += "type a number"
+        }
+        if ($AllowEscape) {
+            $instructionParts += "Esc to cancel"
+        }
+        Write-Host (($instructionParts -join ', ') + '.') -ForegroundColor DarkGray
+        if ($numberInputEnabled -and $numberBuffer) {
+            Write-Host "Number selection: $numberBuffer" -ForegroundColor DarkGray
+        }
+
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        $digit = if ($numberInputEnabled -and $key.Character -match '\d') { [string]$key.Character } else { $null }
+        if ($digit) {
+            $candidateBuffer = "$numberBuffer$digit"
+            $candidateValue = 0
+            if ([int]::TryParse($candidateBuffer, [ref]$candidateValue) -and $candidateValue -ge 1 -and $candidateValue -le $Items.Count) {
+                $numberBuffer = $candidateBuffer
+                & $syncIndexFromNumberBuffer $numberBuffer
+            }
+            Write-Host ""
+            continue
+        }
+
         switch ($key.VirtualKeyCode) {
-            38 { $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 } }
-            40 { $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 } }
-            13 { return $Items[$index] }
+            8 {
+                if ($numberInputEnabled -and $numberBuffer.Length -gt 0) {
+                    $numberBuffer = $numberBuffer.Substring(0, $numberBuffer.Length - 1)
+                    & $syncIndexFromNumberBuffer $numberBuffer
+                }
+            }
+            38 {
+                $numberBuffer = ""
+                $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 }
+            }
+            40 {
+                $numberBuffer = ""
+                $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 }
+            }
+            13 {
+                if ($numberInputEnabled -and $numberBuffer) {
+                    & $syncIndexFromNumberBuffer $numberBuffer
+                }
+                return $Items[$index]
+            }
             27 {
+                if ($numberInputEnabled -and $numberBuffer) {
+                    $numberBuffer = ""
+                    continue
+                }
                 if ($AllowEscape) {
                     return $null
                 }
@@ -1332,7 +1442,9 @@ function Test-InstallationHealth {
         $health.ComponentCount++
         try {
             $config = Get-Content $ConfigPath | ConvertFrom-Json
-            $health.GbeVersion = if ($config.InstalledVersion) { $config.InstalledVersion } else { "1.0.0" }
+            if ($config.InstalledVersion) {
+                $health.GbeVersion = $config.InstalledVersion
+            }
         }
         catch {
             Write-Verbose "Failed to read config: $_"
@@ -2983,16 +3095,15 @@ function Get-SamsungDriverCab {
         
         foreach ($row in $rows) {
             $rowContent = $row.Groups[1].Value
-            
-            # Skip header rows and rows without Samsung
-            if ($rowContent -notmatch 'Samsung.*SoftwareComponent') {
-                continue
-            }
-            
-            # Extract title
             $title = $null
-            if ($rowContent -match '>([^<]*Samsung\s*-\s*SoftwareComponent\s*-\s*[\d\.]+[^<]*)</') {
-                $title = $Matches[1].Trim()
+            foreach ($titlePattern in @(
+                '>([^<]*Samsung\s*-\s*SoftwareComponent\s*-\s*\d+\.\d+\.\d+\.\d+[^<]*)</',
+                '>([^<]*Samsung\s+Driver\s+Update\s*\(\d+\.\d+\.\d+\.\d+\)[^<]*)</'
+            )) {
+                if ($rowContent -match $titlePattern) {
+                    $title = [System.Net.WebUtility]::HtmlDecode($Matches[1].Trim())
+                    break
+                }
             }
             
             if (-not $title) { continue }
@@ -3039,6 +3150,12 @@ function Get-SamsungDriverCab {
             Write-Error "No Samsung System Support Service drivers found"
             return $null
         }
+
+        $drivers = $drivers |
+            Group-Object Version |
+            ForEach-Object {
+                $_.Group | Sort-Object LastUpdated -Descending | Select-Object -First 1
+            }
         
         # Sort by version (descending)
         $drivers = $drivers | Sort-Object { [version]$_.Version } -Descending
@@ -6729,22 +6846,95 @@ $biosValuesToUse = $null
 
 if ($alreadyInstalled) {
     # Display version info
+    $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
+    $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
+    $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
+    $statusBoxInnerWidth = $statusBoxTop.Length - 2
+
+    $tryParseVersion = {
+        param([string]$Value)
+
+        if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "Unknown") {
+            return $null
+        }
+
+        try {
+            return [version]$Value
+        }
+        catch {
+            return $null
+        }
+    }
+
+    $installedGbeVersionObject = & $tryParseVersion $installHealth.GbeVersion
+    $installerVersionObject = & $tryParseVersion $SCRIPT_VERSION
+    $installedSsseVersionObject = & $tryParseVersion $installHealth.SsseVersion
+    $latestSsseVersionObject = & $tryParseVersion $LATEST_SSSE_VERSION
+
+    $installationHealthLabel = if ($installHealth.IsHealthy) {
+        "Healthy ($($installHealth.ComponentCount)/4)"
+    }
+    else {
+        "Broken ($($installHealth.ComponentCount)/4)"
+    }
+    $installationHealthColor = if ($installHealth.IsHealthy) { "Green" } else { "Red" }
+
+    $gbeVersionLabel = switch ($true) {
+        { -not $installedGbeVersionObject -or -not $installerVersionObject } { "unknown"; break }
+        { $installedGbeVersionObject -lt $installerVersionObject } { "older"; break }
+        { $installedGbeVersionObject -gt $installerVersionObject } { "newer"; break }
+        default { "current" }
+    }
+    $gbeVersionColor = if ($gbeVersionLabel -eq "current") { "Green" } else { "Yellow" }
+    $gbeVersionDisplay = if ($installHealth.GbeVersion -eq "Unknown") {
+        "Unknown"
+    }
+    else {
+        "$($installHealth.GbeVersion) ($gbeVersionLabel)"
+    }
+
+    $ssseVersionLabel = switch ($true) {
+        { -not $installedSsseVersionObject -or -not $latestSsseVersionObject } { "unknown"; break }
+        { $installedSsseVersionObject -lt $latestSsseVersionObject } { "outdated"; break }
+        { $installedSsseVersionObject -gt $latestSsseVersionObject } { "newer"; break }
+        default { "latest" }
+    }
+    $ssseVersionColor = if ($ssseVersionLabel -eq "latest") { "Green" } else { "Yellow" }
+    $ssseVersionDisplay = if ($installHealth.SsseVersion -eq "Unknown") {
+        "Unknown"
+    }
+    else {
+        "$($installHealth.SsseVersion) ($ssseVersionLabel)"
+    }
+
+    $writeStatusBoxValueLine = {
+        param(
+            [string]$Label,
+            [string]$Value,
+            [string]$ValueColor
+        )
+
+        $labelText = "  $Label"
+        $valueText = " {0,-10}" -f $Value
+        $paddingWidth = $statusBoxInnerWidth - $labelText.Length - $valueText.Length
+        if ($paddingWidth -lt 0) {
+            $paddingWidth = 0
+        }
+
+        Write-Host "│$labelText" -NoNewline -ForegroundColor Cyan
+        Write-Host $valueText -NoNewline -ForegroundColor $ValueColor
+        Write-Host ((" " * $paddingWidth) + "│") -ForegroundColor Cyan
+    }
+
     Write-Host ""
-    Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "│  " -NoNewline -ForegroundColor Cyan
-    Write-Host "Galaxy Book Enabler" -NoNewline -ForegroundColor White
-    Write-Host " is installed                        │" -ForegroundColor Cyan
-    Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
-    Write-Host "│  GBE Version:    " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $installHealth.GbeVersion) -NoNewline -ForegroundColor Green
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "│  SSSE Version:   " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $installHealth.SsseVersion) -NoNewline -ForegroundColor Green
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "│  Installer:      " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $SCRIPT_VERSION) -NoNewline -ForegroundColor Yellow
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host $statusBoxTop -ForegroundColor Cyan
+    & $writeStatusBoxValueLine "Installation:" "Galaxy Book Enabler" "White"
+    Write-Host $statusBoxDivider -ForegroundColor Cyan
+    & $writeStatusBoxValueLine "Health:" $installationHealthLabel $installationHealthColor
+    & $writeStatusBoxValueLine "Installed GBE:" $gbeVersionDisplay $gbeVersionColor
+    & $writeStatusBoxValueLine "Installed SSSE:" $ssseVersionDisplay $ssseVersionColor
+    & $writeStatusBoxValueLine "Installer:" $SCRIPT_VERSION "Yellow"
+    Write-Host $statusBoxBottom -ForegroundColor Cyan
     
     # Show component health if broken
     if ($installHealth.IsBroken) {
@@ -6759,9 +6949,6 @@ if ($alreadyInstalled) {
         Write-Host "    $( if ($installHealth.Components.Service) { $checkMark } else { $crossMark } ) GBeSupportService" -ForegroundColor $(if ($installHealth.Components.Service) { "Green" } else { "Red" })
         Write-Host ""
         Write-Host "  Recommendation: Choose 'Reinstall' to fix the installation" -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "  ✓ All 4 components healthy" -ForegroundColor Green
     }
     
     # Check for updates from GitHub

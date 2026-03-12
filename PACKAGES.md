@@ -31,7 +31,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
 | Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
 | Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
-| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. **⚠️ Under Investigation** - works intermittently on all Intel Wi-Fi, not working reliably |
+| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. |
 | Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
 | Second Screen | 9PLTXW5DX5KB | ✅ Yes | Use tablet as secondary display. Works on Wi-Fi 6/6E/7, not on Wi-Fi 5 |

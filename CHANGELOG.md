@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fully Autonomous installer mode** - Non-interactive installation path with explicit autonomous parameters and documentation
 - **Continuous Regression Suite** - Added `.github/workflows/continuous-regression.yml` for ongoing migration/autonomous regression coverage
+- **Explainer.md** - Added a public command reference for installer, autonomous, and manual configuration workflows
 
 ### Changed
 
@@ -23,8 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored SSSE driver install flow to prioritize DISM with `pnputil` fallback and improved autonomous behavior
 - Updated SSSE support target to include the latest version.
 - Added copyright headers to the main installer script and key GitHub workflows
-- Updated license attribution to `Copyright (c) 2023-2026 Glen Muthoka Mutinda`
-
+- Updated license attribution to `Copyright (c) 2023-2026 Glen Muthoka Mutinda`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
 ### Fixed
 
 - Added defensive error handling around `Clear-Host` to avoid host-specific failures
