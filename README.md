@@ -23,7 +23,7 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
 - **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app by installing the SSSE patch and using the Core installation profile
-- **Auto-Elevation** - Automatically requests admin rights using native sudo (Enable in )
+- **Auto-Elevation** - Automatically requests admin rights using native sudo 
 - **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
