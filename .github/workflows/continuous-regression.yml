@@ -253,8 +253,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          if (-not (Get-Module Pester -ListAvailable | Where-Object Version -eq ([version]'3.4.0'))) {
+            Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          if (-not (Get-Module PSScriptAnalyzer -ListAvailable)) {
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          }
 
       - name: Lint
         shell: pwsh
@@ -276,4 +280,5 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Import-Module Pester -RequiredVersion 3.4.0 -Force -ErrorAction Stop
           Invoke-Pester -Script .\tests\Install-Configuration.Tests.ps1 -EnableExit
