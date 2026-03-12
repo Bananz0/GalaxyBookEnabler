@@ -1,0 +1,272 @@
+# Copyright (c) 2023-2026 Glen Muthoka Mutinda
+name: Continuous Regression Suite
+
+on:
+  push:
+    paths:
+      - 'Install-GalaxyBookEnabler.ps1'
+      - 'tests/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'Install-GalaxyBookEnabler.ps1'
+      - 'tests/**'
+      - '.github/workflows/**'
+  schedule:
+    - cron: '35 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: continuous-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-regressions:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run migration and autonomous regressions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+
+          function ConvertTo-StartProcessArguments {
+            param([string[]]$Arguments)
+
+            $quotedArguments = @()
+            foreach ($argument in $Arguments) {
+              if ($null -eq $argument) {
+                $quotedArguments += '""'
+                continue
+              }
+
+              $argumentText = $argument.ToString()
+              if ($argumentText -match '[\s"]') {
+                $quotedArguments += '"' + ($argumentText -replace '"', '\\"') + '"'
+              }
+              else {
+                $quotedArguments += $argumentText
+              }
+            }
+
+            return $quotedArguments
+          }
+
+          function Invoke-GbeCommand {
+            param(
+              [Parameter(Mandatory = $true)][string]$Name,
+              [Parameter(Mandatory = $true)][string[]]$Args,
+              [int]$TimeoutSeconds = 600
+            )
+
+            $stdoutPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stdout.log"
+            $stderrPath = Join-Path $env:RUNNER_TEMP "gbe-$Name-stderr.log"
+            $invocationArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '.\Install-GalaxyBookEnabler.ps1') + $Args
+            $escapedInvocationArgs = ConvertTo-StartProcessArguments -Arguments $invocationArgs
+
+            Write-Host "Running '$Name' with timeout ${TimeoutSeconds}s..."
+            $process = Start-Process -FilePath 'pwsh' -ArgumentList $escapedInvocationArgs -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+            if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              Write-Host "--- $Name STDOUT (tail) ---"
+              if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Tail 120 }
+              Write-Host "--- $Name STDERR (tail) ---"
+              if (Test-Path $stderrPath) { Get-Content $stderrPath -Tail 120 }
+              throw "Autonomous command '$Name' timed out after $TimeoutSeconds seconds."
+            }
+
+            if ($process.ExitCode -ne 0) {
+              Write-Host "--- $Name STDOUT (tail) ---"
+              if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Tail 120 }
+              Write-Host "--- $Name STDERR (tail) ---"
+              if (Test-Path $stderrPath) { Get-Content $stderrPath -Tail 120 }
+              throw "Autonomous command '$Name' failed with exit code $($process.ExitCode)."
+            }
+
+            $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw } else { '' }
+            $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw } else { '' }
+
+            return [pscustomobject]@{
+              Stdout = $stdout
+              Stderr = $stderr
+            }
+          }
+
+          function Assert-Contains {
+            param(
+              [Parameter(Mandatory = $true)][string]$Text,
+              [Parameter(Mandatory = $true)][string]$Expected,
+              [Parameter(Mandatory = $true)][string]$Context
+            )
+
+            if ($Text -notmatch [regex]::Escape($Expected)) {
+              throw "$Context missing expected text: '$Expected'"
+            }
+          }
+
+          $legacyRoot = Join-Path $env:USERPROFILE 'GalaxyBookEnablerScript'
+          $legacyBatchPath = Join-Path $legacyRoot 'QS.bat'
+
+          function New-LegacyFixture {
+            if (Test-Path $legacyRoot) {
+              Remove-Item -Path $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            New-Item -Path $legacyRoot -ItemType Directory -Force | Out-Null
+
+            $legacyFixture = @'
+          @echo off
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BIOSVendor /t REG_SZ /d "American Megatrends International, LLC." /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BIOSVersion /t REG_SZ /d "P08ALX.400.250306.05" /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BIOSMajorRelease /t REG_DWORD /d 0x08 /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BIOSMinorRelease /t REG_DWORD /d 0x11 /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemManufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemFamily /t REG_SZ /d "Galaxy Book4 Ultra" /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v SystemProductName /t REG_SZ /d "960XGL" /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v ProductSku /t REG_SZ /d "SCAI-A5A5-ADLP-PSLP" /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v EnclosureKind /t REG_DWORD /d 0x1f /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BaseBoardManufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f
+          reg add "HKLM\HARDWARE\DESCRIPTION\System\BIOS" /v BaseBoardProduct /t REG_SZ /d "960XGL" /f
+          '@
+
+            Set-Content -Path $legacyBatchPath -Value $legacyFixture -Encoding ascii
+          }
+
+          try {
+            Write-Host 'Running migration regression: preserve legacy values...'
+            New-LegacyFixture
+            $migrationPreserve = Invoke-GbeCommand -Name 'LegacyMigrationPreserve' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousPackageProfile', 'Skip',
+              '-AutonomousInstallSsse:$false',
+              '-AutonomousConfirmPackages:$false',
+              '-AutonomousPreserveLegacy:$true',
+              '-DebugOutput'
+            )
+            Assert-Contains -Text $migrationPreserve.Stdout -Expected 'Detected legacy installation (v1.x)' -Context 'Legacy preserve run'
+            Assert-Contains -Text $migrationPreserve.Stdout -Expected 'Will use your custom BIOS values' -Context 'Legacy preserve run'
+            Assert-Contains -Text $migrationPreserve.Stdout -Expected 'Registry spoof script created (custom values preserved)' -Context 'Legacy preserve run'
+            if (-not (Test-Path $legacyBatchPath)) {
+              throw 'Legacy fixture should remain in place after TestMode run.'
+            }
+
+            Write-Host 'Running migration regression: do not preserve legacy values...'
+            New-LegacyFixture
+            $migrationDefault = Invoke-GbeCommand -Name 'LegacyMigrationDefault' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousPackageProfile', 'Skip',
+              '-AutonomousInstallSsse:$false',
+              '-AutonomousConfirmPackages:$false',
+              '-AutonomousPreserveLegacy:$false',
+              '-DebugOutput'
+            )
+            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Will use default Galaxy Book3 Ultra values' -Context 'Legacy non-preserve run'
+            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Registry spoof script created (Galaxy Book3 Ultra)' -Context 'Legacy non-preserve run'
+            if (-not (Test-Path $legacyBatchPath)) {
+              throw 'Legacy fixture should remain in place after TestMode run.'
+            }
+
+            Write-Host 'Running custom package parsing regression...'
+            $customPackages = Invoke-GbeCommand -Name 'CustomPackageParsing' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousModel', '960XGL',
+              '-AutonomousPackageProfile', 'Custom',
+              '-AutonomousPackageNames', 'Samsung Account,Samsung Settings',
+              '-AutonomousInstallSsse:$false',
+              '-AutonomousConfirmPackages:$false',
+              '-DebugOutput'
+            )
+            Assert-Contains -Text $customPackages.Stdout -Expected 'Simulating installation of 2 package(s)' -Context 'Custom package parsing'
+            Assert-Contains -Text $customPackages.Stdout -Expected 'Samsung Account' -Context 'Custom package parsing'
+            Assert-Contains -Text $customPackages.Stdout -Expected 'Samsung Settings' -Context 'Custom package parsing'
+
+            Write-Host 'Running configuration mode regression...'
+            $configurationFixture = Join-Path $env:RUNNER_TEMP 'gbe-config-mode.plist'
+            Copy-Item -Path '.\tests\fixtures\config.plist.sample' -Destination $configurationFixture -Force
+            $configurationMode = Invoke-GbeCommand -Name 'ConfigurationMode' -Args @(
+              '-ConfigurationOnly',
+              '-FullyAutonomous',
+              '-AutonomousModel', 'Book4Pro',
+              '-AutonomousCountryCode', 'US',
+              '-ConfigurationPath', $configurationFixture,
+              '-DebugOutput'
+            )
+            Assert-Contains -Text $configurationMode.Stdout -Expected 'Resolved: Galaxy Book4 Pro' -Context 'Configuration mode'
+            if (-not (Test-Path $configurationFixture)) {
+              throw 'Configuration mode fixture should still exist after the run.'
+            }
+
+            Write-Host 'Running bounded autonomous action regressions...'
+            Invoke-GbeCommand -Name 'UpdateSettings' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousAction', 'UpdateSettings',
+              '-AutonomousSsseStrategy', 'Stable',
+              '-DebugOutput'
+            ) | Out-Null
+
+            Invoke-GbeCommand -Name 'UpgradeSSE' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousAction', 'UpgradeSSE',
+              '-DebugOutput'
+            ) | Out-Null
+
+            Invoke-GbeCommand -Name 'UninstallAll' -Args @(
+              '-TestMode',
+              '-FullyAutonomous',
+              '-AutonomousAction', 'UninstallAll',
+              '-DebugOutput'
+            ) | Out-Null
+
+            Write-Host 'Installer migration and autonomous regressions passed.'
+          }
+          finally {
+            if (Test-Path $legacyRoot) {
+              Remove-Item -Path $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+  identity-regressions:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [void]([System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\Install-GalaxyBookEnabler.ps1", [ref]$null, [ref]$null))
+
+      - name: Install test modules
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error
+          if ($issues) {
+            $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
+            throw "PSScriptAnalyzer found $($issues.Count) issues."
+          }
+
+      - name: Pester tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-Pester -Script .\tests\Install-Configuration.Tests.ps1 -EnableExit

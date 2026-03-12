@@ -1,18 +1,19 @@
-name: Generator Tests
+# Copyright (c) 2023-2026 Glen Muthoka Mutinda
+name: Identity Tests
 on:
   push:
     paths:
-      - 'Generate-SamsungIdentity.ps1'
+      - 'Install-GalaxyBookEnabler.ps1'
       - 'tests/**'
-      - '.github/workflows/generator-tests.yml'
+      - '.github/workflows/identity-tests.yml'
   pull_request:
     paths:
-      - 'Generate-SamsungIdentity.ps1'
+      - 'Install-GalaxyBookEnabler.ps1'
       - 'tests/**'
-      - '.github/workflows/generator-tests.yml'
+      - '.github/workflows/identity-tests.yml'
 
 jobs:
-  generator-tests:
+  identity-tests:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -22,7 +23,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          [void]([System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\Generate-SamsungIdentity.ps1", [ref]$null, [ref]$null))
+          [void]([System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\Install-GalaxyBookEnabler.ps1", [ref]$null, [ref]$null))
 
       - name: Install test modules
         shell: powershell
@@ -35,7 +36,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $issues = Invoke-ScriptAnalyzer -Path .\Generate-SamsungIdentity.ps1 -Severity Warning,Error
+          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error
           if ($issues) {
             $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
             throw "PSScriptAnalyzer found $($issues.Count) issues."
@@ -45,4 +46,4 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          Invoke-Pester -Script .\tests\Generate-SamsungIdentity.Tests.ps1 -EnableExit
+          Invoke-Pester -Script .\tests\Install-Configuration.Tests.ps1 -EnableExit

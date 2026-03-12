@@ -35,6 +35,15 @@ This repository implements strict branch protection. The following checks are **
 - **Workflow**: `.github/workflows/generator-tests.yml`
 - **Purpose**: Runs Pester unit tests for the `Generate-SamsungIdentity.ps1` script to ensure valid DMI string generation.
 
+### Continuous Regression Suite (`Continuous Regression Suite`)
+- **Workflow**: `.github/workflows/continuous-regression.yml`
+- **Purpose**: Adds nightly and on-change regression coverage for:
+  - Legacy migration handling (`v1.x` `QS.bat` detection and preservation behavior).
+  - Autonomous action command paths (`UpdateSettings`, `UpgradeSSE`, `UninstallAll`).
+  - Custom package argument parsing regressions.
+  - Generator syntax/lint/Pester checks in the same continuous suite.
+- **Required for merge?**: No. This is an additional safety-net workflow, while the three checks above remain the branch protection requirements.
+
 ## Coding Standards
 - Use PowerShell 7 idiomatic code (avoid PS 5.1 specificisms).
 - Implement `Invoke-InteractivePause` for any user interaction to ensure CI compatibility.
