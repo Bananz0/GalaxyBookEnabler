@@ -120,90 +120,80 @@ After saving locally:
 .\Install-GalaxyBookEnabler.ps1 -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousRegionPreference UK,DE -AutonomousPackageProfile Recommended
 ```
 
-## Manual Identity / Configuration Generation
+## config.plist Generation
 
-These commands resolve values directly through the installer.
+These commands resolve OpenCore-ready SMBIOS values directly through the installer.
 
-### Basic manual generation
+### Generate configuration data only
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode US
 ```
 
-### Full BIOS string
+### Include the full BIOS string
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -IncludeFullBiosVersion
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode US -IncludeFullBiosVersion
 ```
 
-### Country override
+### Exact model code
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -CountryCode US
-```
-
-### Region override
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -RegionCode DE
-```
-
-### Region preference
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -RegionPreference UK,DE
-```
-
-### GeoIP
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -UseGeoIp
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel 960XGL -AutonomousCountryCode US
 ```
 
 ### Friendly family name
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile "Galaxy Book4 Pro"
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel "Galaxy Book4 Pro" -AutonomousCountryCode US
 ```
 
-### Configuration-file update
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -CountryCode US -WriteConfigPlist -ConfigPath "D:\EFI\OC\config.plist"
-```
-
-### Configuration-file update with full BIOS string
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -CountryCode US -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\EFI\OC\config.plist"
-```
-
-### Configuration-file update without backup
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -WriteConfigPlist -ConfigPath "D:\EFI\OC\config.plist" -SkipConfigBackup
-```
-
-### Configuration-file update with custom backup suffix
-
-```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -WriteConfigPlist -ConfigPath "D:\EFI\OC\config.plist" -ConfigBackupSuffix manual-test
-```
-
-## Explicit Configuration-Only Mode
-
-This is the lower-level form of the same path.
-
-### Basic configuration-only call
+### Country override
 
 ```powershell
 .\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US
 ```
 
-### Configuration-only file update
+### Region override
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousRegion DE
+```
+
+### Region preference
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousRegionPreference UK,DE
+```
+
+### GeoIP
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousRegionSource GeoIp
+```
+
+### Write directly into config.plist
 
 ```powershell
 .\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -ConfigurationPath "D:\EFI\OC\config.plist"
+```
+
+### Write config.plist with full BIOS string
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -IncludeFullBiosVersion -ConfigurationPath "D:\EFI\OC\config.plist"
+```
+
+### Write config.plist without backup
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -ConfigurationPath "D:\EFI\OC\config.plist" -SkipConfigurationBackup
+```
+
+### Write config.plist with custom backup suffix
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -ConfigurationPath "D:\EFI\OC\config.plist" -ConfigurationBackupSuffix manual-test
 ```
 
 ## Autonomous Actions
@@ -261,8 +251,8 @@ You can pass:
 Examples:
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra
-.\Install-GalaxyBookEnabler.ps1 -Profile "Galaxy Book4 Pro"
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode US
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel "Galaxy Book4 Pro" -AutonomousCountryCode US
 .\Install-GalaxyBookEnabler.ps1 -FullyAutonomous -AutonomousModel 960XGL -AutonomousPackageProfile Skip
 ```
 
@@ -275,9 +265,9 @@ If you do not specify a country or region, the script uses your Windows locale.
 Examples:
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -CountryCode IE
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -RegionCode UK
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -UseGeoIp
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode IE
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousRegion UK
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousRegionSource GeoIp
 ```
 
 ## Logging
@@ -311,7 +301,7 @@ Examples:
 ### Configuration generation test
 
 ```powershell
-Copy-Item .\tests\fixtures\config.plist.sample $env:TEMP\gbe-config-test.plist -Force; .\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -CountryCode US -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "$env:TEMP\gbe-config-test.plist"
+Copy-Item .\tests\fixtures\config.plist $env:TEMP\gbe-config-test.plist -Force; .\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -IncludeFullBiosVersion -ConfigurationPath "$env:TEMP\gbe-config-test.plist"
 ```
 
 ### Pester

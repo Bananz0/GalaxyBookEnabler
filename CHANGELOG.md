@@ -5,7 +5,7 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.1.1] - 2026-03-12
+## [3.1.5] - 2026-03-12
 
 ### Added
 
@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inlined the identity resolver into `Install-GalaxyBookEnabler.ps1`
 - Expanded `-AutonomousModel` to accept family/profile selections in addition to exact model codes
 - Switched model and region selection flow to arrow-key navigation
+- Reworked installed-state and package-manager menus around a unified arrow-key menu renderer with compact viewport handling
+- Unified the installed-state banner so installer status, health, installed versions, and update status render in a single header box
+- Standardized selector-style naming such as `Book4Ultra` across default BIOS prompts and custom BIOS reporting
 - Refined package name parsing and normalization across installer and autonomous workflows
 - Refactored autonomous/elevation argument handling for safer quoting and consistent forwarding
 - Updated autonomous package name handling in installer/workflows for clearer, consistent behavior
@@ -31,12 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Excluded Samsung Internet services from package/service management to reduce login-time issues
 - Improved binary patching reliability for SSSE patch application paths
 - Enhanced installer smoke validation for system model and GBe support service path/status checks
+- Fixed installed-state submenu return paths so package manager, repair, SSSE update, and reinstall cancellation return to the main menu instead of exiting or falling through
+- Fixed package manager rendering errors after elevation by binding status-formatting helpers correctly inside the header renderer
+- Fixed numeric arrow-menu selection to keep the highlighted option and displayed selected option in sync
+- Added `winget` preflight and timeout handling so package installs fail clearly instead of appearing to hang on first-run source prompts
+- Documented the existing Multi Control startup-task recovery flow and validation for the scheduled Samsung service restart path
 
 ### Documentation
 
+- Documented `config.plist` generation and update flows in `README.md` and `Explainer.md`
 - Updated README for fully autonomous usage and scheduled task behavior (including Multi Control recovery details)
 - Updated CI/workflow documentation to reflect autonomous and continuous regression coverage
 - Added `@Ritel-T` to supporter acknowledgements in current project docs
+- Thanks to `@MTTMAX` for helping with the Multi Control / Second Screen / Continuity recovery task behavior
+
+### Issues
+
+- Fixes `#86`
+- Helps with `#87`, `#79`, `#78`, `#73`, and `#47`
 
 ## [3.1.0] - 2026-01-10
 
@@ -509,8 +524,8 @@ If you modified QS.bat with custom device names (e.g., different Galaxy Book mod
 
 **Last Updated:** 2026-03-12
 
-[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.1...HEAD
-[3.1.1]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.0...v3.1.1
+[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.5...HEAD
+[3.1.5]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.0...v3.1.5
 [3.1.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.5.0...v3.0.0
 [2.5.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.4.0...v2.5.0

@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-3.1.5-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -22,8 +22,8 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 ## Features
 
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
-- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app
-- **Auto-Elevation** - Automatically requests admin rights
+- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app by installing the SSSE patch and using the Core installation profile
+- **Auto-Elevation** - Automatically requests admin rights using native sudo (Enable in )
 - **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
@@ -397,20 +397,33 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 
 > **Note:** Desktop shortcuts use explorer.exe which adds slight overhead. PowerToys URI or AHK methods are faster.
 
-### Manual Identity Generation
+### config.plist Generation
 
-If you need to generate high-fidelity DMI strings manually for OpenCore or generic spoofing, use the installer directly:
+If you want OpenCore-ready SMBIOS values, use the installer directly.
+
+Generate configuration data only:
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Ultra -IncludeFullBiosVersion
-.\Install-GalaxyBookEnabler.ps1 -Profile Book4Pro -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\\EFI\\OC\\config.plist"
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode US
 ```
 
-This generates randomized but internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values using the installer's inline resolver.
+Write the generated values straight into an existing `config.plist`:
 
-When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates.
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -ConfigurationPath "D:\\EFI\\OC\\config.plist"
+```
 
-**Region selection** defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-CountryCode` or `-RegionCode`. Optional `-UseGeoIp` uses the public ipapi.co endpoint (no API key) to resolve country based on IP.
+Include the full BIOS version when you need a closer Samsung-style match:
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -IncludeFullBiosVersion -ConfigurationPath "D:\\EFI\\OC\\config.plist"
+```
+
+This uses the installer's inline resolver to generate internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values.
+
+When `-ConfigurationPath` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates. Use `-SkipConfigurationBackup` to suppress that backup or `-ConfigurationBackupSuffix` to customize the backup suffix.
+
+Region selection defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-AutonomousCountryCode`, `-AutonomousRegion`, or `-AutonomousRegionPreference`. Optional `-AutonomousRegionSource GeoIp` uses the public `ipapi.co` endpoint to resolve country based on IP.
 
 ## 🔧 How It Works
 

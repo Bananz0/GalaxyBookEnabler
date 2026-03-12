@@ -54,7 +54,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 3.0.0
+    Version        : 3.1.5
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -390,7 +390,7 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "3.0.0"
+$SCRIPT_VERSION = "3.1.5"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 $INTEL_WIFI_DRIVER_GUIDANCE = "For best Samsung app compatibility, keep Intel Wi-Fi drivers on v23 and avoid v24 until Samsung updates their SDK."
