@@ -210,6 +210,32 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
         }
     }
 
+    It 'accepts selector-style family keys for every configured family' {
+        $familyKeys = @(
+            'Book5Pro',
+            'Book5Pro360',
+            'Book5360',
+            'Book4Ultra',
+            'Book4Pro',
+            'Book4Pro360',
+            'Book4',
+            'Book4360',
+            'Book3Ultra',
+            'Book3Pro',
+            'Book3Pro360',
+            'Book3',
+            'Book3360',
+            'Book2Pro',
+            'GalaxyBookSeries',
+            'Notebook9Series'
+        )
+
+        foreach ($familyKey in $familyKeys) {
+            $result = Invoke-ConfigurationMode -Selector $familyKey -CountryCode US
+            $result.ResolvedFamily | Should Not BeNullOrEmpty
+        }
+    }
+
     It 'keeps random family resolution within the allowed model set' {
         $families = @(
             @{ Selector = 'Book5Pro'; Models = @('940XHA', '960XHA') },
@@ -236,7 +262,7 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
     }
 
     It 'updates configuration data and creates a backup' {
-        $fixture = Join-Path $PSScriptRoot 'fixtures\config.plist.sample'
+        $fixture = Join-Path $PSScriptRoot 'fixtures\config.plist'
         $tempPath = Join-Path $env:TEMP ("config.plist.test.{0}.plist" -f [guid]::NewGuid())
 
         Copy-Item -Path $fixture -Destination $tempPath -Force
