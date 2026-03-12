@@ -253,6 +253,7 @@ if (-not $isAdmin) {
 $SCRIPT_VERSION = "3.1.0"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+$INTEL_WIFI_DRIVER_GUIDANCE = "For best Samsung app compatibility, keep Intel Wi-Fi drivers on v23 and avoid v24 until Samsung updates their SDK."
 $LATEST_SSSE_VERSION = "8.0.5.0"
 
 # LOGGING SETUP
@@ -2416,72 +2417,149 @@ function Update-SSSEBinary {
     Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
     
     $fileBytes = [System.IO.File]::ReadAllBytes($ExePath)
-    
-    $patchCount = 0
-    
-    for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-        if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
-            ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
-            $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
-            $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
-            $fileBytes[$i + 7] -eq 0x0F -and $fileBytes[$i + 8] -eq 0x85) {
-            
-            $reg = if ($fileBytes[$i + 2] -eq 0xF0) { "R14" } else { "R15" }
-            $patchOffset = $i + 7
-            
-            $fileBytes[$patchOffset] = 0x48
-            $fileBytes[$patchOffset + 1] = 0xE9
-            
-            Write-Host "    Primary patch @ 0x$($patchOffset.ToString('X5')): 0F 85 -> 48 E9 (MOV $reg pattern)" -ForegroundColor Green
-            $patchCount++
-            $searchEnd = [Math]::Min($i + 512, $fileBytes.Length - 10)
-            for ($j = $i + 12; $j -lt $searchEnd; $j++) {
-                if ($fileBytes[$j] -eq 0xE8 -and
-                    $fileBytes[$j + 5] -eq 0x48 -and $fileBytes[$j + 6] -eq 0x83 -and
-                    $fileBytes[$j + 7] -eq 0xF8 -and $fileBytes[$j + 8] -eq 0xFF -and
-                    $fileBytes[$j + 9] -eq 0x75) {
-                    
-                    $secPatchOffset = $j + 9
-                    $fileBytes[$secPatchOffset] = 0xEB
-                    
-                    Write-Host "    Secondary patch @ 0x$($secPatchOffset.ToString('X5')): 75 -> EB (6.x compatibility)" -ForegroundColor Green
-                    $patchCount++
-                    break
+
+    function Apply-BytePatch {
+        param(
+            [byte[]]$Bytes,
+            [int]$Offset,
+            [byte[]]$PatchBytes
+        )
+
+        for ($index = 0; $index -lt $PatchBytes.Length; $index++) {
+            $Bytes[$Offset + $index] = $PatchBytes[$index]
+        }
+    }
+
+    function Find-PrimaryCandidates {
+        param(
+            [byte[]]$Bytes
+        )
+
+        $candidates = @()
+        for ($i = 0; $i -lt ($Bytes.Length - 9); $i++) {
+            if ($Bytes[$i] -ne 0x4C -or $Bytes[$i + 1] -ne 0x8B) { continue }
+            if ($Bytes[$i + 2] -ne 0xF0 -and $Bytes[$i + 2] -ne 0xF8) { continue }
+            if ($Bytes[$i + 3] -ne 0x48 -or $Bytes[$i + 4] -ne 0x83 -or $Bytes[$i + 5] -ne 0xF8 -or $Bytes[$i + 6] -ne 0xFF) { continue }
+
+            if ($Bytes[$i + 7] -eq 0x0F -and $Bytes[$i + 8] -eq 0x85) {
+                $candidates += [PSCustomObject]@{
+                    Offset      = $i
+                    PatchOffset = $i + 7
+                    IsPatched   = $false
+                }
+                continue
+            }
+
+            if ($Bytes[$i + 7] -eq 0x48 -and $Bytes[$i + 8] -eq 0xE9) {
+                $candidates += [PSCustomObject]@{
+                    Offset      = $i
+                    PatchOffset = $i + 7
+                    IsPatched   = $true
                 }
             }
-            break  
         }
+
+        return $candidates
     }
-    
-    if ($patchCount -eq 0) {
-        $alreadyPatched = $false
-        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-            if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
-                ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
-                $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
-                $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
-                $fileBytes[$i + 7] -eq 0x48 -and $fileBytes[$i + 8] -eq 0xE9) {
-                $alreadyPatched = $true
-                break
+
+    function Find-SecondarySite {
+        param(
+            [byte[]]$Bytes,
+            [int]$PrimaryOffset
+        )
+
+        $searchEnd = [Math]::Min($PrimaryOffset + 512, $Bytes.Length - 17)
+
+        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+            if ($Bytes[$j] -eq 0xE8 -and
+                $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x83 -and
+                $Bytes[$j + 7] -eq 0xF8 -and $Bytes[$j + 8] -eq 0xFF -and
+                ($Bytes[$j + 9] -eq 0x75 -or $Bytes[$j + 9] -eq 0xEB)) {
+                return [PSCustomObject]@{
+                    PatchOffset = $j + 9
+                    IsPatched   = ($Bytes[$j + 9] -eq 0xEB)
+                    Pattern     = "A"
+                }
             }
         }
-        
-        if ($alreadyPatched) {
-            Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
-            return $true
+
+        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+            if ($Bytes[$j] -eq 0x48 -and $Bytes[$j + 1] -eq 0x3B -and $Bytes[$j + 2] -eq 0xC3 -and
+                $Bytes[$j + 3] -eq 0x74 -and $Bytes[$j + 4] -eq 0x0C -and
+                $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x2B -and
+                ($Bytes[$j + 7] -eq 0xC6 -or $Bytes[$j + 7] -eq 0xC7) -and
+                $Bytes[$j + 8] -eq 0x48 -and $Bytes[$j + 9] -eq 0xD1 -and $Bytes[$j + 10] -eq 0xF8 -and
+                $Bytes[$j + 11] -eq 0x48 -and $Bytes[$j + 12] -eq 0x83 -and $Bytes[$j + 13] -eq 0xF8 -and
+                $Bytes[$j + 14] -eq 0xFF -and ($Bytes[$j + 15] -eq 0x75 -or $Bytes[$j + 15] -eq 0xEB)) {
+                return [PSCustomObject]@{
+                    PatchOffset = $j + 15
+                    IsPatched   = ($Bytes[$j + 15] -eq 0xEB)
+                    Pattern     = "B"
+                }
+            }
         }
-        else {
-            Write-Host "    ⚠ Pattern not found - unknown SSSE version" -ForegroundColor Yellow
-            Write-Host "    Please report this version for analysis" -ForegroundColor Gray
-            return $false
+
+        return $null
+    }
+
+    $primaryCandidates = Find-PrimaryCandidates -Bytes $fileBytes
+    if ($primaryCandidates.Count -eq 0) {
+        Write-Host "    ⚠ Patch pattern not found in binary" -ForegroundColor Yellow
+        return $false
+    }
+
+    $viableCandidates = @()
+    foreach ($candidate in $primaryCandidates) {
+        $secondary = Find-SecondarySite -Bytes $fileBytes -PrimaryOffset $candidate.Offset
+        if ($null -ne $secondary) {
+            $viableCandidates += [PSCustomObject]@{
+                Primary   = $candidate
+                Secondary = $secondary
+            }
         }
+    }
+
+    if ($viableCandidates.Count -eq 0) {
+        Write-Host "    ⚠ Could not resolve patch points for this binary" -ForegroundColor Yellow
+        return $false
+    }
+
+    if ($viableCandidates.Count -gt 1) {
+        $viableCandidates = $viableCandidates | Sort-Object { $_.Primary.Offset }
+        Write-Host "    Multiple candidate windows found; using earliest match" -ForegroundColor Yellow
+    }
+
+    $target = $viableCandidates[0]
+    Write-Host "    Detected patch profile: Pattern $($target.Secondary.Pattern)" -ForegroundColor Cyan
+
+    $patchCount = 0
+
+    if (-not $target.Primary.IsPatched) {
+        Apply-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
+        Write-Host "    Primary patch @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        $patchCount++
     }
     else {
-        # Write patched bytes back to file
-        [System.IO.File]::WriteAllBytes($ExePath, $fileBytes)
-        Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+        Write-Host "    ✓ Primary patch already present" -ForegroundColor Green
+    }
+
+    if (-not $target.Secondary.IsPatched) {
+        Apply-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
+        Write-Host "    Secondary patch @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        $patchCount++
+    }
+    else {
+        Write-Host "    ✓ Secondary patch already present" -ForegroundColor Green
+    }
+
+    if ($patchCount -eq 0) {
+        Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
         return $true
     }
+
+    [System.IO.File]::WriteAllBytes($ExePath, $fileBytes)
+    Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+    return $true
 }
 
 function Install-SystemSupportEngine {
@@ -6482,6 +6560,8 @@ if ($wifiCheck.HasWiFi) {
         Write-Host "  Compatibility varies by hardware generation" -ForegroundColor Gray
         Write-Host "  Your experience may differ - feel free to submit a" -ForegroundColor Gray
         Write-Host "  documentation issue on GitHub with your results!" -ForegroundColor Cyan
+        Write-Host "  IMPORTANT: $INTEL_WIFI_DRIVER_GUIDANCE" -ForegroundColor Yellow
+        Write-Log "Intel Wi-Fi compatibility guidance: $INTEL_WIFI_DRIVER_GUIDANCE" -Level WARNING
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
