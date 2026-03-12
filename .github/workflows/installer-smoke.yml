@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Ensure winget availability
         id: winget-bootstrap
@@ -38,7 +38,7 @@ jobs:
             }
 
             try {
-              & $winget.Source source list --accept-source-agreements --disable-interactivity | Out-Null
+              & $winget.Source source list --disable-interactivity | Out-Null
             }
             catch {
               # Source initialization can fail transiently; command availability is the hard gate.

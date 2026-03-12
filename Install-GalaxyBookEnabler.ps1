@@ -6219,7 +6219,7 @@ function Install-SamsungPackages {
 
         try {
             Write-Host "Preparing Windows Package Manager..." -ForegroundColor Gray
-            $wingetPreflight = Invoke-WingetCommand -Arguments @('source', 'list', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 45
+            $wingetPreflight = Invoke-WingetCommand -Arguments @('source', 'list', '--disable-interactivity') -TimeoutSeconds 45
             if ($wingetPreflight.TimedOut) {
                 Write-Host "  ✗ Windows Package Manager did not respond" -ForegroundColor Red
                 Write-Host "    This usually means winget is waiting on first-run setup or the Store source is stuck." -ForegroundColor Yellow
@@ -6332,7 +6332,7 @@ function Install-SamsungPackages {
                 }
                 
                 # Fallback to winget check if not found in our quick check (just to be safe)
-                $checkResult = Invoke-WingetCommand -Arguments @('list', '--accept-source-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 90
+                $checkResult = Invoke-WingetCommand -Arguments @('list', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 90
                 if ($checkResult.TimedOut) {
                     Write-Host "  ✗ Windows Package Manager timed out while checking package status" -ForegroundColor Red
                     Write-Host "    Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
