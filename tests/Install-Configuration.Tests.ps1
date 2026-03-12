@@ -298,7 +298,7 @@ Describe 'Install-GalaxyBookEnabler.ps1 autonomous package resolution' {
         $result.ExitCode | Should Be 0
         $result.Stdout | Should Match 'Samsung Account'
         $result.Stdout | Should Match 'Samsung Settings'
-        $result.Stdout | Should Not Match 'Quick Share'
+        $result.Stdout | Should Not Match '9PCTGDFXVZLJ'
     }
 
     It 'resolves the recommended package profile in test mode' {
@@ -313,6 +313,7 @@ Describe 'Install-GalaxyBookEnabler.ps1 autonomous package resolution' {
 
         $result.ExitCode | Should Be 0
         $result.Stdout | Should Match 'Quick Share'
+        $result.Stdout | Should Match '9PCTGDFXVZLJ'
         $result.Stdout | Should Match 'Samsung Notes'
         $result.Stdout | Should Not Match 'Samsung Device Care'
     }

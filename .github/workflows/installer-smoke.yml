@@ -76,11 +76,20 @@ jobs:
             return
           }
 
-          try {
-            winget upgrade winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+          $wingetUpgradeOutput = @(& winget upgrade winget --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1)
+          $wingetUpgradeExitCode = $LASTEXITCODE
+          if ($wingetUpgradeOutput.Count -gt 0) {
+            $wingetUpgradeOutput | ForEach-Object { Write-Host $_ }
           }
-          catch {
-            Write-Host "winget self-upgrade skipped: $($_.Exception.Message)"
+
+          if ($wingetUpgradeExitCode -ne 0) {
+            $wingetUpgradeSummary = ($wingetUpgradeOutput | Out-String)
+            if ($wingetUpgradeSummary -match 'Successfully installed' -or $wingetUpgradeSummary -match 'Restart the application to complete the upgrade') {
+              Write-Warning "winget self-upgrade reported success but exited with code $wingetUpgradeExitCode; continuing."
+            }
+            else {
+              Write-Warning "winget self-upgrade failed with exit code $wingetUpgradeExitCode; continuing with the existing winget installation."
+            }
           }
 
       - name: Run installer (test-mode autonomous)
