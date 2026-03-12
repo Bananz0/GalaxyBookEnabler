@@ -167,8 +167,8 @@ jobs:
               '-AutonomousPreserveLegacy:$false',
               '-DebugOutput'
             )
-            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Will use default Galaxy Book3 Ultra values' -Context 'Legacy non-preserve run'
-            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Registry spoof script created (Galaxy Book3 Ultra)' -Context 'Legacy non-preserve run'
+            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Will use default Galaxy Book4 Ultra values' -Context 'Legacy non-preserve run'
+            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Registry spoof script created (Galaxy Book4 Ultra)' -Context 'Legacy non-preserve run'
             if (-not (Test-Path $legacyBatchPath)) {
               throw 'Legacy fixture should remain in place after TestMode run.'
             }
@@ -252,7 +252,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser
+          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
 
       - name: Lint
