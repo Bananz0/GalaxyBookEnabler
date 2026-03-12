@@ -90,6 +90,8 @@ jobs:
             else {
               Write-Warning "winget self-upgrade failed with exit code $wingetUpgradeExitCode; continuing with the existing winget installation."
             }
+
+            $global:LASTEXITCODE = 0
           }
 
       - name: Run installer (test-mode autonomous)
