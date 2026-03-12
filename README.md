@@ -11,7 +11,7 @@
 ![View Count](https://komarev.com/ghpvc/?username=Bananz0&repo=GalaxyBookEnabler&color=brightgreen)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/bananz0/GalaxyBookEnabler/total)
 
-> 🎉 A big thank you to [@Hydro3ia](https://github.com/Hydro3ia), [@systemsrethinking](https://github.com/systemsrethinking) and [@intini](https://github.com/intini) for sponsoring us! ❤️
+> 🎉 A big thank you to [@Hydro3ia](https://github.com/Hydro3ia), [@systemsrethinking](https://github.com/systemsrethinking), [@intini](https://github.com/intini), and [@Ritel-T](https://github.com/Ritel-T) for sponsoring us! ❤️
 
 ## Overview
 
@@ -754,6 +754,7 @@ A huge thanks to the following people for supporting this project ❤️ :
 - **@Hydro3ia**
 - **@systemsrethinking**
 - **@intini**
+- **@Ritel-T**
 
 ### Bluetooth Device Removal
 
