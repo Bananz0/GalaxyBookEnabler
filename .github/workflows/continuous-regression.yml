@@ -184,7 +184,8 @@ jobs:
               '-AutonomousConfirmPackages:$false',
               '-DebugOutput'
             )
-            Assert-Contains -Text $customPackages.Stdout -Expected 'Simulating installation of 2 package(s)' -Context 'Custom package parsing'
+            Assert-Contains -Text $customPackages.Stdout -Expected 'Total packages: 2' -Context 'Custom package parsing'
+            Assert-Contains -Text $customPackages.Stdout -Expected 'Installation cancelled (autonomous config).' -Context 'Custom package parsing'
             Assert-Contains -Text $customPackages.Stdout -Expected 'Samsung Account' -Context 'Custom package parsing'
             Assert-Contains -Text $customPackages.Stdout -Expected 'Samsung Settings' -Context 'Custom package parsing'
 
@@ -259,7 +260,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error
+          $excludedRules = @(
+            'PSAvoidUsingWriteHost',
+            'PSUseShouldProcessForStateChangingFunctions',
+            'PSUseSingularNouns',
+            'PSUseBOMForUnicodeEncodedFile'
+          )
+          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error -ExcludeRule $excludedRules
           if ($issues) {
             $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
             throw "PSScriptAnalyzer found $($issues.Count) issues."

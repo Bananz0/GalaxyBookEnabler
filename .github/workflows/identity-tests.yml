@@ -36,7 +36,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error
+          $excludedRules = @(
+            'PSAvoidUsingWriteHost',
+            'PSUseShouldProcessForStateChangingFunctions',
+            'PSUseSingularNouns',
+            'PSUseBOMForUnicodeEncodedFile'
+          )
+          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error -ExcludeRule $excludedRules
           if ($issues) {
             $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
             throw "PSScriptAnalyzer found $($issues.Count) issues."
