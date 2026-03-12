@@ -90,7 +90,7 @@ param(
     [string]$ConfigurationPath,
     [switch]$SkipConfigurationBackup,
     [string]$ConfigurationBackupSuffix,
-    [string]$Profile,
+    [string]$LegacyProfile,
     [string]$CountryCode,
     [string]$RegionCode,
     [string]$RegionPreference,
@@ -102,21 +102,51 @@ param(
     [switch]$IncludeFullBiosVersion,
     [string]$LogDirectory,
     [string]$LogPath,
-    [switch]$DebugOutput
+    [switch]$DebugOutput,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArguments
 )
+
+$legacyProfileSpecified = $PSBoundParameters.ContainsKey('LegacyProfile')
+if ($RemainingArguments -and $RemainingArguments.Count -gt 0) {
+    $unknownArguments = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $RemainingArguments.Count; $i++) {
+        $argument = $RemainingArguments[$i]
+        if ($argument -ieq '-Profile' -or $argument -ieq '/Profile') {
+            if ($legacyProfileSpecified) {
+                throw 'Do not specify both -LegacyProfile and -Profile.'
+            }
+
+            if (($i + 1) -ge $RemainingArguments.Count) {
+                throw 'Missing value for legacy parameter -Profile.'
+            }
+
+            $LegacyProfile = [string]$RemainingArguments[$i + 1]
+            $legacyProfileSpecified = $true
+            $i++
+            continue
+        }
+
+        $unknownArguments.Add($argument)
+    }
+
+    if ($unknownArguments.Count -gt 0) {
+        throw ("Unknown argument(s): {0}" -f ($unknownArguments -join ', '))
+    }
+}
 
 $script:IsAutonomous = $FullyAutonomous.IsPresent
 $script:IsConfigurationOnly = $ConfigurationOnly.IsPresent -or
     $WriteConfigPlist.IsPresent -or
-    $PSBoundParameters.ContainsKey('Profile') -or
+    $legacyProfileSpecified -or
     $PSBoundParameters.ContainsKey('CountryCode') -or
     $PSBoundParameters.ContainsKey('RegionCode') -or
     $PSBoundParameters.ContainsKey('RegionPreference') -or
     $UseGeoIp.IsPresent -or
     $PSBoundParameters.ContainsKey('ConfigPath')
 
-if (-not $AutonomousModel -and $Profile) {
-    $AutonomousModel = $Profile
+if (-not $AutonomousModel -and $LegacyProfile) {
+    $AutonomousModel = $LegacyProfile
 }
 if (-not $AutonomousCountryCode -and $CountryCode) {
     $AutonomousCountryCode = $CountryCode
@@ -418,7 +448,7 @@ if ($script:LogDirectory -and -not (Test-Path $script:LogDirectory) -and -not $T
 }
 $script:LoggingEnabled = (-not $TestMode)
 
-function Write-Log {
+function Write-GbeLog {
     param(
         [string]$Message,
         [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS", "DEBUG")]
@@ -434,7 +464,7 @@ function Write-Log {
         Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
     }
     catch {
-        # Silently fail if logging doesn't work
+            Write-Debug "Failed to write log entry: $($_.Exception.Message)"
     }
 }
 
@@ -442,9 +472,9 @@ function Write-LogSection {
     param([string]$SectionName)
     
     $separator = "=" * 80
-    Write-Log $separator
-    Write-Log "  $SectionName"
-    Write-Log $separator
+    Write-GbeLog $separator
+    Write-GbeLog "  $SectionName"
+    Write-GbeLog $separator
 }
 
 function Write-LogSystemInfo {
@@ -455,17 +485,17 @@ function Write-LogSystemInfo {
         $cs = Get-CimInstance Win32_ComputerSystem
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
         
-        Write-Log "Script Version: $SCRIPT_VERSION"
-        Write-Log "Windows: $($os.Caption) (Build $($os.BuildNumber))"
-        Write-Log "Computer: $($cs.Manufacturer) $($cs.Model)"
-        Write-Log "CPU: $($cpu.Name)"
-        Write-Log "RAM: $([math]::Round($cs.TotalPhysicalMemory / 1GB, 2)) GB"
-        Write-Log "PowerShell: $($PSVersionTable.PSVersion)"
-        Write-Log "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Write-Log "Command Line: $($MyInvocation.Line)"
+        Write-GbeLog "Script Version: $SCRIPT_VERSION"
+        Write-GbeLog "Windows: $($os.Caption) (Build $($os.BuildNumber))"
+        Write-GbeLog "Computer: $($cs.Manufacturer) $($cs.Model)"
+        Write-GbeLog "CPU: $($cpu.Name)"
+        Write-GbeLog "RAM: $([math]::Round($cs.TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-GbeLog "PowerShell: $($PSVersionTable.PSVersion)"
+        Write-GbeLog "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-GbeLog "Command Line: $($MyInvocation.Line)"
     }
     catch {
-        Write-Log "Failed to gather system info: $($_.Exception.Message)" -Level ERROR
+        Write-GbeLog "Failed to gather system info: $($_.Exception.Message)" -Level ERROR
     }
 }
 
@@ -479,8 +509,8 @@ function Write-LogHardwareInfo {
         
         if ($wifiDevices) {
             foreach ($wifi in $wifiDevices) {
-                Write-Log "Wi-Fi (Intel): $($wifi.FriendlyName)"
-                Write-Log "  Hardware ID: $($wifi.HardwareID[0])"
+                Write-GbeLog "Wi-Fi (Intel): $($wifi.FriendlyName)"
+                Write-GbeLog "  Hardware ID: $($wifi.HardwareID[0])"
             }
         }
         else {
@@ -489,12 +519,12 @@ function Write-LogHardwareInfo {
             
             if ($wifiAdapters) {
                 foreach ($adapter in $wifiAdapters) {
-                    Write-Log "Wi-Fi: $($adapter.InterfaceDescription)" -Level WARNING
-                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                    Write-GbeLog "Wi-Fi: $($adapter.InterfaceDescription)" -Level WARNING
+                    Write-GbeLog "  Note: Not Intel (may not support Samsung apps)"
                 }
             }
             else {
-                Write-Log "Wi-Fi: Not detected" -Level WARNING
+                Write-GbeLog "Wi-Fi: Not detected" -Level WARNING
             }
         }
         
@@ -504,25 +534,25 @@ function Write-LogHardwareInfo {
         
         if ($btDevices) {
             foreach ($bt in $btDevices) {
-                Write-Log "Bluetooth (Intel): $($bt.FriendlyName)"
-                Write-Log "  Hardware ID: $($bt.HardwareID[0])"
+                Write-GbeLog "Bluetooth (Intel): $($bt.FriendlyName)"
+                Write-GbeLog "  Hardware ID: $($bt.HardwareID[0])"
             }
         }
         else {
             $btAdapters = Get-PnpDevice -Class "Bluetooth" -Status "OK" -ErrorAction SilentlyContinue
             if ($btAdapters) {
                 foreach ($adapter in $btAdapters) {
-                    Write-Log "Bluetooth: $($adapter.FriendlyName)" -Level WARNING
-                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                    Write-GbeLog "Bluetooth: $($adapter.FriendlyName)" -Level WARNING
+                    Write-GbeLog "  Note: Not Intel (may not support Samsung apps)"
                 }
             }
             else {
-                Write-Log "Bluetooth: Not detected" -Level WARNING
+                Write-GbeLog "Bluetooth: Not detected" -Level WARNING
             }
         }
     }
     catch {
-        Write-Log "Failed to detect hardware: $($_.Exception.Message)" -Level ERROR
+        Write-GbeLog "Failed to detect hardware: $($_.Exception.Message)" -Level ERROR
     }
 }
 
@@ -560,7 +590,7 @@ $GalaxyBookModelBlueprints = [ordered]@{
 }
 
 
-function Normalize-SelectorValue {
+function ConvertTo-SelectorKey {
     param([string]$Value)
 
     if (-not $Value) {
@@ -627,7 +657,7 @@ $GalaxyBookFamilyAliasMap = @{}
 foreach ($family in $GalaxyBookFamilies) {
     $GalaxyBookFamilyByKey[$family.Key] = $family
     foreach ($alias in @($family.Key, $family.Label) + $family.Aliases) {
-        $GalaxyBookFamilyAliasMap[(Normalize-SelectorValue -Value $alias)] = $family.Label
+        $GalaxyBookFamilyAliasMap[(ConvertTo-SelectorKey -Value $alias)] = $family.Label
     }
 }
 
@@ -759,7 +789,7 @@ function Convert-ToHexDword {
     return ('0x{0:x2}' -f [int]$Value)
 }
 
-function Normalize-Continent {
+function ConvertTo-ContinentKey {
     param([string]$Value)
 
     if (-not $Value) {
@@ -872,7 +902,7 @@ function Resolve-RegionCode {
         }
     }
 
-    $normalizedContinent = Normalize-Continent -Value $Continent
+    $normalizedContinent = ConvertTo-ContinentKey -Value $Continent
     if (-not $normalizedContinent) {
         $normalizedContinent = Resolve-Continent -Country $Country
     }
@@ -1066,7 +1096,7 @@ function Get-GalaxyBookSelection {
         return $null
     }
 
-    $normalized = Normalize-SelectorValue -Value $Selector
+    $normalized = ConvertTo-SelectorKey -Value $Selector
     if ($normalized -and $GalaxyBookModelBlueprints.Contains($normalized)) {
         $family = $GalaxyBookFamilyByKey[$GalaxyBookModelBlueprints[$normalized].FamilyKey]
         return [ordered]@{
@@ -2211,8 +2241,6 @@ function Backup-PackageData {
 # ==================== STOP SAMSUNG APPS ====================
 
 function Stop-SamsungApps {
-    param([switch]$All)
-    
     Write-Status "Stopping Samsung apps..." -Status ACTION
     
     $processPatterns = @(
@@ -3708,7 +3736,7 @@ function Update-SSSEBinary {
     
     $fileBytes = [System.IO.File]::ReadAllBytes($ExePath)
 
-    function Apply-BytePatch {
+    function Set-BytePatch {
         param(
             [byte[]]$Bytes,
             [int]$Offset,
@@ -3825,7 +3853,7 @@ function Update-SSSEBinary {
     $patchCount = 0
 
     if (-not $target.Primary.IsPatched) {
-        Apply-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
+        Set-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
         Write-Host "    Primary patch @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
         $patchCount++
     }
@@ -3834,7 +3862,7 @@ function Update-SSSEBinary {
     }
 
     if (-not $target.Secondary.IsPatched) {
-        Apply-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
+        Set-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
         Write-Host "    Secondary patch @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
         $patchCount++
     }
@@ -5834,7 +5862,7 @@ function Get-InstalledSamsungPackages {
     }
     
     # Return the HashSet (use Write-Output to preserve the collection type)
-    Write-Output -NoEnumerate $installed
+    Write-Output -InputObject $installed -NoEnumerate
 }
 
 function Show-PackageSelectionMenu {
@@ -6196,7 +6224,7 @@ function Install-SamsungPackages {
                 Write-Host "  ✗ Windows Package Manager did not respond" -ForegroundColor Red
                 Write-Host "    This usually means winget is waiting on first-run setup or the Store source is stuck." -ForegroundColor Yellow
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
-                Write-Log "ERROR: winget preflight timed out before Samsung package installation" -Level ERROR
+                Write-GbeLog "ERROR: winget preflight timed out before Samsung package installation" -Level ERROR
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6212,8 +6240,8 @@ function Install-SamsungPackages {
                     Write-Host "    Output: $preflightSnippet" -ForegroundColor Gray
                 }
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
-                Write-Log "ERROR: winget preflight failed before Samsung package installation" -Level ERROR
-                Write-Log "Output: $($wingetPreflight.Output)" -Level DEBUG
+                Write-GbeLog "ERROR: winget preflight failed before Samsung package installation" -Level ERROR
+                Write-GbeLog "Output: $($wingetPreflight.Output)" -Level DEBUG
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6226,7 +6254,7 @@ function Install-SamsungPackages {
             Write-Host "  ✗ Windows Package Manager is not available" -ForegroundColor Red
             Write-Host "    Install or repair 'App Installer', then run 'winget list' once and retry." -ForegroundColor Cyan
             Write-Host "    Microsoft Store: ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1" -ForegroundColor Gray
-            Write-Log "ERROR: winget unavailable before Samsung package installation: $($_.Exception.Message)" -Level ERROR
+            Write-GbeLog "ERROR: winget unavailable before Samsung package installation: $($_.Exception.Message)" -Level ERROR
             return @{
                 Installed = 0
                 Failed    = $Packages.Count
@@ -6308,7 +6336,7 @@ function Install-SamsungPackages {
                 if ($checkResult.TimedOut) {
                     Write-Host "  ✗ Windows Package Manager timed out while checking package status" -ForegroundColor Red
                     Write-Host "    Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
-                    Write-Log "ERROR: winget list timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
+                    Write-GbeLog "ERROR: winget list timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                     $failed++
                     continue
                 }
@@ -6323,13 +6351,13 @@ function Install-SamsungPackages {
                 }
                 else {
                     Write-Host "  Installing..." -ForegroundColor Gray
-                    Write-Log "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
+                    Write-GbeLog "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
                     $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 900
                     if ($installResult.TimedOut) {
                         Write-Host "  ✗ Installation timed out" -ForegroundColor Red
                         Write-Host "    winget stopped responding while installing this package." -ForegroundColor Yellow
                         Write-Host "    Try running 'winget list' manually first, then retry the installer." -ForegroundColor Cyan
-                        Write-Log "ERROR: winget install timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
+                        Write-GbeLog "ERROR: winget install timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                         $failed++
                         continue
                     }
@@ -6339,8 +6367,8 @@ function Install-SamsungPackages {
                     # Check for Microsoft Store connection error (0x80d03805)
                     if ($installOutput -match "0x80d03805|0x80D03805") {
                         Write-Host "  ✗ Microsoft Store connection error (0x80d03805)" -ForegroundColor Red
-                        Write-Log "ERROR: Package $($pkg.Name) failed with Microsoft Store error 0x80d03805" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) failed with Microsoft Store error 0x80d03805" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         Write-Host "" -ForegroundColor Yellow
                         Write-Host "    ═══════════════════════════════════════════════════════" -ForegroundColor Yellow
                         Write-Host "    WORKAROUND: Toggle your WiFi connection" -ForegroundColor Yellow
@@ -6360,27 +6388,27 @@ function Install-SamsungPackages {
                     # Parse output to determine actual result
                     elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
-                        Write-Log "SUCCESS: Package $($pkg.Name) installed successfully" -Level SUCCESS
+                        Write-GbeLog "SUCCESS: Package $($pkg.Name) installed successfully" -Level SUCCESS
                         $installed++
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
-                        Write-Log "Package $($pkg.Name) already installed (skipped)"
+                        Write-GbeLog "Package $($pkg.Name) already installed (skipped)"
                         $skipped++
                     }
                     elseif ($installOutput -match "No package found matching input criteria|No applicable update found") {
                         Write-Host "  ✗ Package not found in winget" -ForegroundColor Red
                         Write-Host "    Package ID: $($pkg.Id)" -ForegroundColor Gray
                         Write-Host "    This may require installation through Microsoft Store instead" -ForegroundColor Yellow
-                        Write-Log "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
                     elseif ($installResult.ExitCode -ne 0) {
                         Write-Host "  ✗ Installation failed (Exit code: $($installResult.ExitCode))" -ForegroundColor Red
                         Write-Host "    Output: $($installOutput.Substring(0, [Math]::Min(200, $installOutput.Length)))" -ForegroundColor Gray
-                        Write-Log "ERROR: Package $($pkg.Name) failed with exit code $($installResult.ExitCode)" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) failed with exit code $($installResult.ExitCode)" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
                     else {
@@ -7900,7 +7928,7 @@ if ($wifiCheck.HasWiFi) {
         Write-Host "  Your experience may differ - feel free to submit a" -ForegroundColor Gray
         Write-Host "  documentation issue on GitHub with your results!" -ForegroundColor Cyan
         Write-Host "  IMPORTANT: $INTEL_WIFI_DRIVER_GUIDANCE" -ForegroundColor Yellow
-        Write-Log "Intel Wi-Fi compatibility guidance: $INTEL_WIFI_DRIVER_GUIDANCE" -Level WARNING
+        Write-GbeLog "Intel Wi-Fi compatibility guidance: $INTEL_WIFI_DRIVER_GUIDANCE" -Level WARNING
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
@@ -8153,12 +8181,12 @@ Write-Host "  (Checking all users - this may take 10-30 seconds)`n" -ForegroundC
 # Warn if Samsung Settings already installed (version mismatch risk with driver-bound install)
 if ($script:IsAutonomous) {
     if ($AutonomousInstallSsse) {
-        Write-Log "Autonomous mode: installing SSSE" -Level INFO
+        Write-GbeLog "Autonomous mode: installing SSSE" -Level INFO
         Install-SystemSupportEngine -TestMode $TestMode -AutoInstall $true -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService | Out-Null
     }
     else {
         Write-Host "Skipping System Support Engine installation (autonomous config)." -ForegroundColor Cyan
-        Write-Log "Autonomous mode: skipping SSSE installation" -Level WARNING
+        Write-GbeLog "Autonomous mode: skipping SSSE installation" -Level WARNING
     }
 }
 else {
@@ -8225,24 +8253,24 @@ else {
                         $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
                         if ($continueAnyway -notlike "y*") {
                             Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
-                            Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
+                            Write-GbeLog "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
                             return
                         }
                     }
                 }
                 
                 Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
-                Write-Log "Installing System Support Engine (SSSE)"
+                Write-GbeLog "Installing System Support Engine (SSSE)"
                 Install-SystemSupportEngine -TestMode $TestMode | Out-Null
             }
             elseif ($choice -like "c*") {
                 Write-Host "Continuing with existing packages..." -ForegroundColor Yellow
-                Write-Log "Installing SSSE with existing Samsung Settings packages"
+                Write-GbeLog "Installing SSSE with existing Samsung Settings packages"
                 Install-SystemSupportEngine -TestMode $TestMode | Out-Null
             }
             else {
                 Write-Host "Skipped SSSE setup by user choice." -ForegroundColor Yellow
-                Write-Log "User chose to skip SSSE installation"
+                Write-GbeLog "User chose to skip SSSE installation"
             }
         }
         else {
@@ -8251,7 +8279,7 @@ else {
     }
     catch {
         Write-Host "⚠ Failed to inspect existing Samsung Settings packages. Skipping SSSE setup to avoid version conflicts." -ForegroundColor Yellow
-        Write-Log "Skipping SSSE setup because Samsung Settings precheck failed: $($_.Exception.Message)" -Level ERROR
+        Write-GbeLog "Skipping SSSE setup because Samsung Settings precheck failed: $($_.Exception.Message)" -Level ERROR
     }
 }
 
@@ -8607,11 +8635,11 @@ if ($TestMode) {
 }
 else {
     Write-LogSection "INSTALLATION COMPLETE"
-    Write-Log "Version: $SCRIPT_VERSION"
-    Write-Log "Install Path: $installPath"
-    Write-Log "Task Name: $taskName"
-    Write-Log "Wi-Fi: $($config.WiFiAdapter)"
-    Write-Log "Installation completed successfully at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level SUCCESS
+    Write-GbeLog "Version: $SCRIPT_VERSION"
+    Write-GbeLog "Install Path: $installPath"
+    Write-GbeLog "Task Name: $taskName"
+    Write-GbeLog "Wi-Fi: $($config.WiFiAdapter)"
+    Write-GbeLog "Installation completed successfully at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level SUCCESS
     
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "  Installation Complete!" -ForegroundColor Green
