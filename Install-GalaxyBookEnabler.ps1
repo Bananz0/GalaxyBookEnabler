@@ -811,14 +811,28 @@ function ConvertTo-ContinentKey {
 function Resolve-GeoIpCountry {
     param([int]$TimeoutSec = 4)
 
-    try {
-        $response = Invoke-RestMethod -Uri "https://ipapi.co/json/" -TimeoutSec $TimeoutSec -ErrorAction Stop
-        if ($response -and $response.country_code) {
-            return $response.country_code.ToUpperInvariant()
+    $providers = @(
+        'https://ipwho.is/',
+        'https://ipapi.co/json/'
+    )
+
+    foreach ($provider in $providers) {
+        try {
+            $response = Invoke-RestMethod -Uri $provider -TimeoutSec $TimeoutSec -ErrorAction Stop
+            $countryCode = if ($response -is [string]) {
+                $null
+            }
+            else {
+                [string]$response.country_code
+            }
+
+            if ($countryCode -and $countryCode -match '^[A-Za-z]{2}$') {
+                return $countryCode.ToUpperInvariant()
+            }
         }
-    }
-    catch {
-        return $null
+        catch {
+            continue
+        }
     }
 
     return $null
@@ -1678,6 +1692,11 @@ function New-ModelSelectionHeaderRenderer {
         [string]$SelectedGenerationLabel
     )
 
+    $headerTitle = $Title
+    $headerPrompt = $Prompt
+    $headerAccentColor = $AccentColor
+    $headerSelectedGenerationLabel = $SelectedGenerationLabel
+
     $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
     $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
     $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
@@ -1700,15 +1719,15 @@ function New-ModelSelectionHeaderRenderer {
     }.GetNewClosure()
 
     return {
-        Write-Host $statusBoxTop -ForegroundColor $AccentColor
-        & $writeStatusBoxTextLine ("  {0}" -f $Title) $AccentColor
-        Write-Host $statusBoxDivider -ForegroundColor $AccentColor
-        & $writeStatusBoxTextLine ("  {0}" -f $Prompt) 'Yellow'
-        if ($SelectedGenerationLabel) {
-            & $writeStatusBoxTextLine ("  Selected generation: {0}" -f $SelectedGenerationLabel) 'Gray'
+        Write-Host $statusBoxTop -ForegroundColor $headerAccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $headerTitle) $headerAccentColor
+        Write-Host $statusBoxDivider -ForegroundColor $headerAccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $headerPrompt) 'Yellow'
+        if ($headerSelectedGenerationLabel) {
+            & $writeStatusBoxTextLine ("  Selected generation: {0}" -f $headerSelectedGenerationLabel) 'Gray'
         }
         & $writeStatusBoxTextLine "  Use arrows or number keys to choose." 'DarkGray'
-        Write-Host $statusBoxBottom -ForegroundColor $AccentColor
+        Write-Host $statusBoxBottom -ForegroundColor $headerAccentColor
         Write-Host ""
     }.GetNewClosure()
 }

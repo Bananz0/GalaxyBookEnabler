@@ -423,7 +423,7 @@ This uses the installer's inline resolver to generate internally consistent `Sys
 
 When `-ConfigurationPath` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates. Use `-SkipConfigurationBackup` to suppress that backup or `-ConfigurationBackupSuffix` to customize the backup suffix.
 
-Region selection defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-AutonomousCountryCode`, `-AutonomousRegion`, or `-AutonomousRegionPreference`. Optional `-AutonomousRegionSource GeoIp` uses the public `ipapi.co` endpoint to resolve country based on IP.
+Region selection defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-AutonomousCountryCode`, `-AutonomousRegion`, or `-AutonomousRegionPreference`. Optional `-AutonomousRegionSource GeoIp` uses a public GeoIP lookup, currently trying `ipwho.is` first and falling back to `ipapi.co`, to resolve country based on IP.
 
 ## 🔧 How It Works
 

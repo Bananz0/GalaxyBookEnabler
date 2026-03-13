@@ -157,6 +157,12 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
         $result.RegionCode | Should Be 'UK'
     }
 
+    It 'maps US to US' {
+        $result = Invoke-ConfigurationMode -Selector Book4Ultra -CountryCode US
+
+        $result.RegionCode | Should Be 'US'
+    }
+
     It 'accepts friendly family names' {
         $result = Invoke-ConfigurationMode -Selector 'Galaxy Book4 Pro' -CountryCode US
 
