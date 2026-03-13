@@ -4001,7 +4001,8 @@ function Start-SamsungSettingsAndVerify {
         [bool]$TestMode = $false,
         [bool]$AutoInstall = $false,
         [string]$Context = "SSSE installation",
-        [bool]$ShowBluetoothSyncInstructions = $false
+        [bool]$ShowBluetoothSyncInstructions = $false,
+        [int]$MaxWaitSeconds = 30
     )
 
     $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
@@ -4024,34 +4025,73 @@ function Start-SamsungSettingsAndVerify {
             Select-Object -ExpandProperty Id
     )
 
+    $launchCommandSucceeded = $false
+
     try {
+        Write-Host "  Attempting direct app launch..." -ForegroundColor Gray
         Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+        $launchCommandSucceeded = $true
     }
     catch {
-        Write-Warning "Failed to launch Samsung Settings after ${Context}: $_"
-        Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
-        if (-not $AutoInstall) {
-            Read-Host "  Press Enter when ready..."
+        Write-Host "  ⚠ Direct app launch did not surface Samsung Settings." -ForegroundColor Yellow
+        Write-Host "  Retrying through explorer.exe for the interactive desktop session..." -ForegroundColor Gray
+
+        try {
+            Start-Process -FilePath "explorer.exe" -ArgumentList "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+            $launchCommandSucceeded = $true
         }
-        return $false
+        catch {
+            Write-Warning "Failed to launch Samsung Settings after ${Context}: $_"
+            Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
+            if (-not $AutoInstall) {
+                Read-Host "  Press Enter when ready..."
+            }
+            return $false
+        }
+    }
+
+    if ($launchCommandSucceeded) {
+        Write-Host "  Launch command sent. Waiting for Samsung Settings window/background tasks..." -ForegroundColor Gray
     }
 
     $launchVerified = $false
-    for ($attempt = 0; $attempt -lt 5; $attempt++) {
-        Start-Sleep -Seconds 2
-        $currentProcessIds = @(
-            Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty Id
-        )
+    $engineTaskStarted = $false
+    $extensionTaskStarted = $false
+    $pollIntervalSeconds = 2
+    $attemptLimit = [Math]::Max(1, [Math]::Ceiling($MaxWaitSeconds / $pollIntervalSeconds))
 
-        if ($currentProcessIds.Count -gt 0 -and @($currentProcessIds | Where-Object { $_ -notin $existingProcessIds }).Count -gt 0) {
+    for ($attempt = 0; $attempt -lt $attemptLimit; $attempt++) {
+        Start-Sleep -Seconds 2
+        $currentProcesses = Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue
+        $newProcessIds = @($currentProcesses | Select-Object -ExpandProperty Id | Where-Object { $_ -notin $existingProcessIds })
+
+        if (@($currentProcesses | Where-Object { $_.ProcessName -eq "SettingsEngineTest" }).Count -gt 0) {
+            $engineTaskStarted = $true
+        }
+        if (@($currentProcesses | Where-Object { $_.ProcessName -eq "SettingsExtensionLauncher" }).Count -gt 0) {
+            $extensionTaskStarted = $true
+        }
+
+        if ($newProcessIds.Count -gt 0) {
             $launchVerified = $true
             break
+        }
+
+        if (($attempt + 1) -eq 5 -and -not $AutoInstall) {
+            Write-Host "  Still waiting for Samsung Settings background tasks to start..." -ForegroundColor Gray
         }
     }
 
     if ($launchVerified) {
         Write-Host "  ✓ Samsung Settings launched successfully" -ForegroundColor Green
+        if ($engineTaskStarted -and $extensionTaskStarted) {
+            Write-Host "  ✓ Background tasks started: SettingsEngineTest, SettingsExtensionLauncher" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  ⚠ Samsung Settings opened, but background task detection was incomplete." -ForegroundColor Yellow
+            Write-Host "    • SettingsEngineTest: $engineTaskStarted" -ForegroundColor Gray
+            Write-Host "    • SettingsExtensionLauncher: $extensionTaskStarted" -ForegroundColor Gray
+        }
         if ($ShowBluetoothSyncInstructions) {
             Write-Host "`n  IMPORTANT: Check that Samsung Settings opened." -ForegroundColor Yellow
             Write-Host "  For Galaxy Buds multipoint visibility, follow these steps:" -ForegroundColor Cyan
@@ -4067,12 +4107,72 @@ function Start-SamsungSettingsAndVerify {
     }
 
     Write-Host "  ⚠ Samsung Settings launch was attempted, but a new Settings process was not detected." -ForegroundColor Yellow
+    Write-Host "  Background task detection status:" -ForegroundColor Yellow
+    Write-Host "    • SettingsEngineTest: $engineTaskStarted" -ForegroundColor Gray
+    Write-Host "    • SettingsExtensionLauncher: $extensionTaskStarted" -ForegroundColor Gray
     Write-Host "  Please open Samsung Settings manually from Start Menu and confirm it opens." -ForegroundColor Yellow
     if (-not $AutoInstall) {
         Read-Host "  Press Enter when ready..."
     }
 
     return $false
+}
+
+function Start-GalaxyBookScheduledTasks {
+    param(
+        [bool]$TestMode = $false
+    )
+
+    if ($TestMode) {
+        Write-Host "`n[TEST] Would start scheduled tasks: $taskName, $multiControlTaskName" -ForegroundColor Gray
+        return $true
+    }
+
+    $tasksToStart = @($taskName, $multiControlTaskName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    if ($tasksToStart.Count -eq 0) {
+        return $false
+    }
+
+    Write-Host "`nStarting Galaxy Book scheduled tasks..." -ForegroundColor Cyan
+    $startedCount = 0
+
+    foreach ($scheduledTaskName in $tasksToStart) {
+        $task = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+        if (-not $task) {
+            Write-Host "  ⚠ Scheduled task not found: $scheduledTaskName" -ForegroundColor Yellow
+            continue
+        }
+
+        try {
+            $taskInfoBefore = Get-ScheduledTaskInfo -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+            Start-ScheduledTask -TaskName $scheduledTaskName -ErrorAction Stop
+
+            $started = $false
+            for ($attempt = 0; $attempt -lt 10; $attempt++) {
+                Start-Sleep -Seconds 1
+                $taskInfoAfter = Get-ScheduledTaskInfo -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+                $taskState = (Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue).State
+
+                if ($taskState -eq 'Running' -or ($taskInfoAfter -and $taskInfoBefore -and $taskInfoAfter.LastRunTime -gt $taskInfoBefore.LastRunTime)) {
+                    $started = $true
+                    break
+                }
+            }
+
+            if ($started) {
+                Write-Host "  ✓ Started scheduled task: $scheduledTaskName" -ForegroundColor Green
+                $startedCount++
+            }
+            else {
+                Write-Host "  ⚠ Could not confirm task start: $scheduledTaskName" -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host "  ⚠ Failed to start scheduled task '$scheduledTaskName': $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    return ($startedCount -gt 0)
 }
 
 function Install-SystemSupportEngine {
@@ -5086,9 +5186,12 @@ function Install-SystemSupportEngine {
                 # DUAL-VERSION PHASE 2: Core Apps & Binary Replacement
                 # ==============================================================================
                 
-                # 1. Install Core Packages (Samsung Settings, etc.)
+                # 1. Install core packages before launching Samsung Settings, but leave Samsung Settings itself for last.
                 Write-Host "`n  [DUAL-VERSION] Installing Core Packages..." -ForegroundColor Cyan
-                Install-SamsungPackages -Packages $script:PackageDatabase.Core -TestMode $TestMode
+                $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
+                $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
+                $null = Start-GalaxyBookScheduledTasks -TestMode $TestMode
+                $null = Install-SamsungPackages -Packages @($script:PackageDatabase.Core | Where-Object { $_.Name -eq "Samsung Settings" }) -TestMode $TestMode
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
@@ -5237,53 +5340,50 @@ function Install-SystemSupportEngine {
             Write-Host "  • ... and $((Get-ChildItem -Path $InstallPath -File).Count - 10) more files" -ForegroundColor Gray
         }
         
-        # Reinstall Samsung Settings and Settings Runtime from Store
-        Write-Host "`nReinstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
-        
-        $samsungPackages = @(
-            @{
-                Name = "Samsung Settings"
-                Id   = "9P2TBWSHK6HJ"
-            },
-            @{
-                Name = "Samsung Settings Runtime"
-                Id   = "9NL68DVFP841"
-            }
-        )
-        
-        foreach ($pkg in $samsungPackages) {
-            Write-Host "  Installing $($pkg.Name)..." -ForegroundColor Gray
-            if ($TestMode) {
-                Write-Host "    [TEST] Would install $($pkg.Name) via winget" -ForegroundColor Gray
-            }
-            else {
-                try {
-                    $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 900
-                    if ($installResult.TimedOut) {
-                        Write-Host "    ✗ winget timed out while installing $($pkg.Name)" -ForegroundColor Red
-                        Write-Host "      Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
-                        continue
-                    }
+        # Install core dependencies before launching Samsung Settings.
+        Write-Host "`nInstalling core Samsung apps required before Samsung Settings launch..." -ForegroundColor Cyan
+        $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
+        $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
 
+        $null = Start-GalaxyBookScheduledTasks -TestMode $TestMode
+
+        Write-Host "`nInstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
+        $settingsPackage = @{
+            Name = "Samsung Settings"
+            Id   = "9P2TBWSHK6HJ"
+        }
+
+        Write-Host "  Installing $($settingsPackage.Name)..." -ForegroundColor Gray
+        if ($TestMode) {
+            Write-Host "    [TEST] Would install $($settingsPackage.Name) via winget" -ForegroundColor Gray
+        }
+        else {
+            try {
+                $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $settingsPackage.Id) -TimeoutSeconds 900
+                if ($installResult.TimedOut) {
+                    Write-Host "    ✗ winget timed out while installing $($settingsPackage.Name)" -ForegroundColor Red
+                    Write-Host "      Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
+                }
+                else {
                     $installOutput = $installResult.Output
                     
                     if ($installOutput -match "Successfully installed|Installation completed successfully") {
-                        Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
+                        Write-Host "    ✓ $($settingsPackage.Name) installed" -ForegroundColor Green
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
-                        Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
+                        Write-Host "    ✓ $($settingsPackage.Name) already present" -ForegroundColor Green
                     }
                     elseif ($installOutput -match "0x80d03805|0x80D03805") {
                         Write-Host "    ⚠ Store connection error - will install after reboot" -ForegroundColor Yellow
                     }
                     else {
-                        Write-Host "    ⚠ $($pkg.Name) - may install automatically after reboot" -ForegroundColor Yellow
+                        Write-Host "    ⚠ $($settingsPackage.Name) - may install automatically after reboot" -ForegroundColor Yellow
                     }
                 }
-                catch {
-                    Write-Host "    ⚠ Could not install $($pkg.Name) automatically" -ForegroundColor Yellow
-                    Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
-                }
+            }
+            catch {
+                Write-Host "    ⚠ Could not install $($settingsPackage.Name) automatically" -ForegroundColor Yellow
+                Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
             }
         }
 
