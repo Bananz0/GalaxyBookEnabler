@@ -74,7 +74,7 @@ param(
     [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
     [string]$AutonomousSsseExistingMode = "Upgrade",
     [ValidateSet("Dual", "Stable", "Latest", "Manual")]
-    [string]$AutonomousSsseStrategy = "Dual",
+    [string]$AutonomousSsseStrategy = "Latest",
     [string]$AutonomousSsseVersion,
     [bool]$AutonomousRemoveExistingSettings = $true,
     [bool]$AutonomousDisableOriginalService = $true,
@@ -3996,6 +3996,85 @@ function Update-SSSEBinary {
     return $true
 }
 
+function Start-SamsungSettingsAndVerify {
+    param(
+        [bool]$TestMode = $false,
+        [bool]$AutoInstall = $false,
+        [string]$Context = "SSSE installation",
+        [bool]$ShowBluetoothSyncInstructions = $false
+    )
+
+    $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
+
+    Write-Host "`nLaunching Samsung Settings..." -ForegroundColor Cyan
+
+    if ($TestMode) {
+        Write-Host "  [TEST] Would launch Samsung Settings app after $Context" -ForegroundColor Gray
+        return $true
+    }
+
+    $installedSettings = Get-AppxPackage -AllUsers -Name "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5" -ErrorAction SilentlyContinue
+    if (-not $installedSettings) {
+        Write-Host "  ⚠ Samsung Settings is not installed yet, so launch could not be verified." -ForegroundColor Yellow
+        return $false
+    }
+
+    $existingProcessIds = @(
+        Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Id
+    )
+
+    try {
+        Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Failed to launch Samsung Settings after ${Context}: $_"
+        Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
+        if (-not $AutoInstall) {
+            Read-Host "  Press Enter when ready..."
+        }
+        return $false
+    }
+
+    $launchVerified = $false
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        Start-Sleep -Seconds 2
+        $currentProcessIds = @(
+            Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty Id
+        )
+
+        if ($currentProcessIds.Count -gt 0 -and @($currentProcessIds | Where-Object { $_ -notin $existingProcessIds }).Count -gt 0) {
+            $launchVerified = $true
+            break
+        }
+    }
+
+    if ($launchVerified) {
+        Write-Host "  ✓ Samsung Settings launched successfully" -ForegroundColor Green
+        if ($ShowBluetoothSyncInstructions) {
+            Write-Host "`n  IMPORTANT: Check that Samsung Settings opened." -ForegroundColor Yellow
+            Write-Host "  For Galaxy Buds multipoint visibility, follow these steps:" -ForegroundColor Cyan
+            Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
+            Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
+            Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
+            Write-Host "    4. Open Samsung Cloud from that page" -ForegroundColor White
+            Write-Host "    5. Click 'Sync now'" -ForegroundColor White
+            Write-Host "    6. Verify your paired Samsung Buds/devices are visible" -ForegroundColor White
+            Write-Host "       (Buds2/3 variants may still vary by firmware support)" -ForegroundColor Gray
+        }
+        return $true
+    }
+
+    Write-Host "  ⚠ Samsung Settings launch was attempted, but a new Settings process was not detected." -ForegroundColor Yellow
+    Write-Host "  Please open Samsung Settings manually from Start Menu and confirm it opens." -ForegroundColor Yellow
+    if (-not $AutoInstall) {
+        Read-Host "  Press Enter when ready..."
+    }
+
+    return $false
+}
+
 function Install-SystemSupportEngine {
     <#
     .SYNOPSIS
@@ -4029,7 +4108,7 @@ function Install-SystemSupportEngine {
         [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
         [string]$AutoExistingInstallMode = "Upgrade",
         [ValidateSet("Dual", "Stable", "Latest", "Manual")]
-        [string]$AutoStrategy = "Dual",
+        [string]$AutoStrategy = "Latest",
         [string]$AutoVersion = $null,
         [bool]$AutoRemoveExistingSettings = $true,
         [bool]$AutoDisableOriginalService = $true
@@ -4346,12 +4425,13 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Download CAB - Dual Version Strategy for Fresh Install
+    # Download CAB - direct install uses latest SSSE by default.
+    # The legacy dual-version path remains below for reference, but is intentionally disabled.
     Write-Host "`n========================================" -ForegroundColor Cyan
     Write-Host "  SSSE Installation Strategy" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     
-    # Use ForceVersion if provided (for quick upgrades), otherwise use dual-version strategy
+    # Use ForceVersion if provided (for quick upgrades), otherwise prefer a direct install.
     if ($ForceVersion) {
         $cabVersion = $ForceVersion
         $installedVersion = $ForceVersion  # Track installed version
@@ -4360,19 +4440,18 @@ function Install-SystemSupportEngine {
     }
     else {
         Write-Host ""
-        Write-Host "  Recommended: In-place upgrade strategy" -ForegroundColor Green
-        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest $LATEST_SSSE_VERSION" -ForegroundColor Gray
-        Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
+        Write-Host "  Recommended: Direct install" -ForegroundColor Green
+        Write-Host "    • Install and patch SSSE $LATEST_SSSE_VERSION directly" -ForegroundColor Gray
+        Write-Host "    • Legacy dual-version upgrade flow is currently disabled" -ForegroundColor Gray
         Write-Host ""
 
         if ($AutoInstall) {
             switch ($AutoStrategy) {
                 "Dual" {
-                    $cabVersion = "6.1.8.0"
-                    $driverVersion = $LATEST_SSSE_VERSION
+                    $cabVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
-                    $useDualVersionStrategy = $true
-                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> $LATEST_SSSE_VERSION)" -ForegroundColor Green
+                    $useDualVersionStrategy = $false
+                    Write-Host "  ⚠ Dual-version strategy requested but disabled; using direct install of $LATEST_SSSE_VERSION" -ForegroundColor Yellow
                 }
                 "Stable" {
                     $cabVersion = "6.3.3.0"
@@ -4388,7 +4467,7 @@ function Install-SystemSupportEngine {
                 }
                 default {
                     if (-not $AutoVersion) {
-                        $AutoVersion = "6.3.3.0"
+                        $AutoVersion = $LATEST_SSSE_VERSION
                     }
                     $cabVersion = $AutoVersion
                     $installedVersion = $cabVersion
@@ -4398,39 +4477,10 @@ function Install-SystemSupportEngine {
             }
         }
         else {
-            $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
-            
-            if ($strategyChoice -like "n*") {
-                # Fallback to manual version selection
-                Write-Host ""
-                Write-Host "  Available versions:" -ForegroundColor Yellow
-                Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
-                Write-Host "    [2] $LATEST_SSSE_VERSION - Latest" -ForegroundColor White
-                Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
-                Write-Host ""
-                
-                $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
-                
-                $cabVersion = switch ($versionChoice) {
-                    "2" { $LATEST_SSSE_VERSION }
-                    "3" { $null }  # Will show interactive menu
-                    default { "6.3.3.0" }
-                }
-                
-                if ($cabVersion) {
-                    Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
-                }
-                $installedVersion = $cabVersion  # Track installed version for single-version install
-                $useDualVersionStrategy = $false
-            }
-            else {
-                # Use dual-version strategy
-                $cabVersion = "6.1.8.0"  # Primary version for patched exe
-                $driverVersion = $LATEST_SSSE_VERSION  # Driver version for DriverStore and binary replacement
-                $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
-                $useDualVersionStrategy = $true
-                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to $LATEST_SSSE_VERSION" -ForegroundColor Green
-            }
+            $cabVersion = $LATEST_SSSE_VERSION
+            $installedVersion = $cabVersion
+            $useDualVersionStrategy = $false
+            Write-Host "  ✓ Direct install selected: $cabVersion" -ForegroundColor Cyan
         }
     }
     
@@ -5042,37 +5092,9 @@ function Install-SystemSupportEngine {
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
-                if ($TestMode) {
-                    Write-Host "  [TEST] Would launch Samsung Settings app" -ForegroundColor Gray
-                }
-                else {
-                    try {
-                        # Samsung Settings AppID
-                        $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
-                        Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
-                        Write-Host "  ✓ Samsung Settings launched" -ForegroundColor Green
-                        
-                        # Wait for user confirmation or delay
-                        Write-Host "`n  IMPORTANT: Check if Samsung Settings opened." -ForegroundColor Yellow
-                        Write-Host "  Please follow these steps to sync your devices:" -ForegroundColor Cyan
-                        Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
-                        Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
-                        Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
-                        Write-Host "    4. Click on it to open Samsung Cloud" -ForegroundColor White
-                        Write-Host "    5. Click 'Sync now'" -ForegroundColor White
-                        Write-Host "    6. Verify it shows your paired Samsung devices" -ForegroundColor White
-                        Write-Host "       (Note: Buds2/3 (Pro/Non-Pro) may not appear if they don't support multipoint)" -ForegroundColor Gray
-                        Write-Host ""
-                        Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
-                        if (-not $AutoInstall) { Read-Host }
-                    }
-                    catch {
-                        Write-Warning "Failed to launch Samsung Settings: $_"
-                        Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
-                        Write-Host "  Then follow the sync instructions above." -ForegroundColor Gray
-                        if (-not $AutoInstall) { Read-Host "  Press Enter when ready..." }
-                    }
-                }
+                $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
+                Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
+                if (-not $AutoInstall) { Read-Host }
                 
                 # 3. Stop Services & Processes
                 Write-Host "`n  [DUAL-VERSION] Stopping services for binary replacement..." -ForegroundColor Cyan
@@ -5264,6 +5286,8 @@ function Install-SystemSupportEngine {
                 }
             }
         }
+
+        $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "SSSE install and Samsung Settings reinstall" -ShowBluetoothSyncInstructions $true
         
         Write-Host "`nNext Steps:" -ForegroundColor Cyan
         Write-Host "  1. Complete the rest of the installer" -ForegroundColor White
