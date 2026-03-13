@@ -4001,8 +4001,7 @@ function Start-SamsungSettingsAndVerify {
         [bool]$TestMode = $false,
         [bool]$AutoInstall = $false,
         [string]$Context = "SSSE installation",
-        [bool]$ShowBluetoothSyncInstructions = $false,
-        [int]$MaxWaitSeconds = 30
+        [bool]$ShowBluetoothSyncInstructions = $false
     )
 
     $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
@@ -4019,11 +4018,6 @@ function Start-SamsungSettingsAndVerify {
         Write-Host "  ⚠ Samsung Settings is not installed yet, so launch could not be verified." -ForegroundColor Yellow
         return $false
     }
-
-    $existingProcessIds = @(
-        Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty Id
-    )
 
     $launchCommandSucceeded = $false
 
@@ -4051,47 +4045,7 @@ function Start-SamsungSettingsAndVerify {
     }
 
     if ($launchCommandSucceeded) {
-        Write-Host "  Launch command sent. Waiting for Samsung Settings window/background tasks..." -ForegroundColor Gray
-    }
-
-    $launchVerified = $false
-    $engineTaskStarted = $false
-    $extensionTaskStarted = $false
-    $pollIntervalSeconds = 2
-    $attemptLimit = [Math]::Max(1, [Math]::Ceiling($MaxWaitSeconds / $pollIntervalSeconds))
-
-    for ($attempt = 0; $attempt -lt $attemptLimit; $attempt++) {
-        Start-Sleep -Seconds 2
-        $currentProcesses = Get-Process -Name "SamsungSettings", "SettingsEngineTest", "SettingsExtensionLauncher" -ErrorAction SilentlyContinue
-        $newProcessIds = @($currentProcesses | Select-Object -ExpandProperty Id | Where-Object { $_ -notin $existingProcessIds })
-
-        if (@($currentProcesses | Where-Object { $_.ProcessName -eq "SettingsEngineTest" }).Count -gt 0) {
-            $engineTaskStarted = $true
-        }
-        if (@($currentProcesses | Where-Object { $_.ProcessName -eq "SettingsExtensionLauncher" }).Count -gt 0) {
-            $extensionTaskStarted = $true
-        }
-
-        if ($newProcessIds.Count -gt 0) {
-            $launchVerified = $true
-            break
-        }
-
-        if (($attempt + 1) -eq 5 -and -not $AutoInstall) {
-            Write-Host "  Still waiting for Samsung Settings background tasks to start..." -ForegroundColor Gray
-        }
-    }
-
-    if ($launchVerified) {
-        Write-Host "  ✓ Samsung Settings launched successfully" -ForegroundColor Green
-        if ($engineTaskStarted -and $extensionTaskStarted) {
-            Write-Host "  ✓ Background tasks started: SettingsEngineTest, SettingsExtensionLauncher" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  ⚠ Samsung Settings opened, but background task detection was incomplete." -ForegroundColor Yellow
-            Write-Host "    • SettingsEngineTest: $engineTaskStarted" -ForegroundColor Gray
-            Write-Host "    • SettingsExtensionLauncher: $extensionTaskStarted" -ForegroundColor Gray
-        }
+        Write-Host "  ✓ Samsung Settings launch command sent" -ForegroundColor Green
         if ($ShowBluetoothSyncInstructions) {
             Write-Host "`n  IMPORTANT: Check that Samsung Settings opened." -ForegroundColor Yellow
             Write-Host "  For Galaxy Buds multipoint visibility, follow these steps:" -ForegroundColor Cyan
@@ -4106,10 +4060,6 @@ function Start-SamsungSettingsAndVerify {
         return $true
     }
 
-    Write-Host "  ⚠ Samsung Settings launch was attempted, but a new Settings process was not detected." -ForegroundColor Yellow
-    Write-Host "  Background task detection status:" -ForegroundColor Yellow
-    Write-Host "    • SettingsEngineTest: $engineTaskStarted" -ForegroundColor Gray
-    Write-Host "    • SettingsExtensionLauncher: $extensionTaskStarted" -ForegroundColor Gray
     Write-Host "  Please open Samsung Settings manually from Start Menu and confirm it opens." -ForegroundColor Yellow
     if (-not $AutoInstall) {
         Read-Host "  Press Enter when ready..."
