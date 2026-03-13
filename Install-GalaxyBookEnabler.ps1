@@ -1417,7 +1417,7 @@ function Show-ArrowMenu {
     $viewportSize = $Items.Count
     $viewportStartIndex = 0
     $previousRenderLineCount = 0
-    if ($Host.UI -and $Host.UI.SupportsVirtualTerminal) {
+    if ($Host.UI -and $Host.UI.RawUI) {
         try {
             $menuStartRow = $Host.UI.RawUI.CursorPosition.Y
             $availableRows = $Host.UI.RawUI.WindowSize.Height - $menuStartRow
@@ -1630,6 +1630,89 @@ function Show-RegionMenu {
     return $selection.Code
 }
 
+function Get-GalaxyBookGenerationMenu {
+    return @(
+        [pscustomobject]@{ Label = 'Galaxy Book5'; Description = 'Current Book5 family models'; Generation = 'Book5' },
+        [pscustomobject]@{ Label = 'Galaxy Book4'; Description = 'Book4, Pro, Ultra, and 360 models'; Generation = 'Book4' },
+        [pscustomobject]@{ Label = 'Galaxy Book3'; Description = 'Book3, Pro, Ultra, and 360 models'; Generation = 'Book3' },
+        [pscustomobject]@{ Label = 'Older Samsung PCs'; Description = 'Book2, Galaxy Book Series, and Notebook 9'; Generation = 'Legacy' },
+        [pscustomobject]@{ Label = 'Legacy Default'; Description = 'Quick-pick Galaxy Book3 Ultra (960XFH)'; Selector = '960XFH' }
+    )
+}
+
+function Get-GalaxyBookFamiliesForGeneration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Generation
+    )
+
+    switch ($Generation) {
+        'Book5' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book5*' -or $_.Key -eq 'Book5360' } | Sort-Object Order
+        }
+        'Book4' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book4*' } | Sort-Object Order
+        }
+        'Book3' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book3*' } | Sort-Object Order
+        }
+        'Legacy' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -notlike 'Book5*' -and $_.Key -ne 'Book5360' -and $_.Key -notlike 'Book4*' -and $_.Key -notlike 'Book3*' } | Sort-Object Order
+        }
+        default {
+            return @()
+        }
+    }
+}
+
+function New-ModelSelectionHeaderRenderer {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Title,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+
+        [string]$AccentColor = 'Cyan',
+
+        [string]$SelectedGenerationLabel
+    )
+
+    $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
+    $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
+    $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
+    $statusBoxInnerWidth = $statusBoxTop.Length - 2
+
+    $writeStatusBoxTextLine = {
+        param(
+            [string]$Text,
+            [string]$Color = 'White'
+        )
+
+        $content = if ($Text.Length -gt $statusBoxInnerWidth) {
+            $Text.Substring(0, $statusBoxInnerWidth)
+        }
+        else {
+            $Text.PadRight($statusBoxInnerWidth)
+        }
+
+        Write-Host ("│{0}│" -f $content) -ForegroundColor $Color
+    }.GetNewClosure()
+
+    return {
+        Write-Host $statusBoxTop -ForegroundColor $AccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $Title) $AccentColor
+        Write-Host $statusBoxDivider -ForegroundColor $AccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $Prompt) 'Yellow'
+        if ($SelectedGenerationLabel) {
+            & $writeStatusBoxTextLine ("  Selected generation: {0}" -f $SelectedGenerationLabel) 'Gray'
+        }
+        & $writeStatusBoxTextLine "  Use arrows or number keys to choose." 'DarkGray'
+        Write-Host $statusBoxBottom -ForegroundColor $AccentColor
+        Write-Host ""
+    }.GetNewClosure()
+}
+
 function Resolve-InteractiveIdentityData {
     param(
         [switch]$IncludeFullBiosVersion,
@@ -1638,21 +1721,35 @@ function Resolve-InteractiveIdentityData {
         [string]$ConfigurationBackupSuffix
     )
 
-    $menuItems = @()
-    $menuItems += $GalaxyBookFamilies | Sort-Object Order | ForEach-Object {
-        [pscustomobject]@{
-            Label = $_.Label
-            Description = ($_.Models -join ', ')
-            Selector = $_.Label
+    $selectedModel = $null
+    while (-not $selectedModel) {
+        $renderGenerationHeader = New-ModelSelectionHeaderRenderer -Title 'Galaxy Book Model Selection' -Prompt 'Choose the generation to use.'
+        $selectedGeneration = Show-ArrowMenu -Items (Get-GalaxyBookGenerationMenu) -AllowEscape -ShowNumbers -AllowNumberInput -RenderHeader $renderGenerationHeader
+        if (-not $selectedGeneration) {
+            return $null
         }
-    }
-    $menuItems += [pscustomobject]@{
-        Label = 'Legacy Default'
-        Description = 'Galaxy Book3 Ultra'
-        Selector = '960XFH'
+
+        if ($selectedGeneration.PSObject.Properties.Match('Selector').Count -gt 0 -and $selectedGeneration.Selector) {
+            $selectedModel = $selectedGeneration
+            break
+        }
+
+        $familyItems = @(Get-GalaxyBookFamiliesForGeneration -Generation $selectedGeneration.Generation | ForEach-Object {
+            [pscustomobject]@{
+                Label = $_.Label
+                Description = ($_.Models -join ', ')
+                Selector = $_.Label
+            }
+        })
+        if (-not $familyItems -or $familyItems.Count -eq 0) {
+            continue
+        }
+
+        $generationPrompt = "Choose the profile to use. Esc returns to generation selection."
+        $renderFamilyHeader = New-ModelSelectionHeaderRenderer -Title "$($selectedGeneration.Label) Models" -Prompt $generationPrompt -SelectedGenerationLabel $selectedGeneration.Label
+        $selectedModel = Show-ArrowMenu -Items $familyItems -AllowEscape -ShowNumbers -AllowNumberInput -RenderHeader $renderFamilyHeader
     }
 
-    $selectedModel = Show-ArrowMenu -Title "Galaxy Book Model Selection" -Prompt "Choose the profile to use." -Items $menuItems
     if (-not $selectedModel) {
         return $null
     }
