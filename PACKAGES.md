@@ -15,7 +15,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Samsung Settings Runtime | 9NL68DVFP841 | Required runtime for Settings |
 | Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
 | Knox Matrix for Windows | 9NJRV1DT8N79 | Samsung Knox security synchronization |
-| Samsung Continuity Service | 9NGW9K44GQ5F | Cross-device continuity |
+| Galaxy Connect | 9NGW9K44GQ5F | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
 | Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features (shows available Samsung apps) |
@@ -159,7 +159,7 @@ Deprecated versions - use newer alternatives instead.
 - Samsung Settings + Runtime
 - Samsung Cloud
 - Knox Matrix for Windows
-- Samsung Continuity Service
+- Galaxy Connect
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
 - Galaxy Book Experience

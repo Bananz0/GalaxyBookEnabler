@@ -150,7 +150,7 @@ Essential packages for basic Samsung ecosystem functionality:
 - Samsung Settings + Runtime
 - Samsung Cloud
 - Knox Matrix for Windows
-- Samsung Continuity Service
+- Galaxy Connect
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
 - Galaxy Book Experience
@@ -204,7 +204,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
 | Samsung Cloud Assistant | ✅ Working | No | Required |
-| Samsung Continuity Service | ✅ Working | No | Required |
+| Galaxy Connect | ✅ Working | No | Required |
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |

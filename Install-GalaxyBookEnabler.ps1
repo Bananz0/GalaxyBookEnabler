@@ -2227,7 +2227,7 @@ $SamsungPackages = @{
     }
     "Continuity"      = @{ 
         Family    = "SAMSUNGELECTRONICSCoLtd.SamsungContinuityService_wyx1vj98g3asy"
-        Name      = "Samsung Continuity Service"
+        Name      = "Galaxy Connect"
         Critical  = $false
         Databases = @("PCMCFCoreDB.db", "PCMCFRsDB.db")
     }
@@ -3306,7 +3306,7 @@ $script:PackageDatabase = @{
             Required    = $true
         },
         @{
-            Name        = "Samsung Continuity Service"
+            Name        = "Galaxy Connect"
             Id          = "9NGW9K44GQ5F"
             Category    = "Core"
             Description = "Enables cross-device continuity features"
@@ -4120,7 +4120,8 @@ function Start-SamsungSettingsAndVerify {
 
 function Start-GalaxyBookScheduledTasks {
     param(
-        [bool]$TestMode = $false
+        [bool]$TestMode = $false,
+        [bool]$RequireRegistryTask = $false
     )
 
     if ($TestMode) {
@@ -4169,6 +4170,27 @@ function Start-GalaxyBookScheduledTasks {
         }
         catch {
             Write-Host "  ⚠ Failed to start scheduled task '$scheduledTaskName': $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    if ($RequireRegistryTask -and ($tasksToStart -contains $taskName)) {
+        $registryTaskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        $registryTaskState = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
+        $registryTaskRan = $false
+
+        if ($registryTaskState -eq 'Running') {
+            $registryTaskRan = $true
+        }
+        elseif ($registryTaskInfo) {
+            $registryTaskRan = ($registryTaskInfo.LastRunTime -gt [datetime]'2000-01-01')
+        }
+
+        if ($registryTaskRan) {
+            Write-Host "  ✓ Confirmed registry-spoof task has run: $taskName" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  ⚠ Registry-spoof task could not be confirmed as run: $taskName" -ForegroundColor Yellow
+            return $false
         }
     }
 
@@ -5190,7 +5212,10 @@ function Install-SystemSupportEngine {
                 Write-Host "`n  [DUAL-VERSION] Installing Core Packages..." -ForegroundColor Cyan
                 $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
                 $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
-                $null = Start-GalaxyBookScheduledTasks -TestMode $TestMode
+                $scheduledTasksReady = Start-GalaxyBookScheduledTasks -TestMode $TestMode -RequireRegistryTask $true
+                if (-not $scheduledTasksReady) {
+                    throw "Registry-spoof startup task was not confirmed before core package installation"
+                }
                 $null = Install-SamsungPackages -Packages @($script:PackageDatabase.Core | Where-Object { $_.Name -eq "Samsung Settings" }) -TestMode $TestMode
                 
                 # 2. Launch Samsung Settings to trigger Store update
@@ -5345,7 +5370,10 @@ function Install-SystemSupportEngine {
         $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
         $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
 
-        $null = Start-GalaxyBookScheduledTasks -TestMode $TestMode
+        $scheduledTasksReady = Start-GalaxyBookScheduledTasks -TestMode $TestMode -RequireRegistryTask $true
+        if (-not $scheduledTasksReady) {
+            throw "Registry-spoof startup task was not confirmed before core package installation"
+        }
 
         Write-Host "`nInstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
         $settingsPackage = @{

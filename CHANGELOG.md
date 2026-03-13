@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed Samsung Continuity Service to Galaxy Connect
 - Inlined the identity resolver into `Install-GalaxyBookEnabler.ps1`
 - Expanded `-AutonomousModel` to accept family/profile selections in addition to exact model codes
 - Switched model and region selection flow to arrow-key navigation
@@ -434,7 +435,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scheduled task for startup execution
 - Manual package installation prompts
 - Support for:
-  - Samsung Continuity Service
+  - Galaxy Connect
   - Samsung Account
   - Samsung Cloud Assistant
   - Quick Share
