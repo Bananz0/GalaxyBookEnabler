@@ -5985,134 +5985,139 @@ function Show-PackageSelectionMenu {
     param (
         [bool]$HasIntelWiFi
     )
-    
-    # Pre-calculate installed status
+
     Write-Host "Checking installed packages..." -ForegroundColor DarkGray
     $installedPkgs = Get-InstalledSamsungPackages
-    
-    # Helper to check if a profile is fully installed
-    function Test-ProfileStatus {
-        param($ProfilePackages)
+
+    $profileDefinitions = @(
+        [pscustomobject]@{ Label = 'Recommended'; Profile = '2'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended); Description = 'Core plus the essential working Samsung apps.'; DefaultColor = 'Green' },
+        [pscustomobject]@{ Label = 'Recommended Plus'; Profile = '3'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus); Description = 'Recommended plus additional working apps.'; DefaultColor = 'Cyan' },
+        [pscustomobject]@{ Label = 'Full Experience'; Profile = '4'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps); Description = 'Adds packages that need extra setup after install.'; DefaultColor = 'Cyan' },
+        [pscustomobject]@{ Label = 'Everything'; Profile = '5'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking); Description = 'Includes all packages, including known non-working ones.'; DefaultColor = 'Magenta' },
+        [pscustomobject]@{ Label = 'Core Only'; Profile = '1'; Packages = $PackageDatabase.Core; Description = 'Essential packages only.'; DefaultColor = 'White' }
+    )
+
+    $testProfileStatus = {
+        param([object[]]$ProfilePackages)
+
         $total = $ProfilePackages.Count
         $installed = 0
-        
-        # Mapping of our DB names to actual AppX package name patterns
-        # Format: "DBNameWithSpacesRemoved" = "ActualAppXNamePattern"
-        $nameMapping = @{
-            "GalaxyBookExperience" = "SamsungWelcome"
-            "AISelect" = "SmartSelect"
-            "CameraShare" = "16297BCCB59BC"
-            "StorageShare" = "4438638898209"
-            "NearbyDevices" = "MyDevices"
-            "SamsungBluetoothSync" = "SamsungCloudBluetoothSync"
-            "SamsungGallery" = "PCGallery"
-            "SamsungIntelligenceService" = "SamsungIntelligence"
-            "SamsungStudioforGallery" = "SamsungStudioForGallery"
-            "SamsungScreenRecorder" = "SamsungScreenRecording"
-            "SamsungFlow" = "SamsungFlux"
-            "SmartThings" = "SmartThingsWindows"
-            "GalaxyBookSmartSwitch" = "SmartSwitchforGalaxyBook"
-            "LiveWallpaper" = "Sidia.LiveWallpaper"
-            "SamsungDeviceCare" = "SamsungPCCleaner"
-        }
-        
-        foreach ($p in $ProfilePackages) {
-            $dbName = $p.Name.Replace(" ", "")  # "Samsung Settings" -> "SamsungSettings"
-            $isInstalled = $false
-            
-            # Check if there's a special mapping for this package
-            $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
-            
-            foreach ($installedName in $installedPkgs) {
-                # Check if the installed package name contains our search name (case-insensitive)
-                if ($installedName -like "*$searchName*") {
-                    $isInstalled = $true
-                    break
-                }
+        foreach ($package in $ProfilePackages) {
+            if (Test-SamsungPackageInstalled -Package $package -InstalledPackages $installedPkgs) {
+                $installed++
             }
-            
-            if ($isInstalled) { $installed++ }
         }
+
         return @{ Total = $total; Installed = $installed }
     }
-    
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Samsung Package Selection" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    # Note about AI Select configuration step
-    Write-Host "Tip: If you include 'AI Select', a shortcut setup step appears later." -ForegroundColor Gray
-    Write-Host "" 
 
-    Write-Host "Select installation profile:`n" -ForegroundColor Yellow
-    
-    # [1] Core Only
-    $coreStatus = Test-ProfileStatus $PackageDatabase.Core
-    $coreColor = if ($coreStatus.Installed -eq $coreStatus.Total) { "Green" } elseif ($coreStatus.Installed -gt 0) { "Yellow" } else { "White" }
-    $coreText = if ($coreStatus.Installed -eq $coreStatus.Total) { "[Installed]" } elseif ($coreStatus.Installed -gt 0) { "[$($coreStatus.Installed)/$($coreStatus.Total) Installed]" } else { "" }
-    
-    Write-Host "  [1] Core Only $coreText" -ForegroundColor $coreColor
-    Write-Host "      Essential packages only (Account, Settings, Cloud)" -ForegroundColor Gray
-    Write-Host ""
-    
-    # [2] Recommended
-    $recPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended
-    $recStatus = Test-ProfileStatus $recPkgs
-    $recColor = if ($recStatus.Installed -eq $recStatus.Total) { "Green" } elseif ($recStatus.Installed -gt 0) { "Yellow" } else { "Green" }
-    $recText = if ($recStatus.Installed -eq $recStatus.Total) { "[Installed]" } elseif ($recStatus.Installed -gt 0) { "[$($recStatus.Installed)/$($recStatus.Total) Installed]" } else { "" }
+    $formatStatus = {
+        param($Status)
 
-    Write-Host "  [2] Recommended $recText" -ForegroundColor $recColor
-    Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
-    if (-not $HasIntelWiFi) {
-        Write-Host "      ⚠ Note: Wireless features require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
-        Write-Host "      Compatibility varies by hardware - see documentation for details" -ForegroundColor Gray
+        if ($Status.Installed -eq $Status.Total) { return '[Installed]' }
+        if ($Status.Installed -gt 0) { return "[$($Status.Installed)/$($Status.Total)]" }
+        return '[Not Installed]'
     }
-    Write-Host ""
-    
-    # [3] Recommended Plus
-    $recPlusPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
-    $recPlusStatus = Test-ProfileStatus $recPlusPkgs
-    $recPlusColor = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "Green" } elseif ($recPlusStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
-    $recPlusText = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "[Installed]" } elseif ($recPlusStatus.Installed -gt 0) { "[$($recPlusStatus.Installed)/$($recPlusStatus.Total) Installed]" } else { "" }
 
-    Write-Host "  [3] Recommended Plus $recPlusText" -ForegroundColor $recPlusColor
-    Write-Host "      Recommended + Additional working apps (Studio, SmartThings, Screen Recorder, etc.)" -ForegroundColor Gray
-    Write-Host ""
-    
-    # [4] Full Experience
-    $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
-    $fullStatus = Test-ProfileStatus $fullPkgs
-    $fullColor = if ($fullStatus.Installed -eq $fullStatus.Total) { "Green" } elseif ($fullStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
-    $fullText = if ($fullStatus.Installed -eq $fullStatus.Total) { "[Installed]" } elseif ($fullStatus.Installed -gt 0) { "[$($fullStatus.Installed)/$($fullStatus.Total) Installed]" } else { "" }
+    $getStatusColor = {
+        param($Status, [string]$DefaultColor = 'White')
 
-    Write-Host "  [4] Full Experience $fullText" -ForegroundColor $fullColor
-    Write-Host "      Recommended Plus + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
-    Write-Host "      ⚠ Some apps need additional configuration after install" -ForegroundColor Yellow
-    Write-Host ""
-    
-    # [5] Everything
-    $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
-    $allStatus = Test-ProfileStatus $allPkgs
-    $allColor = if ($allStatus.Installed -eq $allStatus.Total) { "Green" } elseif ($allStatus.Installed -gt 0) { "Yellow" } else { "Magenta" }
-    $allText = if ($allStatus.Installed -eq $allStatus.Total) { "[Installed]" } elseif ($allStatus.Installed -gt 0) { "[$($allStatus.Installed)/$($allStatus.Total) Installed]" } else { "" }
+        if ($Status.Installed -eq $Status.Total) { return 'Green' }
+        if ($Status.Installed -gt 0) { return 'Yellow' }
+        return $DefaultColor
+    }
 
-    Write-Host "  [5] Everything $allText" -ForegroundColor $allColor
-    Write-Host "      All packages including non-working ones (Recovery, Update)" -ForegroundColor Gray
-    Write-Host "      ⚠ Some apps will NOT work on non-Samsung devices" -ForegroundColor Red
-    Write-Host ""
-    
-    Write-Host "  [6] Custom Selection" -ForegroundColor Yellow
-    Write-Host "      Pick individual packages" -ForegroundColor Gray
-    Write-Host ""
-    
-    Write-Host "  [7] Skip Package Installation" -ForegroundColor DarkGray
-    Write-Host ""
-    
-    do {
-        $choice = Read-Host "Enter choice [1-7]"
-    } while ($choice -notin "1", "2", "3", "4", "5", "6", "7")
-    
-    return $choice
+    $summaryLines = foreach ($definition in $profileDefinitions) {
+        $status = & $testProfileStatus $definition.Packages
+        [pscustomobject]@{
+            Label = $definition.Label
+            Value = & $formatStatus $status
+            Color = & $getStatusColor $status $definition.DefaultColor
+        }
+    }
+
+    $renderPackageHeader = {
+        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+        Write-Host "│  Samsung Package Selection                                 │" -ForegroundColor Cyan
+        Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+        foreach ($line in $summaryLines) {
+            $statusText = "$($line.Label): $($line.Value)"
+            $trimmed = if ($statusText.Length -gt 59) { $statusText.Substring(0, 59) } else { $statusText.PadRight(59) }
+            Write-Host ("│{0}│" -f $trimmed) -ForegroundColor $line.Color
+        }
+        Write-Host "│  AI Select adds a shortcut setup step later.              │" -ForegroundColor DarkGray
+        if (-not $HasIntelWiFi) {
+            Write-Host "│  Wireless features work best with Intel Wi-Fi/Bluetooth.  │" -ForegroundColor Yellow
+        }
+        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+        Write-Host ""
+    }.GetNewClosure()
+
+    $menuItems = foreach ($definition in $profileDefinitions) {
+        $status = & $testProfileStatus $definition.Packages
+        [pscustomobject]@{
+            Label       = "{0} {1}" -f $definition.Label, (& $formatStatus $status)
+            Description = $definition.Description
+            Selection   = $definition.Profile
+            Color       = & $getStatusColor $status $definition.DefaultColor
+        }
+    }
+
+    $menuItems += [pscustomobject]@{
+        Label       = 'Optional Packages'
+        Description = 'Build a custom install from category submenus. Core packages stay included.'
+        Selection   = 'Optional'
+        Color       = 'Yellow'
+    }
+
+    $menuItems += [pscustomobject]@{
+        Label       = 'Skip Package Installation'
+        Description = 'Do not install Samsung packages during this run.'
+        Selection   = 'Skip'
+        Color       = 'DarkGray'
+    }
+
+    $selection = Show-ArrowMenu -Items $menuItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderPackageHeader
+    return if ($selection) { $selection.Selection } else { 'Skip' }
+}
+
+function Test-SamsungPackageInstalled {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Package,
+
+        [Parameter(Mandatory = $true)]
+        [object]$InstalledPackages
+    )
+
+    $nameMapping = @{
+        "GalaxyBookExperience"      = "SamsungWelcome"
+        "AISelect"                  = "SmartSelect"
+        "CameraShare"               = "16297BCCB59BC"
+        "StorageShare"              = "4438638898209"
+        "NearbyDevices"             = "MyDevices"
+        "SamsungBluetoothSync"      = "SamsungCloudBluetoothSync"
+        "SamsungGallery"            = "PCGallery"
+        "SamsungIntelligenceService" = "SamsungIntelligence"
+        "SamsungStudioforGallery"   = "SamsungStudioForGallery"
+        "SamsungScreenRecorder"     = "SamsungScreenRecording"
+        "SamsungFlow"               = "SamsungFlux"
+        "SmartThings"               = "SmartThingsWindows"
+        "GalaxyBookSmartSwitch"     = "SmartSwitchforGalaxyBook"
+        "LiveWallpaper"             = "Sidia.LiveWallpaper"
+        "SamsungDeviceCare"         = "SamsungPCCleaner"
+    }
+
+    $dbName = $Package.Name.Replace(" ", "")
+    $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+
+    foreach ($installedName in $InstalledPackages) {
+        if ($installedName -like "*$searchName*") {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Get-PackagesByProfile {
@@ -6205,106 +6210,138 @@ function Show-CustomPackageSelection {
     param (
         [bool]$HasIntelWiFi
     )
-    
-    $selectedPackages = @()
+
+    $selectedPackages = [System.Collections.Generic.List[object]]::new()
     $installedPkgs = Get-InstalledSamsungPackages
-    
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Custom Package Selection" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    
-    # Group packages by category for better organization
-    $categories = @{
-        "Core"         = $PackageDatabase.Core
-        "Connectivity" = @()
-        "Productivity" = @()
-        "Media"        = @()
-        "Experience"   = @()
-        "Security"     = @()
-        "Maintenance"  = @()
-        "Other"        = @()
+
+    foreach ($pkg in $PackageDatabase.Core) {
+        [void]$selectedPackages.Add($pkg)
     }
-    
-    foreach ($pkg in ($PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking)) {
-        if ($categories.ContainsKey($pkg.Category)) {
-            $categories[$pkg.Category] += $pkg
+
+    $optionalPackages = $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+    $categoryOrder = @('Connectivity', 'Productivity', 'Media', 'Experience', 'Security', 'Maintenance', 'Other')
+    $categories = @{}
+    foreach ($category in $categoryOrder) {
+        $categories[$category] = [System.Collections.Generic.List[object]]::new()
+    }
+
+    foreach ($pkg in $optionalPackages) {
+        $targetCategory = if ($categories.ContainsKey($pkg.Category)) { $pkg.Category } else { 'Other' }
+        [void]$categories[$targetCategory].Add($pkg)
+    }
+
+    $renderSelectionHeader = {
+        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+        Write-Host "│  Optional Package Selection                                │" -ForegroundColor Cyan
+        Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+        $coreCount = $PackageDatabase.Core.Count
+        $optionalCount = [Math]::Max(0, $selectedPackages.Count - $coreCount)
+        $summary = ("  Core included: {0}   Optional selected: {1}" -f $coreCount, $optionalCount)
+        if ($summary.Length -gt 59) {
+            $summary = $summary.Substring(0, 59)
         }
         else {
-            $categories["Other"] += $pkg
+            $summary = $summary.PadRight(59)
         }
-    }
-    
-    # Core packages (required)
-    Write-Host "CORE PACKAGES (Auto-selected):" -ForegroundColor Green
-    foreach ($pkg in $PackageDatabase.Core) {
-        $dbName = $pkg.Name.Replace(" ", "")
-        $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
-        $status = if ($isInstalled) { " [Installed]" } else { "" }
-        
-        Write-Host "  ✓ $($pkg.Name)$status" -ForegroundColor Gray
-        $selectedPackages += $pkg
-    }
-    Write-Host ""
-    
-    # Show other categories
-    $categoryOrder = @("Connectivity", "Productivity", "Media", "Experience", "Security", "Maintenance", "Other")
-    
-    foreach ($catName in $categoryOrder) {
-        $catPackages = $categories[$catName]
-        if ($catPackages.Count -eq 0) { continue }
-        
-        Write-Host "$catName PACKAGES:" -ForegroundColor Yellow
-        $selectAll = Read-Host "  Install all $catName packages? (Y/N/I for individual)"
-        
-        if ($selectAll -eq "Y" -or $selectAll -eq "y") {
-            foreach ($pkg in $catPackages) {
-                Write-Host "  ✓ $($pkg.Name)" -ForegroundColor Green
-                $selectedPackages += $pkg
-            }
+        Write-Host ("│{0}│" -f $summary) -ForegroundColor Green
+        Write-Host "│  Enter toggles packages. Done returns to the install menu. │" -ForegroundColor DarkGray
+        if (-not $HasIntelWiFi) {
+            Write-Host "│  Wireless sharing apps may be limited without Intel radio. │" -ForegroundColor Yellow
         }
-        elseif ($selectAll -eq "I" -or $selectAll -eq "i") {
-            foreach ($pkg in $catPackages) {
-                $dbName = $pkg.Name.Replace(" ", "")
-                $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
-                $statusTag = if ($isInstalled) { " [Installed]" } else { "" }
-                $statusColor = if ($isInstalled) { "Green" } else { "White" }
-                
-                Write-Host ""
-                Write-Host "  $($pkg.Name)$statusTag" -ForegroundColor $statusColor
-                Write-Host "    $($pkg.Description)" -ForegroundColor Gray
-                
-                if ($pkg.Warning) {
-                    Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
-                }
-                if ($pkg.Tip) {
-                    Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
-                }
-                if ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
-                    Write-Host "    ⚠ Requires Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
-                }
-                
-                $prompt = if ($isInstalled) { "    Reinstall? (y/N)" } else { "    Install? (Y/N)" }
-                $install = Read-Host $prompt
-                
-                if ($isInstalled) {
-                    if ($install -eq "Y" -or $install -eq "y") {
-                        Write-Host "    ✓ Added for reinstall" -ForegroundColor Green
-                        $selectedPackages += $pkg
-                    }
-                }
-                else {
-                    if ($install -eq "Y" -or $install -eq "y") {
-                        Write-Host "    ✓ Added" -ForegroundColor Green
-                        $selectedPackages += $pkg
-                    }
-                }
-            }
-        }
+        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
         Write-Host ""
+    }.GetNewClosure()
+
+    while ($true) {
+        $categoryItems = foreach ($categoryName in $categoryOrder) {
+            $catPackages = @($categories[$categoryName])
+            if ($catPackages.Count -eq 0) {
+                continue
+            }
+
+            $selectedCount = 0
+            foreach ($pkg in $catPackages) {
+                if (($selectedPackages | Where-Object { $_.Id -eq $pkg.Id } | Select-Object -First 1)) {
+                    $selectedCount++
+                }
+            }
+
+            [pscustomobject]@{
+                Label       = "{0} [{1}/{2}]" -f $categoryName, $selectedCount, $catPackages.Count
+                Description = 'Open this category.'
+                Category    = $categoryName
+                Color       = if ($selectedCount -eq $catPackages.Count) { 'Green' } elseif ($selectedCount -gt 0) { 'Yellow' } else { 'White' }
+            }
+        }
+
+        $categoryItems += [pscustomobject]@{
+            Label       = 'Done'
+            Description = 'Return with the selected packages.'
+            Category    = 'Done'
+            Color       = 'Green'
+        }
+
+        $categoryChoice = Show-ArrowMenu -Items $categoryItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderSelectionHeader
+        if (-not $categoryChoice -or $categoryChoice.Category -eq 'Done') {
+            return @($selectedPackages)
+        }
+
+        while ($true) {
+            $packageItems = foreach ($pkg in @($categories[$categoryChoice.Category])) {
+                $isSelected = ($selectedPackages | Where-Object { $_.Id -eq $pkg.Id } | Select-Object -First 1)
+                $isInstalled = Test-SamsungPackageInstalled -Package $pkg -InstalledPackages $installedPkgs
+                $stateText = if ($isSelected) { '[x]' } else { '[ ]' }
+                $detailParts = @($pkg.Description)
+                if ($isInstalled) {
+                    $detailParts += 'Already installed.'
+                }
+                if ($pkg.Warning) {
+                    $detailParts += "Warning: $($pkg.Warning)"
+                }
+                elseif ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
+                    $detailParts += 'Warning: works best with Intel Wi-Fi and Bluetooth.'
+                }
+                elseif ($pkg.Tip) {
+                    $detailParts += "Tip: $($pkg.Tip)"
+                }
+
+                [pscustomobject]@{
+                    Label       = "{0} {1}" -f $stateText, $pkg.Name
+                    Description = ($detailParts -join ' ')
+                    PackageId   = $pkg.Id
+                    IsBack      = $false
+                    Color       = if ($isSelected) { 'Green' } elseif ($pkg.Status -eq 'NotWorking') { 'Red' } elseif ($pkg.Status -eq 'RequiresExtraSteps') { 'Yellow' } else { 'White' }
+                    SelectedColor = 'Cyan'
+                }
+            }
+
+            $packageItems += [pscustomobject]@{
+                Label       = 'Back'
+                Description = 'Return to category selection.'
+                PackageId   = $null
+                IsBack      = $true
+                Color       = 'DarkGray'
+            }
+
+            $categoryHeader = New-ModelSelectionHeaderRenderer -Title "$($categoryChoice.Category) Packages" -Prompt 'Enter toggles the highlighted package. Choose Back when finished.' -AccentColor 'Yellow'
+            $packageChoice = Show-ArrowMenu -Items $packageItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $categoryHeader
+
+            if (-not $packageChoice -or $packageChoice.IsBack) {
+                break
+            }
+
+            $selectedMatch = $selectedPackages | Where-Object { $_.Id -eq $packageChoice.PackageId } | Select-Object -First 1
+            if ($selectedMatch) {
+                [void]$selectedPackages.Remove($selectedMatch)
+            }
+            else {
+                $packageToAdd = @($categories[$categoryChoice.Category]) | Where-Object { $_.Id -eq $packageChoice.PackageId } | Select-Object -First 1
+                if ($packageToAdd) {
+                    [void]$selectedPackages.Add($packageToAdd)
+                }
+            }
+        }
     }
-    
-    return $selectedPackages
 }
 
 function Install-SamsungPackages {
@@ -8455,55 +8492,67 @@ if ($script:IsAutonomous) {
 else {
     $installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
 
-    if ($installChoice -eq "7") {
+    if ($installChoice -eq "Skip") {
         Write-Host "✓ Skipping package installation" -ForegroundColor Green
         Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
     }
-    elseif ($installChoice -eq "6") {
-        # Custom selection
+    elseif ($installChoice -eq "Optional") {
         $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
     }
     else {
-        # Profile-based selection
         $packagesToInstall = Get-PackagesByProfile -ProfileName $installChoice
-        
-        # Show what will be installed
-        Clear-Host
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "  Installation Summary" -ForegroundColor Cyan
-        Write-Host "========================================`n" -ForegroundColor Cyan
-        
-        Write-Host "The following packages will be installed:`n" -ForegroundColor Yellow
-        
-        foreach ($pkg in $packagesToInstall) {
-            $statusColor = switch ($pkg.Status) {
-                "Working" { "Green" }
-                "RequiresExtraSteps" { "Yellow" }
-                "NotWorking" { "Red" }
-                default { "White" }
+    }
+
+    if ($packagesToInstall.Count -gt 0) {
+        $renderInstallSummaryHeader = {
+            Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+            Write-Host "│  Installation Summary                                      │" -ForegroundColor Cyan
+            Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+            $countLine = ("  Selected packages: {0}" -f $packagesToInstall.Count)
+            if ($countLine.Length -gt 59) {
+                $countLine = $countLine.Substring(0, 59)
             }
-            
-            Write-Host "  • $($pkg.Name)" -ForegroundColor $statusColor
-            
-            if ($pkg.Warning) {
-                Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
+            else {
+                $countLine = $countLine.PadRight(59)
             }
-            if ($pkg.Tip) {
-                Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+            Write-Host ("│{0}│" -f $countLine) -ForegroundColor Green
+            foreach ($pkg in $packagesToInstall) {
+                $packageLine = "  • $($pkg.Name)"
+                if ($packageLine.Length -gt 59) {
+                    $packageLine = $packageLine.Substring(0, 59)
+                }
+                else {
+                    $packageLine = $packageLine.PadRight(59)
+                }
+                $packageColor = switch ($pkg.Status) {
+                    'Working' { 'Green' }
+                    'RequiresExtraSteps' { 'Yellow' }
+                    'NotWorking' { 'Red' }
+                    default { 'White' }
+                }
+                Write-Host ("│{0}│" -f $packageLine) -ForegroundColor $packageColor
             }
-            
-            if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
-                Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
+            Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+            Write-Host ""
+        }.GetNewClosure()
+
+        $summaryItems = @(
+            [pscustomobject]@{
+            Label       = 'Proceed with installation'
+            Description = 'Install the selected Samsung packages.'
+            Confirm     = $true
+            Color       = 'Green'
+            },
+            [pscustomobject]@{
+            Label       = 'Cancel'
+            Description = 'Return without installing packages.'
+            Confirm     = $false
+            Color       = 'DarkGray'
             }
-        }
-        
-        Write-Host ""
-        Write-Host "Total packages: $($packagesToInstall.Count)" -ForegroundColor Cyan
-        Write-Host ""
-        
-        $confirm = Read-Host "Proceed with installation? (Y/N)"
-        
-        if ($confirm -notlike "y*") {
+        )
+
+        $confirmChoice = Show-ArrowMenu -Items $summaryItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderInstallSummaryHeader
+        if (-not $confirmChoice -or ($confirmChoice.PSObject.Properties.Match('Confirm').Count -gt 0 -and -not $confirmChoice.Confirm)) {
             Write-Host "Installation cancelled." -ForegroundColor Yellow
             Invoke-InteractivePause
             exit
