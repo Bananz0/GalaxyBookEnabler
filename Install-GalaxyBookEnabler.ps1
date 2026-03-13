@@ -5986,8 +5986,11 @@ function Show-PackageSelectionMenu {
         [bool]$HasIntelWiFi
     )
 
+<<<<<<< HEAD
     $packageMenuHasIntelWiFi = $HasIntelWiFi
 
+=======
+>>>>>>> ccccffb4b76c847ba50082ec394a2664915ebfbd
     Write-Host "Checking installed packages..." -ForegroundColor DarkGray
     $installedPkgs = Get-InstalledSamsungPackages
 
@@ -6048,7 +6051,11 @@ function Show-PackageSelectionMenu {
             Write-Host ("│{0}│" -f $trimmed) -ForegroundColor $line.Color
         }
         Write-Host "│  AI Select adds a shortcut setup step later.              │" -ForegroundColor DarkGray
+<<<<<<< HEAD
         if (-not $packageMenuHasIntelWiFi) {
+=======
+        if (-not $HasIntelWiFi) {
+>>>>>>> ccccffb4b76c847ba50082ec394a2664915ebfbd
             Write-Host "│  Wireless features work best with Intel Wi-Fi/Bluetooth.  │" -ForegroundColor Yellow
         }
         Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
