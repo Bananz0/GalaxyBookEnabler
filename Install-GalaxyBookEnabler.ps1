@@ -4320,46 +4320,38 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Check if original Samsung service needs to be disabled
+    # Enforce original Samsung service disabled to avoid patched-service conflicts.
     $originalService = $existingServices | Where-Object { $_.IsOriginal -eq $true }
     if ($originalService -and $originalService.StartType -ne 'Disabled') {
-        $renderHeaderBlock = {
-            Write-Host "`n⚠️  Original Samsung Service Detected" -ForegroundColor Yellow
-            Write-Host "========================================`n" -ForegroundColor Yellow
-            Write-Host "The original 'SamsungSystemSupportService' is currently: $($originalService.StartType)" -ForegroundColor White
-            Write-Host "Status: $($originalService.Status)" -ForegroundColor $(if ($originalService.Status -eq 'Running') { 'Green' } else { 'Gray' })
-            Write-Host ""
-            Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
-            Write-Host ""
-        }
-        
-        if (Show-Prompt -Question "Disable original Samsung service?" -Description "Strongly recommended to avoid startup conflicts." -RenderHeader $renderHeaderBlock) {
-            if ($TestMode) {
-                Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
-            }
-            else {
-                Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
-                
-                if ($originalService.Status -eq 'Running') {
-                    Write-Host "    Stopping service..." -ForegroundColor Gray
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-                }
-                
-                Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
-                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-                
-                $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($verifyDisabled.StartType -eq 'Disabled') {
-                    Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
-                }
-            }
+        Write-Host "`n⚠️  Original Samsung Service Detected" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        Write-Host "The original 'SamsungSystemSupportService' is currently: $($originalService.StartType)" -ForegroundColor White
+        Write-Host "Status: $($originalService.Status)" -ForegroundColor $(if ($originalService.Status -eq 'Running') { 'Green' } else { 'Gray' })
+        Write-Host ""
+        Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
+        Write-Host ""
+
+        if ($TestMode) {
+            Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
         }
         else {
-            Write-Host "  ⚠ WARNING: Service conflicts may occur!" -ForegroundColor Red
-            Write-Host "    The patched and original services may interfere with each other." -ForegroundColor Yellow
+            Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
+
+            if ($originalService.Status -eq 'Running') {
+                Write-Host "    Stopping service..." -ForegroundColor Gray
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
+            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+
+            $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            if ($verifyDisabled.StartType -eq 'Disabled') {
+                Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
+            }
+            else {
+                Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
+            }
         }
         Write-Host ""
     }
@@ -7116,6 +7108,19 @@ param(
 $ErrorActionPreference = "Stop"
 $LogDir = "C:\GalaxyBook\Logs"
 $LogFile = Join-Path -Path $LogDir -ChildPath "Init-SamsungMultiControlOnLogin.log"
+$MaxLogBytes = 2MB
+$MaxServicesToRestart = 25
+
+# Rotate the log when it grows too large
+try {
+    if ((Test-Path -Path $LogFile) -and ((Get-Item -Path $LogFile).Length -gt $MaxLogBytes)) {
+        $archive = Join-Path -Path $LogDir -ChildPath "Init-SamsungMultiControlOnLogin.old.log"
+        Move-Item -Path $LogFile -Destination $archive -Force -ErrorAction SilentlyContinue
+    }
+}
+catch {
+    # Non-fatal; continue even if rotation fails
+}
 
 function Write-Log {
     param(
@@ -7156,20 +7161,51 @@ if ($GracePeriodSeconds -gt 0) {
     Start-Sleep -Seconds $GracePeriodSeconds
 }
 
+# Keep the original SamsungSystemSupportService disabled at all times.
+try {
+    $originalService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+    if ($originalService) {
+        if ($originalService.Status -ne 'Stopped') {
+            Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            Write-Log "Stopped SamsungSystemSupportService to avoid conflicts." -Level INFO
+        }
+
+        Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+        $verifyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+        if ($verifyService -and $verifyService.StartType -eq 'Disabled') {
+            Write-Log "SamsungSystemSupportService verified as Disabled." -Level SUCCESS
+        }
+        else {
+            Write-Log "Could not verify SamsungSystemSupportService as Disabled." -Level WARNING
+        }
+    }
+}
+catch {
+    Write-Log "Failed to enforce disabled state for SamsungSystemSupportService: $($_.Exception.Message)" -Level WARNING
+}
+
 try {
     $serviceMap = @{}
 
-    foreach ($service in (Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue)) {
-        # Exclude Samsung Internet services which can cause issues if restarted during login
-        if ($service.DisplayName -notlike "*Internet*") {
-            $serviceMap[$service.Name] = $service
-        }
-    }
+    # Known exclusions:
+    # - Samsung Internet services: can fail or be unnecessary here
+    # - SamsungSystemSupportService: often intentionally absent/stopped in spoof workflows
+    $excludedNames = @(
+        "SamsungSystemSupportService"
+    )
 
-    foreach ($service in (Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue)) {
-        if ($service.Name -notlike "*Internet*") {
-            $serviceMap[$service.Name] = $service
-        }
+    $allServices = @(
+        Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue
+    ) + @(
+        Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue
+    )
+
+    foreach ($service in $allServices) {
+        if ($null -eq $service) { continue }
+        if ($service.Name -like "*Internet*" -or $service.DisplayName -like "*Internet*") { continue }
+        if ($excludedNames -contains $service.Name) { continue }
+        if ($service.StartType -eq 'Disabled') { continue }
+        $serviceMap[$service.Name] = $service
     }
 
     if ($serviceMap.Count -eq 0) {
@@ -7178,7 +7214,13 @@ try {
         exit 0
     }
 
-    foreach ($service in ($serviceMap.Values | Sort-Object -Property Name -Unique)) {
+    $servicesToRestart = @($serviceMap.Values | Sort-Object -Property Name -Unique)
+    if ($servicesToRestart.Count -gt $MaxServicesToRestart) {
+        Write-Log "Service list too large ($($servicesToRestart.Count)). Limiting to first $MaxServicesToRestart entries." -Level WARNING
+        $servicesToRestart = @($servicesToRestart | Select-Object -First $MaxServicesToRestart)
+    }
+
+    foreach ($service in $servicesToRestart) {
         try {
             Write-Log "Attempting to restart: $($service.Name) ($($service.Status))"
             Restart-Service -Name $service.Name -Force -ErrorAction Stop
