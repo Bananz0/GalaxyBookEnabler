@@ -282,7 +282,10 @@ function Invoke-WingetCommand {
 
 function Invoke-InteractivePause {
     if (-not $script:IsAutonomous) {
-        pause
+        Write-Host ""
+        Write-Host "Press any key to continue..." -ForegroundColor Yellow
+        $null = [Console]::ReadKey($true)
+        Write-Host ""
     }
 }
 
@@ -1532,7 +1535,7 @@ function Show-ArrowMenu {
 
         & $writeMenuRenderLine ""
         $renderedLineCount++
-        $instructionParts = @("Use ↑/↓")
+        $instructionParts = @("Use arrows (↑↓←→)")
         if ($numberInputEnabled) {
             $instructionParts += "type a number and Enter"
         }
@@ -1604,9 +1607,17 @@ function Show-ArrowMenu {
                     $index = & $syncIndexFromNumberBuffer $numberBuffer $index
                 }
             }
+            37 {
+                $numberBuffer = ""
+                $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 }
+            }
             38 {
                 $numberBuffer = ""
                 $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 }
+            }
+            39 {
+                $numberBuffer = ""
+                $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 }
             }
             40 {
                 $numberBuffer = ""
@@ -1629,6 +1640,34 @@ function Show-ArrowMenu {
             }
         }
     }
+}
+
+function Show-Prompt {
+    param(
+        [string]$Question,
+        [string]$Description,
+        [string]$DefaultChoice = "Yes",
+        [scriptblock]$RenderHeader
+    )
+
+    if ($script:IsAutonomous) {
+        return $DefaultChoice -match "Yes|y|Y"
+    }
+
+    $options = @(
+        [pscustomobject]@{ Label = "Yes"; Color = "Green" },
+        [pscustomobject]@{ Label = "No"; Color = "Red" }
+    )
+
+    $defaultIndex = if ($DefaultChoice -match "No|n|N") { 1 } else { 0 }
+    $title = "═══════════════════════════════════════════════════════════════"
+    $prompt = $Question
+    if ($Description) {
+        $prompt = "$Question`n  $Description"
+    }
+
+    $result = Show-ArrowMenu -Title $title -Prompt $prompt -Items $options -DefaultIndex $defaultIndex -RenderHeader $RenderHeader
+    return ($result.Label -eq "Yes")
 }
 
 function Show-RegionMenu {
@@ -3163,18 +3202,12 @@ function Invoke-SoftReset {
 function Invoke-HardReset {
     param([bool]$TestMode = $false)
     
-    Write-Status "`n=== HARD RESET ===" -Status ACTION
-    
-    if ($TestMode) {
-        Write-Status "[TEST MODE] Would clear ALL data including sign-in credentials" -Status INFO
-        Write-Status "[TEST MODE] No changes applied" -Status OK
-        return
+    $renderHeaderBlock = {
+        Write-Status "`n=== HARD RESET ===" -Status ACTION
+        Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
     }
     
-    Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
-    
-    $confirm = Read-Host "Are you sure? (yes/no)"
-    if ($confirm -ne "yes") {
+    if (-not (Show-Prompt -Question "Are you sure?" -Description "This uses Hard Reset to wipe sign-in cache and settings" -DefaultChoice "No" -RenderHeader $renderHeaderBlock)) {
         Write-Status "Aborted by user" -Status INFO
         return
     }
@@ -3676,25 +3709,19 @@ function Get-SamsungDriverCab {
         }
         else {
             # Interactive selection
-            Write-Host ""
+            $options = @()
             for ($i = 0; $i -lt $drivers.Count; $i++) {
                 $driver = $drivers[$i]
                 $label = if ($i -eq 0) { " (Latest)" } else { "" }
-                Write-Host ("{0,2}. Version {1,-12} - {2}{3}" -f ($i + 1), $driver.Version, $driver.LastUpdated.ToString("MM/dd/yyyy"), $label) -ForegroundColor Cyan
+                $options += [pscustomobject]@{ 
+                    Label = "Version $($driver.Version)$label"
+                    Description = "Released: $($driver.LastUpdated.ToString('MM/dd/yyyy')) | Category: $($driver.Category)"
+                    Driver = $driver
+                }
             }
             
-            Write-Host ""
-            do {
-                $selection = Read-Host "Select version to download (1-$($drivers.Count))"
-                $selectionNum = $null
-                $validInput = [int]::TryParse($selection, [ref]$selectionNum) -and $selectionNum -ge 1 -and $selectionNum -le $drivers.Count
-                
-                if (-not $validInput) {
-                    Write-Host "Invalid selection. Please enter a number between 1 and $($drivers.Count)" -ForegroundColor Red
-                }
-            } while (-not $validInput)
-            
-            $drivers[$selectionNum - 1]
+            $selection = Show-ArrowMenu -Title "Multiple package versions found" -Prompt "Select version to download:" -Items $options -DefaultIndex 0
+            $selection.Driver
         }
         
         Write-Host "`nSelected: $($selectedDriver.Title)" -ForegroundColor Green
@@ -4037,9 +4064,7 @@ function Start-SamsungSettingsAndVerify {
         catch {
             Write-Warning "Failed to launch Samsung Settings after ${Context}: $_"
             Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
-            if (-not $AutoInstall) {
-                Read-Host "  Press Enter when ready..."
-            }
+            Invoke-InteractivePause
             return $false
         }
     }
@@ -4061,9 +4086,7 @@ function Start-SamsungSettingsAndVerify {
     }
 
     Write-Host "  Please open Samsung Settings manually from Start Menu and confirm it opens." -ForegroundColor Yellow
-    if (-not $AutoInstall) {
-        Read-Host "  Press Enter when ready..."
-    }
+    Invoke-InteractivePause
 
     return $false
 }
@@ -4186,30 +4209,31 @@ function Install-SystemSupportEngine {
         [bool]$AutoDisableOriginalService = $true
     )
     
-    Write-Host "`n========================================" -ForegroundColor Yellow
-    Write-Host "  ⚠️  ADVANCED FEATURE WARNING ⚠️" -ForegroundColor Yellow
-    Write-Host "========================================`n" -ForegroundColor Yellow
+    $renderHeaderBlock = {
+        Write-Host "`n========================================" -ForegroundColor Yellow
+        Write-Host "  ⚠️  ADVANCED FEATURE WARNING ⚠️" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        
+        Write-Host "This step involves:" -ForegroundColor White
+        Write-Host "  • Binary executable patching (modifies Samsung software)" -ForegroundColor Gray
+        Write-Host "  • System service installation (runs at startup)" -ForegroundColor Gray
+        Write-Host "  • Driver installation (automated via Device Manager)" -ForegroundColor Gray
+        
+        Write-Host "`nThis is EXPERIMENTAL and may:" -ForegroundColor Yellow
+        Write-Host "  ⚠ Cause system instability" -ForegroundColor Red
+        Write-Host "  ⚠ Trigger antivirus warnings" -ForegroundColor Red
+        Write-Host "  ⚠ Require manual cleanup if something goes wrong" -ForegroundColor Red
+        
+        Write-Host "`nCompatibility:" -ForegroundColor Cyan
+        Write-Host "  ✓ Windows 11 x64 only" -ForegroundColor Green
+        Write-Host "  ✗ Windows 10 NOT supported" -ForegroundColor Red
+        Write-Host "  ✗ ARM devices NOT supported" -ForegroundColor Red
+        
+        Write-Host "`nRecommended for advanced users only." -ForegroundColor Yellow
+        Write-Host ""
+    }
     
-    Write-Host "This step involves:" -ForegroundColor White
-    Write-Host "  • Binary executable patching (modifies Samsung software)" -ForegroundColor Gray
-    Write-Host "  • System service installation (runs at startup)" -ForegroundColor Gray
-    Write-Host "  • Driver installation (automated via Device Manager)" -ForegroundColor Gray
-    
-    Write-Host "`nThis is EXPERIMENTAL and may:" -ForegroundColor Yellow
-    Write-Host "  ⚠ Cause system instability" -ForegroundColor Red
-    Write-Host "  ⚠ Trigger antivirus warnings" -ForegroundColor Red
-    Write-Host "  ⚠ Require manual cleanup if something goes wrong" -ForegroundColor Red
-    
-    Write-Host "`nCompatibility:" -ForegroundColor Cyan
-    Write-Host "  ✓ Windows 11 x64 only" -ForegroundColor Green
-    Write-Host "  ✗ Windows 10 NOT supported" -ForegroundColor Red
-    Write-Host "  ✗ ARM devices NOT supported" -ForegroundColor Red
-    
-    Write-Host "`nRecommended for advanced users only." -ForegroundColor Yellow
-    Write-Host ""
-    
-    $continue = if ($AutoInstall) { "y" } else { Read-Host "Do you want to install System Support Engine? (y/N)" }
-    if ($continue -notlike "y*") {
+    if (-not (Show-Prompt -Question "Do you want to install System Support Engine?" -Description "Required for hardware-level features like Multi Control and Quick Share." -RenderHeader $renderHeaderBlock)) {
         Write-Host "Skipping System Support Engine installation." -ForegroundColor Cyan
         return $false
     }
@@ -4299,16 +4323,17 @@ function Install-SystemSupportEngine {
     # Check if original Samsung service needs to be disabled
     $originalService = $existingServices | Where-Object { $_.IsOriginal -eq $true }
     if ($originalService -and $originalService.StartType -ne 'Disabled') {
-        Write-Host "`n⚠️  Original Samsung Service Detected" -ForegroundColor Yellow
-        Write-Host "========================================`n" -ForegroundColor Yellow
-        Write-Host "The original 'SamsungSystemSupportService' is currently: $($originalService.StartType)" -ForegroundColor White
-        Write-Host "Status: $($originalService.Status)" -ForegroundColor $(if ($originalService.Status -eq 'Running') { 'Green' } else { 'Gray' })
-        Write-Host ""
-        Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
-        Write-Host ""
+        $renderHeaderBlock = {
+            Write-Host "`n⚠️  Original Samsung Service Detected" -ForegroundColor Yellow
+            Write-Host "========================================`n" -ForegroundColor Yellow
+            Write-Host "The original 'SamsungSystemSupportService' is currently: $($originalService.StartType)" -ForegroundColor White
+            Write-Host "Status: $($originalService.Status)" -ForegroundColor $(if ($originalService.Status -eq 'Running') { 'Green' } else { 'Gray' })
+            Write-Host ""
+            Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
+            Write-Host ""
+        }
         
-        $disableOriginal = if ($AutoInstall) { if ($AutoDisableOriginalService) { "y" } else { "n" } } else { Read-Host "Disable original Samsung service? (Y/n)" }
-        if ($disableOriginal -notlike "n*") {
+        if (Show-Prompt -Question "Disable original Samsung service?" -Description "Strongly recommended to avoid startup conflicts." -RenderHeader $renderHeaderBlock) {
             if ($TestMode) {
                 Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
             }
@@ -4372,13 +4397,6 @@ function Install-SystemSupportEngine {
             }
         }
         
-        Write-Host "What would you like to do?" -ForegroundColor Yellow
-        Write-Host "  [1] Upgrade to new version (stops services, replaces files)" -ForegroundColor White
-        Write-Host "  [2] Keep existing installation (skip SSSE setup)" -ForegroundColor White
-        Write-Host "  [3] Clean install (removes old, installs fresh)" -ForegroundColor White
-        Write-Host "  [4] Cancel" -ForegroundColor White
-        Write-Host ""
-        
         $choice = if ($AutoInstall) {
             switch ($AutoExistingInstallMode) {
                 "Upgrade" { "1" }
@@ -4388,7 +4406,14 @@ function Install-SystemSupportEngine {
             }
         }
         else {
-            Read-Host "Enter choice [1-4]"
+            $options = @(
+                [pscustomobject]@{ Label = "Upgrade to new version"; Value = "1"; Description = "Stops services, replaces files in place" },
+                [pscustomobject]@{ Label = "Keep existing installation"; Value = "2"; Description = "Skips System Support Engine setup" },
+                [pscustomobject]@{ Label = "Clean install"; Value = "3"; Description = "Removes old installation, installs fresh" },
+                [pscustomobject]@{ Label = "Cancel"; Value = "4"; Description = "Abort installation entirely" }
+            )
+            $selection = Show-ArrowMenu -Title "Existing SSSE Installation Found" -Prompt "What would you like to do?" -Items $options -DefaultIndex 0
+            $selection.Value
         }
         
         switch ($choice) {
@@ -4397,21 +4422,22 @@ function Install-SystemSupportEngine {
                 
                 # If multiple installations found, let user choose which to upgrade
                 if ($existingInstallations.Count -gt 1) {
-                    Write-Host "`nMultiple installations found. Which one to upgrade?" -ForegroundColor Yellow
-                    for ($i = 0; $i -lt $existingInstallations.Count; $i++) {
-                        Write-Host "  [$($i + 1)] $($existingInstallations[$i].Path) (v$($existingInstallations[$i].Version))" -ForegroundColor White
-                    }
-                    Write-Host ""
-
                     if ($AutoInstall) {
                         $upgradeIndex = 0
                         Write-Host "  ✓ Auto-selecting first installation for upgrade" -ForegroundColor Gray
                     }
                     else {
-                        do {
-                            $upgradeChoice = Read-Host "Enter choice [1-$($existingInstallations.Count)]"
-                            $upgradeIndex = [int]$upgradeChoice - 1
-                        } while ($upgradeIndex -lt 0 -or $upgradeIndex -ge $existingInstallations.Count)
+                        $options = @()
+                        for ($i = 0; $i -lt $existingInstallations.Count; $i++) {
+                            $options += [pscustomobject]@{ 
+                                Label = $existingInstallations[$i].Path
+                                Description = "Version v$($existingInstallations[$i].Version)"
+                                Index = $i
+                            }
+                        }
+                        
+                        $selection = Show-ArrowMenu -Title "Multiple SSSE Installations Found" -Prompt "Which one to upgrade?" -Items $options -DefaultIndex 0
+                        $upgradeIndex = $selection.Index
                     }
                     
                     $InstallPath = $existingInstallations[$upgradeIndex].Path
@@ -4561,17 +4587,19 @@ function Install-SystemSupportEngine {
     $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
     
     if ($existingSettings) {
-        Write-Host "  Found existing Samsung Settings packages:" -ForegroundColor Yellow
-        foreach ($app in $existingSettings) {
-            Write-Host "    • $($app.Name) v$($app.Version)" -ForegroundColor Gray
+        $renderHeaderBlock = {
+            Write-Host "  Found existing Samsung Settings packages:" -ForegroundColor Yellow
+            foreach ($app in $existingSettings) {
+                Write-Host "    • $($app.Name) v$($app.Version)" -ForegroundColor Gray
+            }
+            Write-Host ""
+            Write-Host "  These need to be removed to ensure the new driver version" -ForegroundColor Gray
+            Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
+            Write-Host ""
         }
-        Write-Host ""
-        Write-Host "  These need to be removed to ensure the new driver version" -ForegroundColor Gray
-        Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
-        Write-Host ""
         
-        $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { "y" } else { "n" } } else { Read-Host "Remove existing Samsung Settings packages? (Y/n)" }
-        if ($removeChoice -notlike "n*") {
+        $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { $true } else { $false } } else { Show-Prompt -Question "Remove existing Samsung Settings packages?" -Description "Recommended to ensure a clean install." -RenderHeader $renderHeaderBlock }
+        if ($removeChoice) {
             if ($TestMode) {
                 Write-Host "  [TEST] Would remove packages: $($existingSettings.Name -join ', ')" -ForegroundColor Gray
             }
@@ -4924,13 +4952,14 @@ function Install-SystemSupportEngine {
                         Write-Host "        • Services console (services.msc) is open" -ForegroundColor Gray
                         Write-Host "        • Event Viewer is open" -ForegroundColor Gray
                         Write-Host "        • Process Explorer is open" -ForegroundColor Gray
-                        Write-Host "`n      Options:" -ForegroundColor Cyan
-                        Write-Host "        [1] Close these apps manually and I'll wait" -ForegroundColor White
-                        Write-Host "        [2] Auto-close Task Manager, Services, Event Viewer" -ForegroundColor White
-                        Write-Host "        [3] Continue waiting (will timeout in $($maxWait - $waited)s)" -ForegroundColor White
-                        Write-Host ""
+                        $options = @(
+                            [pscustomobject]@{ Label = "Close these apps manually and I'll wait"; Value = "1" },
+                            [pscustomobject]@{ Label = "Auto-close Task Manager, Services, Event Viewer"; Value = "2" },
+                            [pscustomobject]@{ Label = "Continue waiting (will timeout in $($maxWait - $waited)s)"; Value = "3" }
+                        )
                     
-                        $choice = Read-Host "      Choose option [1-3]"
+                        $selection = Show-ArrowMenu -Title "Service deletion is taking longer than usual..." -Prompt "It seems Task Manager, Services console or Event Viewer is open." -Items $options -DefaultIndex 0
+                        $choice = $selection.Value
                     
                         if ($choice -eq "2") {
                             Write-Host "      Attempting to close interfering applications..." -ForegroundColor Yellow
@@ -5171,8 +5200,7 @@ function Install-SystemSupportEngine {
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
                 $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
-                Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
-                if (-not $AutoInstall) { Read-Host }
+                Invoke-InteractivePause
                 
                 # 3. Stop Services & Processes
                 Write-Host "`n  [DUAL-VERSION] Stopping services for binary replacement..." -ForegroundColor Cyan
@@ -5257,7 +5285,9 @@ function Install-SystemSupportEngine {
         
         # Cleanup temp extraction
         Write-Host "`n  Cleaning up temporary files..." -ForegroundColor Gray
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        if ($extractDir -and (Test-Path $extractDir)) {
+            Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         
         # Final verification: Ensure original Samsung service is disabled and GBeSupportService is enabled
         Write-Host "`n  Verifying service configuration..." -ForegroundColor Cyan
@@ -5409,8 +5439,8 @@ function Install-SystemSupportEngine {
         
         # Cleanup on error
         if (-not $TestMode) {
-            if (Test-Path $extractDir) {
-                Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            if ($extractDir -and (Test-Path $extractDir)) {
+                Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
         
@@ -5996,16 +6026,15 @@ function Show-PackageManager {
                 }
             }
             'UninstallAll' {
-                Clear-Host
-                Write-Host "========================================" -ForegroundColor Red
-                Write-Host "  Uninstall All Samsung Apps" -ForegroundColor Red
-                Write-Host "========================================`n" -ForegroundColor Red
+                $renderHeaderBlock = {
+                    Write-Host "========================================" -ForegroundColor Red
+                    Write-Host "  Uninstall All Samsung Apps" -ForegroundColor Red
+                    Write-Host "========================================`n" -ForegroundColor Red
+                    Write-Host "⚠ WARNING: This will uninstall ALL Samsung apps!" -ForegroundColor Yellow
+                    Write-Host ""
+                }
                 
-                Write-Host "⚠ WARNING: This will uninstall ALL Samsung apps!" -ForegroundColor Yellow
-                Write-Host ""
-                
-                $deleteData = Read-Host "Also delete app data? (y/N)"
-                $deleteDataBool = $deleteData -like "y*"
+                $deleteDataBool = Show-Prompt -Question "Also delete app data?" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
                 
                 Write-Host ""
                 $confirm = Read-Host "Type 'UNINSTALL ALL' to confirm"
@@ -6181,7 +6210,7 @@ function Show-PackageSelectionMenu {
     }
 
     $selection = Show-ArrowMenu -Items $menuItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderPackageHeader
-    return if ($selection) { $selection.Selection } else { 'Skip' }
+    if ($selection) { return $selection.Selection } else { return 'Skip' }
 }
 
 function Test-SamsungPackageInstalled {
@@ -7354,21 +7383,21 @@ if ($script:IsConfigurationOnly) {
 
 # ==================== UPDATE SAMSUNG SETTINGS MODE ====================
 if ($UpdateSettings) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
+        Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
+        Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
+        Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
+        Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
-    Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
-    Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
-    Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
-    Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
-    Write-Host ""
-    
-    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
-    if ($proceed -like "n*") {
+    if (-not (Show-Prompt -Question "Proceed?" -Description "Start the SSSE updater process" -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nCancelled." -ForegroundColor Yellow
         exit
     }
@@ -7393,20 +7422,19 @@ if ($UpdateSettings) {
 
 # ==================== UNINSTALL MODE ====================
 if ($Uninstall) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Red
-    Write-Host "  Galaxy Book Enabler UNINSTALLER" -ForegroundColor Red
-    Write-Host "========================================`n" -ForegroundColor Red
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Red
+        Write-Host "  Galaxy Book Enabler UNINSTALLER" -ForegroundColor Red
+        Write-Host "========================================`n" -ForegroundColor Red
+        
+        Write-Host "This will remove:" -ForegroundColor Yellow
+        Write-Host "  • Scheduled tasks: $($scheduledTaskNames -join ', ')" -ForegroundColor Gray
+        Write-Host "  • Installation folder: $installPath" -ForegroundColor Gray
+        Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will remove:" -ForegroundColor Yellow
-    Write-Host "  • Scheduled tasks: $($scheduledTaskNames -join ', ')" -ForegroundColor Gray
-    Write-Host "  • Installation folder: $installPath" -ForegroundColor Gray
-    Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
-    Write-Host ""
-    
-    $confirm = if ($script:IsAutonomous) { "Y" } else { Read-Host "Are you sure you want to uninstall? (Y/N)" }
-    
-    if ($confirm -notlike "y*") {
+    if (-not (Show-Prompt -Question "Are you sure you want to uninstall?" -Description "This will remove the program and scheduled tasks." -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nUninstall cancelled." -ForegroundColor Yellow
         Invoke-InteractivePause
         exit
@@ -7475,24 +7503,24 @@ if ($Uninstall) {
 
 # ==================== QUICK UPGRADE SSE MODE ====================
 if ($UpgradeSSE) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Yellow
-    Write-Host "  SSSE QUICK UPGRADE" -ForegroundColor Yellow
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Yellow
-    Write-Host "========================================`n" -ForegroundColor Yellow
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "  SSSE QUICK UPGRADE" -ForegroundColor Yellow
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        
+        Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
+        Write-Host "to the latest version ($LATEST_SSSE_VERSION) without going through" -ForegroundColor White
+        Write-Host "the full installation process.`n" -ForegroundColor White
+        
+        Write-Host "Prerequisites:" -ForegroundColor Cyan
+        Write-Host "  • You must have already run the full installer once" -ForegroundColor Gray
+        Write-Host "  • Registry spoof must be in place" -ForegroundColor Gray
+        Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
-    Write-Host "to the latest version ($LATEST_SSSE_VERSION) without going through" -ForegroundColor White
-    Write-Host "the full installation process.`n" -ForegroundColor White
-    
-    Write-Host "Prerequisites:" -ForegroundColor Cyan
-    Write-Host "  • You must have already run the full installer once" -ForegroundColor Gray
-    Write-Host "  • Registry spoof must be in place" -ForegroundColor Gray
-    Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
-    Write-Host ""
-    
-    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with upgrade to $LATEST_SSSE_VERSION? (Y/n)" }
-    if ($proceed -like "n*") {
+    if (-not (Show-Prompt -Question "Proceed with upgrade to $LATEST_SSSE_VERSION?" -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nUpgrade cancelled." -ForegroundColor Yellow
         exit
     }
@@ -7773,19 +7801,20 @@ if ($alreadyInstalled) {
             }
             
             if ($selectedAction -eq 'UpdateSsse') {
-                Write-Host "`n========================================" -ForegroundColor Cyan
-                Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
-                Write-Host "========================================`n" -ForegroundColor Cyan
+                $renderHeaderBlock = {
+                    Write-Host "`n========================================" -ForegroundColor Cyan
+                    Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+                    Write-Host "========================================`n" -ForegroundColor Cyan
+                    
+                    Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
+                    Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
+                    Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
+                    Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
+                    Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
+                    Write-Host ""
+                }
                 
-                Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
-                Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
-                Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
-                Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
-                Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
-                Write-Host ""
-                
-                $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
-                if ($proceed -like "n*") {
+                if (-not (Show-Prompt -Question "Proceed?" -Description "Start the SSSE updater process" -RenderHeader $renderHeaderBlock)) {
                     Write-Host "`nCancelled." -ForegroundColor Yellow
                     continue
                 }
@@ -7852,12 +7881,15 @@ if ($alreadyInstalled) {
                 $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
                 if ($backupBiosValues -and $backupBiosValues.IsCustom) {
                     $detectedModelDisplay = Format-GalaxyBookModelDisplay -FamilyLabel $backupBiosValues.Values.SystemFamily -SystemProductName $backupBiosValues.Values.SystemProductName
-                    Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
-                    Write-Host "  Model: $detectedModelDisplay" -ForegroundColor Cyan
-                    Write-Host ""
-                    $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Keep your custom config? ([Y]=Keep custom, N=Use default $DefaultBiosSelectorLabel)" }
                     
-                    if ($preserveChoice -eq "" -or $preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
+                    $renderHeaderBlock = {
+                        Write-Host "`nUpdating to version $SCRIPT_VERSION..." -ForegroundColor Cyan
+                        Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
+                        Write-Host "  Model: $detectedModelDisplay" -ForegroundColor Cyan
+                        Write-Host ""
+                    }
+                    
+                    if (Show-Prompt -Question "Keep your custom config?" -Description "Select 'Yes' to preserve your current model/BIOS values, or 'No' to reset to default $DefaultBiosSelectorLabel." -RenderHeader $renderHeaderBlock) {
                         $biosValuesToUse = $backupBiosValues.Values
                         Write-Host "  ✓ Will preserve your custom BIOS values" -ForegroundColor Green
                     }
@@ -7884,16 +7916,17 @@ if ($alreadyInstalled) {
                 # Fall through to simulated install
             }
             else {
-                Write-Host "This will:" -ForegroundColor Cyan
-                Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
-                Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
-                Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
-                Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
-                Write-Host "  5. Perform a fresh installation" -ForegroundColor White
-                Write-Host ""
+                $renderHeaderBlock = {
+                    Write-Host "This will:" -ForegroundColor Cyan
+                    Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
+                    Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
+                    Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
+                    Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
+                    Write-Host "  5. Perform a fresh installation" -ForegroundColor White
+                    Write-Host ""
+                }
                 
-                $confirmReinstall = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with full reinstall? (Y/n)" }
-                if ($confirmReinstall -like "n*") {
+                if (-not (Show-Prompt -Question "Proceed with full reinstall?" -Description "This will reset all settings and reinstall apps." -RenderHeader $renderHeaderBlock)) {
                     Write-Host "`nCancelled." -ForegroundColor Yellow
                     continue installedState
                 }
@@ -7919,9 +7952,9 @@ if ($alreadyInstalled) {
             # Ask about preserving config NOW before nuking
             if ($backupBiosValues -and $backupBiosValues.IsCustom) {
                 Write-Host ""
-                $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "  Keep your custom BIOS config after reinstall? ([Y]=Keep, N=Use default $DefaultBiosSelectorLabel)" }
+                $preserveChoice = if ($script:IsAutonomous) { $AutonomousPreserveLegacy } else { Show-Prompt -Question "Keep your custom BIOS config after reinstall?" -Description "Preserve custom values, or reset to default $DefaultBiosSelectorLabel" }
                 
-                if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
+                if ($preserveChoice) {
                     $biosValuesToUse = $backupBiosValues.Values
                     Write-Host "    ✓ Will restore custom BIOS values after reinstall" -ForegroundColor Green
                 }
@@ -7933,8 +7966,7 @@ if ($alreadyInstalled) {
             # Step 2: Ask about deleting Samsung app data
             Write-Host "`n  [2/5] Uninstalling Samsung apps..." -ForegroundColor Cyan
             $deleteData = $false
-            $nukeConfirm = Read-Host "    Delete ALL Samsung app data too? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
+            if (Show-Prompt -Question "Delete ALL Samsung app data too? (Nuke Mode)" -Description "Deletes C:\Users\User\AppData\Local\Packages folders for Samsung apps." -DefaultChoice "No") {
                 $deleteData = $true
                 Write-Host "    ⚠ Will delete all Samsung app data" -ForegroundColor Yellow
             }
@@ -7995,9 +8027,12 @@ if ($alreadyInstalled) {
         }
         'UninstallAll' {
             # Uninstall all (apps, services & scheduled task)
-            Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            $renderHeaderBlock = {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            }
             
             if ($TestMode) {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
                 Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
                 Write-Host "  • All Samsung apps" -ForegroundColor Gray
                 Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
@@ -8007,11 +8042,7 @@ if ($alreadyInstalled) {
                 exit
             }
             
-            $deleteData = $false
-            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
-                $deleteData = $true
-            }
+            $deleteData = Show-Prompt -Question "Do you also want to DELETE all Samsung app data? (Nuke Mode)" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
             
             Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             
@@ -8066,19 +8097,18 @@ if ($alreadyInstalled) {
         }
         'UninstallApps' {
             # Uninstall apps only
-            Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+            $renderHeaderBlock = {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+            }
             
             if ($TestMode) {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
                 Write-Host "[TEST MODE] Would uninstall all Samsung apps" -ForegroundColor Magenta
                 Write-Host "[TEST MODE] No changes applied" -ForegroundColor Yellow
                 exit
             }
             
-            $deleteData = $false
-            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
-                $deleteData = $true
-            }
+            $deleteData = Show-Prompt -Question "Do you also want to DELETE all Samsung app data? (Nuke Mode)" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
             
             Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             Write-Host "`nUninstall complete!" -ForegroundColor Green
@@ -8281,29 +8311,32 @@ if ((Test-Path $legacyBatchPath) -and -not $biosValuesToUse) {
     $legacyValues = Get-LegacyBiosValues -OldBatchPath $legacyBatchPath
     
     if ($legacyValues -and $legacyValues.IsCustom) {
-        Write-Host "`nCustom BIOS values detected in old QS.bat:" -ForegroundColor Cyan
-        
-        # Display all detected custom values
-        $defaults = Get-DefaultBiosValues
-        
-        $customCount = 0
-        foreach ($key in $legacyValues.Values.Keys | Sort-Object) {
-            $value = $legacyValues.Values[$key]
-            $isCustom = $defaults[$key] -ne $value
-            $marker = if ($isCustom) { "→" } else { " " }
-            $color = if ($isCustom) { "Green" } else { "DarkGray" }
-            Write-Host "  $marker $($key.PadRight(25)) = $value" -ForegroundColor $color
-            if ($isCustom) { $customCount++ }
-        }
-
         $detectedModelDisplay = Format-GalaxyBookModelDisplay -FamilyLabel $legacyValues.Values.SystemFamily -SystemProductName $legacyValues.Values.SystemProductName
-        Write-Host "`nDetected model: $detectedModelDisplay" -ForegroundColor Cyan
-        Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from $DefaultBiosSelectorLabel defaults" -ForegroundColor Yellow
-        Write-Host ""
         
-        $preserve = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Would you like to preserve these custom values? (Y/N)" }
+        $renderHeaderBlock = {
+            Write-Host "`nCustom BIOS values detected in old QS.bat:" -ForegroundColor Cyan
+            
+            # Display all detected custom values
+            $defaults = Get-DefaultBiosValues
+            
+            $customCount = 0
+            foreach ($key in $legacyValues.Values.Keys | Sort-Object) {
+                $value = $legacyValues.Values[$key]
+                $isCustom = $defaults[$key] -ne $value
+                $marker = if ($isCustom) { "→" } else { " " }
+                $color = if ($isCustom) { "Green" } else { "DarkGray" }
+                Write-Host "  $marker $($key.PadRight(25)) = $value" -ForegroundColor $color
+                if ($isCustom) { $customCount++ }
+            }
+
+            Write-Host "`nDetected model: $detectedModelDisplay" -ForegroundColor Cyan
+            Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from $DefaultBiosSelectorLabel defaults" -ForegroundColor Yellow
+            Write-Host ""
+        }
         
-        if ($preserve -eq "Y" -or $preserve -eq "y") {
+        $preserve = if ($script:IsAutonomous) { $AutonomousPreserveLegacy } else { Show-Prompt -Question "Would you like to preserve these custom values?" -Description "Uses your old setup instead of the default $DefaultBiosSelectorLabel" -RenderHeader $renderHeaderBlock }
+        
+        if ($preserve) {
             $biosValuesToUse = $legacyValues.Values
             Write-Host "✓ Will use your custom BIOS values" -ForegroundColor Green
         }
@@ -8459,22 +8492,30 @@ else {
         # $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
         
         if ($existingSettings) {
-            Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
-            
-            Write-Host "`n  Installed packages:" -ForegroundColor Cyan
-            foreach ($app in $existingSettings) {
-                $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
-                Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
+            $renderHeaderBlock = {
+                Write-Host "========================================`n  STEP 5: System Support Engine (Advanced)`n========================================" -ForegroundColor Cyan
+                Write-Host "`n⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
+                
+                Write-Host "`n  Installed packages:" -ForegroundColor Cyan
+                foreach ($app in $existingSettings) {
+                    $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
+                    Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
+                }
+                Write-Host ""
+                Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
+                Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
+                Write-Host ""
             }
-            
-            Write-Host ""
-            Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
-            Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
-            Write-Host ""
+
+            $options = @(
+                [pscustomobject]@{ Label = "Uninstall existing packages"; Value = "u"; Color = "Yellow"; Description = "Ensure a clean SSSE installation" },
+                [pscustomobject]@{ Label = "Continue anyway"; Value = "c"; Color = "White"; Description = "May cause feature mismatches" },
+                [pscustomobject]@{ Label = "Skip SSSE setup"; Value = "s"; Color = "DarkGray"; Description = "Do not install SSSE" }
+            )
+            $selection = Show-ArrowMenu -RenderHeader $renderHeaderBlock -Prompt "Select an option:" -Items $options -DefaultIndex 0
+            $choice = $selection.Value
              
-            $choice = Read-Host "Options: [U]ninstall existing packages, [C]ontinue anyway, [S]kip SSSE setup (U/C/S)"
-             
-            if ($choice -like "u*") {
+            if ($choice -eq "u") {
                 Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
                 if ($TestMode) {
                     Write-Host "  [TEST] Would uninstall $($existingSettings.Count) Samsung Settings packages" -ForegroundColor Gray
@@ -8495,19 +8536,20 @@ else {
                     }
                     
                     if ($removalResult.Failed.Count -gt 0) {
-                        Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
-                        foreach ($pkg in $removalResult.Failed) {
-                            Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                        $renderHeaderBlock = {
+                            Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
+                            foreach ($pkg in $removalResult.Failed) {
+                                Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                            }
+                            Write-Host ""
+                            Write-Host "  Manual removal options:" -ForegroundColor Yellow
+                            Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
+                            Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
+                            Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                            Write-Host ""
                         }
-                        Write-Host ""
-                        Write-Host "  Manual removal options:" -ForegroundColor Yellow
-                        Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
-                        Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
-                        Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
-                        Write-Host ""
                         
-                        $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
-                        if ($continueAnyway -notlike "y*") {
+                        if (-not (Show-Prompt -Question "Continue with SSSE installation anyway?" -Description "Not recommended: Proceeding with existing packages may cause issues." -DefaultChoice "No" -RenderHeader $renderHeaderBlock)) {
                             Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
                             Write-GbeLog "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
                             return
@@ -8736,21 +8778,22 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
             $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
         }
         
-        Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
-        Write-Host "    $batLauncherPath" -ForegroundColor Gray
-        Write-Host "    $ps1LauncherPath" -ForegroundColor Gray
-        Write-Host ""
+        $renderHeaderBlock = {
+            Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
+            Write-Host "    $batLauncherPath" -ForegroundColor Gray
+            Write-Host "    $ps1LauncherPath" -ForegroundColor Gray
+            Write-Host ""
 
-        Write-Host "Launch Options (fastest to slowest):" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "  [1] PowerToys URI Method (Recommended - Fastest)" -ForegroundColor Green
-        Write-Host "      • Install PowerToys from Microsoft Store" -ForegroundColor Gray
-        Write-Host "      • Open PowerToys → Keyboard Manager → Remap a key" -ForegroundColor Gray
-        Write-Host "      • Map a key (e.g., Right Alt) → Win+Ctrl+Alt+S" -ForegroundColor Gray
-        Write-Host "      • Then: Remap a shortcut → Win+Ctrl+Alt+S → Open URI" -ForegroundColor Gray
-        Write-Host "      • URI: shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "  [2] PowerToys Run Program (Fast)" -ForegroundColor Cyan
+            Write-Host "Launch Options (fastest to slowest):" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  [1] PowerToys URI Method (Recommended - Fastest)" -ForegroundColor Green
+            Write-Host "      • Install PowerToys from Microsoft Store" -ForegroundColor Gray
+            Write-Host "      • Open PowerToys → Keyboard Manager → Remap a key" -ForegroundColor Gray
+            Write-Host "      • Map a key (e.g., Right Alt) → Win+Ctrl+Alt+S" -ForegroundColor Gray
+            Write-Host "      • Then: Remap a shortcut → Win+Ctrl+Alt+S → Open URI" -ForegroundColor Gray
+            Write-Host "      • URI: shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  [2] PowerToys Run Program (Fast)" -ForegroundColor Cyan
         Write-Host "      • Remap a shortcut → Action: Run Program" -ForegroundColor Gray
         Write-Host "      • Program: powershell.exe" -ForegroundColor Gray
         Write-Host "      • Args: -WindowStyle Hidden -File `"$ps1LauncherPath`"" -ForegroundColor Gray
@@ -8759,13 +8802,14 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
         Write-Host "      • Create AHK script to launch the URI on key press" -ForegroundColor Gray
         Write-Host "      • See README for example scripts" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  [4] Desktop shortcut (Standard)" -ForegroundColor White
-        Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
-        Write-Host ""
+            Write-Host "  [4] Desktop shortcut (Standard)" -ForegroundColor White
+            Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
+            Write-Host ""
+        }
 
-        $setupShortcut = if ($script:IsAutonomous) { if ($AutonomousCreateAiSelectShortcut) { "Y" } else { "N" } } else { Read-Host "Create Desktop shortcut? (Y/N)" }
+        $setupShortcut = if ($script:IsAutonomous) { $AutonomousCreateAiSelectShortcut } else { Show-Prompt -Question "Create Desktop shortcut?" -Description "Adds a shortcut to your desktop for easy access to AI Select." -DefaultChoice "No" -RenderHeader $renderHeaderBlock }
 
-        if ($setupShortcut -like "y*") {
+        if ($setupShortcut) {
             if ($TestMode) {
                 Write-Host "  [TEST] Would create desktop shortcut: AI Select" -ForegroundColor Gray
             }
