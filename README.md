@@ -22,7 +22,8 @@ Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking a
 ## Features
 
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
-- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app by installing the SSSE patch and using the Core installation profile
+- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app. 
+  - **Requirements**: Install the **SSSE patch** and the **Core** package selection (includes Samsung Settings, Settings Runtime, and the Galaxy Buds app). 
 - **Auto-Elevation** - Automatically requests admin rights using native sudo 
 - **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
@@ -51,6 +52,8 @@ winget install Microsoft.PowerShell
 ```
 
 **Note:** If this is your first time using `winget`, you may need to run `winget list` first to accept the source agreements. The command may appear to stall without this step.
+
+**Multipoint Audio (Seamless Buds Switching):** For seamless buds switching between devices, you must install **SSSE** and the **Core** package profile, which includes **Samsung Settings**, **Settings Runtime**, and the **Galaxy Buds** app. 
 
 Or download from: <https://aka.ms/powershell>
 
