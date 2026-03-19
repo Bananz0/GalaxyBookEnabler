@@ -2736,10 +2736,17 @@ function Reset-AllSettingsDat {
 # ==================== AUTHENTICATION DATA ====================
 
 function Clear-AuthenticationData {
-    param([switch]$KeepCredentials)
-    
+    param(
+        [switch]$KeepCredentials,
+        [bool]$TestMode = $false
+    )
+
     Write-Status "`n=== CLEARING AUTHENTICATION DATA ===" -Status ACTION
     
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear authentication data (KeepCredentials: $KeepCredentials)" -Status INFO
+        return
+    }
     # Samsung Account data
     $saPath = Get-PackagePath $SamsungPackages["Account"].Family
     
@@ -2805,7 +2812,14 @@ function Clear-AuthenticationData {
 # ==================== APP REGISTRATION ====================
 
 function Invoke-AppReRegistration {
+    param([bool]$TestMode = $false)
+
     Write-Status "`n=== RE-REGISTERING SAMSUNG APPS ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would re-register all Samsung AppX packages" -Status INFO
+        return
+    }
     
     $samsungPackages = Get-AppxPackage | Where-Object { 
         $_.Name -like "*Samsung*" -or 
@@ -2835,7 +2849,14 @@ function Invoke-AppReRegistration {
 # ==================== PERMISSIONS ====================
 
 function Repair-Permissions {
+    param([bool]$TestMode = $false)
+
     Write-Status "`n=== REPAIRING PERMISSIONS ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would repair permissions on Samsung app folders" -Status INFO
+        return
+    }
     
     $targetPackages = Get-TargetPackages
     
@@ -3209,6 +3230,11 @@ function Invoke-HardReset {
     
     if (-not (Show-Prompt -Question "Are you sure?" -Description "This uses Hard Reset to wipe sign-in cache and settings" -DefaultChoice "No" -RenderHeader $renderHeaderBlock)) {
         Write-Status "Aborted by user" -Status INFO
+        return
+    }
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would perform hard reset on Samsung apps" -Status INFO
         return
     }
     
@@ -4035,8 +4061,8 @@ function Start-SamsungSettingsAndVerify {
 
     Write-Host "`nLaunching Samsung Settings..." -ForegroundColor Cyan
 
-    if ($TestMode) {
-        Write-Host "  [TEST] Would launch Samsung Settings app after $Context" -ForegroundColor Gray
+    if ($TestMode -or $AutoInstall) {
+        Write-Host "  [$($TestMode ? 'TEST' : 'AUTO')] Skipping interactive app launch after $Context" -ForegroundColor Gray
         return $true
     }
 
@@ -4331,7 +4357,10 @@ function Install-SystemSupportEngine {
         Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
         Write-Host ""
 
-        if ($TestMode) {
+        if (-not $AutoDisableOriginalService) {
+            Write-Host "  ⚠ Skipping disable as requested by configuration, but EXPECT CONFLICTS!" -ForegroundColor Red
+        }
+        elseif ($TestMode) {
             Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
         }
         else {
@@ -5287,24 +5316,25 @@ function Install-SystemSupportEngine {
         $originalSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
         if ($originalSvc) {
             if ($originalSvc.StartType -ne 'Disabled') {
-                Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
-                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-                if ($originalSvc.Status -eq 'Running') {
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                if ($TestMode) {
+                    Write-Host "    [TEST] Would disable original Samsung service..." -ForegroundColor Gray
+                }
+                else {
+                    Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
+                    Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+                    if ($originalSvc.Status -eq 'Running') {
+                        Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
-            $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-            if ($verifyOriginal.StartType -eq 'Disabled') {
-                Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
-            }
-            else {
-                Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
-            }
-        }
-        
-        $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
-        if ($gbeSvc) {
-            Write-Host "    ✓ GBeSupportService: $($gbeSvc.StartType), $($gbeSvc.Status)" -ForegroundColor Green
+            if (-not $TestMode) {
+                $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($verifyOriginal.StartType -eq 'Disabled') {
+                    Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
+                }
             if ($gbeSvc.StartType -ne 'Automatic') {
                 Write-Host "    ⚠ Warning: Service is not set to Automatic startup" -ForegroundColor Yellow
             }
@@ -5988,14 +6018,20 @@ function Show-PackageManager {
                             $appxPkg = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*$searchName*" }
                             
                             if ($appxPkg) {
-                                try {
-                                    $appxPkg | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
-                                    Write-Host "    ✓ Removed" -ForegroundColor Green
+                                if ($TestMode) {
+                                    Write-Host "    [TEST] Would remove: $($appxPkg.Name)" -ForegroundColor Gray
                                     $uninstalled++
                                 }
-                                catch {
-                                    Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
-                                    $failed++
+                                else {
+                                    try {
+                                        $appxPkg | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
+                                        Write-Host "    ✓ Removed" -ForegroundColor Green
+                                        $uninstalled++
+                                    }
+                                    catch {
+                                        Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
+                                        $failed++
+                                    }
                                 }
                             }
                         }
@@ -7897,9 +7933,9 @@ if ($alreadyInstalled) {
                     'Diagnostics' { Invoke-Diagnostics }
                     'SoftReset' { Invoke-SoftReset -TestMode $TestMode }
                     'HardReset' { Invoke-HardReset -TestMode $TestMode }
-                    'ClearAuthentication' { Clear-AuthenticationData }
-                    'RepairPermissions' { Repair-Permissions }
-                    'ReregisterApps' { Invoke-AppReRegistration }
+                    'ClearAuthentication' { Clear-AuthenticationData -TestMode $TestMode }
+                    'RepairPermissions' { Repair-Permissions -TestMode $TestMode }
+                    'ReregisterApps' { Invoke-AppReRegistration -TestMode $TestMode }
                     'FactoryReset' { Invoke-FactoryReset -TestMode $TestMode }
                     default { }
                 }
