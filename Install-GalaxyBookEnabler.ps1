@@ -5335,6 +5335,12 @@ function Install-SystemSupportEngine {
                 else {
                     Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
                 }
+            }
+        }
+        
+        $gbeSvc = Get-Service -Name "GBeSupportService" -ErrorAction SilentlyContinue
+        if ($gbeSvc) {
+            Write-Host "    ✓ GBeSupportService: $($gbeSvc.StartType), $($gbeSvc.Status)" -ForegroundColor Green
             if ($gbeSvc.StartType -ne 'Automatic') {
                 Write-Host "    ⚠ Warning: Service is not set to Automatic startup" -ForegroundColor Yellow
             }
