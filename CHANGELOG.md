@@ -5,7 +5,7 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.1.5] - 2026-03-12
+## [3.1.5] - 2026-03-19
 
 ### Added
 
@@ -19,40 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inlined the identity resolver into `Install-GalaxyBookEnabler.ps1`
 - Expanded `-AutonomousModel` to accept family/profile selections in addition to exact model codes
 - Switched model and region selection flow to arrow-key navigation
-- Reworked installed-state and package-manager menus around a unified arrow-key menu renderer with compact viewport handling
+- Reworked installed-state and package-manager menus around a unified arrow-key menu renderer
 - Unified the installed-state banner so installer status, health, installed versions, and update status render in a single header box
 - Standardized selector-style naming such as `Book4Ultra` across default BIOS prompts and custom BIOS reporting
 - Refined package name parsing and normalization across installer and autonomous workflows
 - Refactored autonomous/elevation argument handling for safer quoting and consistent forwarding
-- Updated autonomous package name handling in installer/workflows for clearer, consistent behavior
-- Refactored SSSE driver install flow to prioritize DISM with `pnputil` fallback and improved autonomous behavior
-- Updated SSSE support target to include the latest version.
-- Added copyright headers to the main installer script and key GitHub workflows
-- Updated license attribution to `Copyright (c) 2023-2026 Glen Muthoka Mutinda`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+- Refactored SSSE driver install flow to prioritize DISM with `pnputil` fallback 
+- Updated SSSE support target to include version 8.0.5.0
+- Streamlined `winget` command arguments and update workflows to use `actions/checkout@v6`
+- Enhanced GeoIP country resolution with a fallback provider and updated US mapping tests
+
 ### Fixed
 
+- **Repaired SSSE installation syntax error** that caused GitHub Actions parser failures 
 - Added defensive error handling around `Clear-Host` to avoid host-specific failures
 - Excluded Samsung Internet services from package/service management to reduce login-time issues
 - Improved binary patching reliability for SSSE patch application paths
 - Enhanced installer smoke validation for system model and GBe support service path/status checks
-- Fixed installed-state submenu return paths so package manager, repair, SSSE update, and reinstall cancellation return to the main menu instead of exiting or falling through
-- Fixed package manager rendering errors after elevation by binding status-formatting helpers correctly inside the header renderer
-- Fixed numeric arrow-menu selection to keep the highlighted option and displayed selected option in sync
-- Added `winget` preflight and timeout handling so package installs fail clearly instead of appearing to hang on first-run source prompts
-- Documented the existing Multi Control startup-task recovery flow and validation for the scheduled Samsung service restart path
+- Fixed package manager rendering and navigation return paths
+- Added `winget` preflight and timeout handling to avoid silent package-install stalls
+- Forced original Samsung windows service to be disabled and kept logs under 2MB 
+- Fixed package selection logic for Intel Wi-Fi checks
 
 ### Documentation
 
 - Documented `config.plist` generation and update flows in `README.md` and `Explainer.md`
-- Updated README for fully autonomous usage and scheduled task behavior (including Multi Control recovery details)
-- Updated CI/workflow documentation to reflect autonomous and continuous regression coverage
-- Added `@Ritel-T` to supporter acknowledgements in current project docs
+- Updated README for fully autonomous usage and scheduled task behavior 
+- Added MultiPoint audio requirements to README 
+- Added `@Ritel-T` to supporter acknowledgements
 - Thanks to `@MTTMAX` for helping with the Multi Control / Second Screen / Continuity recovery task behavior
 
 ### Issues
 
 - Fixes `#86`
-- Helps with `#87`, `#79`, `#78`, `#73`, and `#47`
+- Helps with `#87`, `#79`, `#78`, `#76`, `#73`, `#59`, and `#47`
 
 ## [3.1.0] - 2026-01-10
 
