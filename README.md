@@ -2,7 +2,7 @@
 
 > Enable Samsung Galaxy Book features on any Windows PC
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
+[![Version](https://img.shields.io/badge/version-3.1.5-blue.svg)](https://github.com/Bananz0/GalaxyBookEnabler)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4.svg?logo=windows11)](https://www.microsoft.com/windows/windows-11)
@@ -11,19 +11,20 @@
 ![View Count](https://komarev.com/ghpvc/?username=Bananz0&repo=GalaxyBookEnabler&color=brightgreen)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/bananz0/GalaxyBookEnabler/total)
 
-> 🎉 A big thank you to [@Hydro3ia](https://github.com/Hydro3ia), [@systemsrethinking](https://github.com/systemsrethinking) and [@intini](https://github.com/intini) for sponsoring us! ❤️
+> 🎉 A big thank you to [@Hydro3ia](https://github.com/Hydro3ia), [@systemsrethinking](https://github.com/systemsrethinking), [@intini](https://github.com/intini), and [@Ritel-T](https://github.com/Ritel-T) for sponsoring us! ❤️
 
 ## Overview
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
-> **See what's new:** [Changelog](CHANGELOG.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
+> **See what's new:** [Changelog](CHANGELOG.md) | [Explainer](Explainer.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
 
 - **21 Galaxy Book Models** - Choose from authentic hardware profiles (Galaxy Book3/4/5, Pro, Ultra, 360)
-- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app
-- **Auto-Elevation** - Automatically requests admin rights (supports gsudo and Windows 11 native sudo)
+- **Samsung MultiPoint Support** - Connect Galaxy Buds to multiple devices seamlessly via Samsung Settings app. 
+  - **Requirements**: Install the **SSSE patch** and the **Core** package selection (includes Samsung Settings, Settings Runtime, and the Galaxy Buds app). 
+- **Auto-Elevation** - Automatically requests admin rights using native sudo 
 - **Diagnostic Logging** - Automatic log generation for troubleshooting (saved to %TEMP%, works even with one-line install)
 - **Smart Package Selection** - Choose from Core, Recommended, Full Experience, or custom package combinations
 - **Package Manager** - Install or uninstall entire profiles from existing installations with status tracking
@@ -52,20 +53,35 @@ winget install Microsoft.PowerShell
 
 **Note:** If this is your first time using `winget`, you may need to run `winget list` first to accept the source agreements. The command may appear to stall without this step.
 
+**Multipoint Audio (Seamless Buds Switching):** For seamless buds switching between devices, you must install **SSSE** and the **Core** package profile, which includes **Samsung Settings**, **Settings Runtime**, and the **Galaxy Buds** app. 
+
 Or download from: <https://aka.ms/powershell>
 
 After installing, use `pwsh` (PowerShell 7) instead of `powershell` (Windows PowerShell 5.1).
 
 ## Quick Start
 
+Best practice: download `Install-GalaxyBookEnabler.ps1` first and run it locally from PowerShell 7. The `irm` path is supported, but local use is the preferred path.
+
 ### One-Line Install (from GitHub)
 
 ```powershell
-# Run in PowerShell 7 (pwsh)
 irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
 ```
 
 *The installer will automatically request administrator privileges if needed.*
+
+### Save Locally First
+
+```powershell
+irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 -OutFile .\Install-GalaxyBookEnabler.ps1
+```
+
+Then run:
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1
+```
 
 ### Uninstall Options
 
@@ -76,16 +92,6 @@ When running the installer on an existing installation, you have granular uninst
   - **Nuke Mode**: Optionally delete ALL Samsung app data (caches, settings, databases) during uninstall
 - **Uninstall apps only**: Removes all installed Samsung apps while keeping services and scheduled tasks
 - **Uninstall services only**: Removes scheduled tasks and Samsung services while keeping apps installed
-
-**With gsudo (recommended for seamless elevation):**
-
-```powershell
-# Install gsudo first (one-time)
-winget install gerardog.gsudo
-
-# Then install Galaxy Book Enabler with automatic elevation
-irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | gsudo pwsh
-```
 
 ### Manual Install
 
@@ -115,22 +121,13 @@ Test mode simulates the entire installation without making any actual changes. P
 Run the installer non-interactively with all options specified up front:
 
 ```powershell
-.\Install-GalaxyBookEnabler.ps1 `
-   -FullyAutonomous `
-   -AutonomousModel 960XGL `
-   -AutonomousPackageProfile Recommended `
-   -AutonomousInstallSsse:$true `
-   -AutonomousSsseStrategy Dual `
-   -AutonomousConfirmPackages:$true `
-   -AutonomousCreateAiSelectShortcut:$false `
-   -DebugOutput `
-   -LogDirectory "C:\GalaxyBook\Logs"
+.\Install-GalaxyBookEnabler.ps1 -FullyAutonomous -AutonomousModel Book4Pro -AutonomousPackageProfile Recommended -AutonomousInstallSsse:$true -AutonomousSsseStrategy Dual -AutonomousConfirmPackages:$true -AutonomousCreateAiSelectShortcut:$false -DebugOutput -LogDirectory "C:\GalaxyBook\Logs"
 ```
 
 Notes:
 - `-AutonomousPackageProfile` supports: `Core`, `Recommended`, `RecommendedPlus`, `Full`, `Everything`, `Custom`, `Skip`.
 - For `Custom`, pass `-AutonomousPackageNames` with package names/IDs.
-- `-AutonomousModel` must match a model code from the model list (e.g., `960XGL`, `960XGK`).
+- `-AutonomousModel` accepts either an exact model code (for example `960XGL`) or a family/profile selection (for example `Book4Pro` or `Galaxy Book4 Pro`).
 - `-AutonomousAction` supports: `Install` (default), `UpdateSettings`, `UpgradeSSE`, `UninstallAll`, `Cancel`.
 - Logs default to `C:\GalaxyBook\Logs` in autonomous mode unless `-LogPath` or `-LogDirectory` is supplied.
 
@@ -156,7 +153,7 @@ Essential packages for basic Samsung ecosystem functionality:
 - Samsung Settings + Runtime
 - Samsung Cloud
 - Knox Matrix for Windows
-- Samsung Continuity Service
+- Galaxy Connect
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
 - Galaxy Book Experience
@@ -210,7 +207,7 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
 | Samsung Cloud Assistant | ✅ Working | No | Required |
-| Samsung Continuity Service | ✅ Working | No | Required |
+| Galaxy Connect | ✅ Working | No | Required |
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
@@ -403,24 +400,37 @@ RAlt::Run "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!A
 
 > **Note:** Desktop shortcuts use explorer.exe which adds slight overhead. PowerToys URI or AHK methods are faster.
 
-### Manual Identity Generation
+### config.plist Generation
 
-If you need to generate high-fidelity DMI strings manually for OpenCore or generic spoofing, use the provided utility:
+If you want OpenCore-ready SMBIOS values, use the installer directly.
+
+Generate configuration data only:
 
 ```powershell
-.\Generate-SamsungIdentity.ps1 -Profile Book6Ultra -IncludeFullBiosVersion
-.\Generate-SamsungIdentity.ps1 -Profile Book6Pro -IncludeFullBiosVersion -WriteConfigPlist -ConfigPath "D:\\EFI\\OC\\config.plist"
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Ultra -AutonomousCountryCode US
 ```
 
-This generates randomized but internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values using Samsung's documented patterns. It also derives `BoardProduct` from randomized model/suffix pairs.
+Write the generated values straight into an existing `config.plist`:
 
-When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates.
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -ConfigurationPath "D:\\EFI\\OC\\config.plist"
+```
 
-**Region selection** defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-CountryCode` or `-RegionCode`. Optional `-UseGeoIp` uses the public ipapi.co endpoint (no API key) to resolve country based on IP. This can affect region-locked features; for example, Samsung Phone app Messages has been observed to be available in the US but not in the UK.
+Include the full BIOS version when you need a closer Samsung-style match:
+
+```powershell
+.\Install-GalaxyBookEnabler.ps1 -ConfigurationOnly -FullyAutonomous -AutonomousModel Book4Pro -AutonomousCountryCode US -IncludeFullBiosVersion -ConfigurationPath "D:\\EFI\\OC\\config.plist"
+```
+
+This uses the installer's inline resolver to generate internally consistent `SystemSKU`, `BIOSVersion`, `SerialNumber`, `ROM`, and `SystemUUID` values.
+
+When `-ConfigurationPath` is used, the script creates a timestamped `.bak` copy alongside the original file before writing updates. Use `-SkipConfigurationBackup` to suppress that backup or `-ConfigurationBackupSuffix` to customize the backup suffix.
+
+Region selection defaults to your Windows locale. Ireland (`IE`) maps to the UK (`UK`) by default. If you need a closer match, set `-AutonomousCountryCode`, `-AutonomousRegion`, or `-AutonomousRegionPreference`. Optional `-AutonomousRegionSource GeoIp` uses a public GeoIP lookup, currently trying `ipwho.is` first and falling back to `ipapi.co`, to resolve country based on IP.
 
 ## 🔧 How It Works
 
-1. **Registry Spoof**: Modifies system registry to identify as "Samsung Galaxy Book3 Ultra"
+1. **Registry Spoof**: Modifies system registry to identify as a Samsung Galaxy Book profile
 2. **Startup Tasks**: Creates scheduled tasks that run on every boot
 3. **Multi Control Recovery**: Runs `Init-SamsungMultiControlOnLogin.ps1` at startup +5 minutes, then waits 1 minute before restarting Samsung services
 4. **Package Installation**: Installs selected Samsung apps from Microsoft Store
@@ -430,8 +440,6 @@ When `-WriteConfigPlist` is used, the script creates a timestamped `.bak` copy a
 
 | Model   | Family                              | Gen  |
 |---------|-------------------------------------|------|
-| 960XKB  | Galaxy Book6 Ultra                  | 2026 |
-| 960XKA  | Galaxy Book6 Pro                    | 2026 |
 | 960XHA  | Galaxy Book5 Pro                    | 2025 |
 | 940XHA  | Galaxy Book5 Pro                    | 2025 |
 | 960QHA  | Galaxy Book5 Pro 360                | 2025 |
@@ -756,6 +764,7 @@ A huge thanks to the following people for supporting this project ❤️ :
 - **@Hydro3ia**
 - **@systemsrethinking**
 - **@intini**
+- **@Ritel-T**
 
 ### Bluetooth Device Removal
 

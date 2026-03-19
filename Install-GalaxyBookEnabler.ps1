@@ -1,5 +1,6 @@
 # Galaxy Book Enabler Installer/Uninstaller
 # Enables Samsung Galaxy Book features on non-Galaxy Book devices
+# Copyright (c) 2023-2026 Glen Muthoka Mutinda
 
 <#
 .SYNOPSIS
@@ -53,7 +54,7 @@
     File Name      : Install-GalaxyBookEnabler.ps1
     Prerequisite   : PowerShell 7.0 or later
     Requires Admin : Yes
-    Version        : 3.0.0
+    Version        : 3.1.5
     Repository     : https://github.com/Bananz0/GalaxyBookEnabler
 #>
 
@@ -73,19 +74,102 @@ param(
     [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
     [string]$AutonomousSsseExistingMode = "Upgrade",
     [ValidateSet("Dual", "Stable", "Latest", "Manual")]
-    [string]$AutonomousSsseStrategy = "Dual",
+    [string]$AutonomousSsseStrategy = "Latest",
     [string]$AutonomousSsseVersion,
     [bool]$AutonomousRemoveExistingSettings = $true,
     [bool]$AutonomousDisableOriginalService = $true,
     [bool]$AutonomousConfirmPackages = $true,
     [bool]$AutonomousCreateAiSelectShortcut = $false,
     [bool]$AutonomousPreserveLegacy = $true,
+    [ValidateSet("Locale", "GeoIp")]
+    [string]$AutonomousRegionSource = "Locale",
+    [string]$AutonomousCountryCode,
+    [string]$AutonomousRegion,
+    [string]$AutonomousRegionPreference,
+    [switch]$ConfigurationOnly,
+    [string]$ConfigurationPath,
+    [switch]$SkipConfigurationBackup,
+    [string]$ConfigurationBackupSuffix,
+    [string]$LegacyProfile,
+    [string]$CountryCode,
+    [string]$RegionCode,
+    [string]$RegionPreference,
+    [switch]$UseGeoIp,
+    [string]$ConfigPath,
+    [switch]$WriteConfigPlist,
+    [switch]$SkipConfigBackup,
+    [string]$ConfigBackupSuffix,
+    [switch]$IncludeFullBiosVersion,
     [string]$LogDirectory,
     [string]$LogPath,
-    [switch]$DebugOutput
+    [switch]$DebugOutput,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArguments
 )
 
+$legacyProfileSpecified = $PSBoundParameters.ContainsKey('LegacyProfile')
+if ($RemainingArguments -and $RemainingArguments.Count -gt 0) {
+    $unknownArguments = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $RemainingArguments.Count; $i++) {
+        $argument = $RemainingArguments[$i]
+        if ($argument -ieq '-Profile' -or $argument -ieq '/Profile') {
+            if ($legacyProfileSpecified) {
+                throw 'Do not specify both -LegacyProfile and -Profile.'
+            }
+
+            if (($i + 1) -ge $RemainingArguments.Count) {
+                throw 'Missing value for legacy parameter -Profile.'
+            }
+
+            $LegacyProfile = [string]$RemainingArguments[$i + 1]
+            $legacyProfileSpecified = $true
+            $i++
+            continue
+        }
+
+        $unknownArguments.Add($argument)
+    }
+
+    if ($unknownArguments.Count -gt 0) {
+        throw ("Unknown argument(s): {0}" -f ($unknownArguments -join ', '))
+    }
+}
+
 $script:IsAutonomous = $FullyAutonomous.IsPresent
+$script:IsConfigurationOnly = $ConfigurationOnly.IsPresent -or
+    $WriteConfigPlist.IsPresent -or
+    $legacyProfileSpecified -or
+    $PSBoundParameters.ContainsKey('CountryCode') -or
+    $PSBoundParameters.ContainsKey('RegionCode') -or
+    $PSBoundParameters.ContainsKey('RegionPreference') -or
+    $UseGeoIp.IsPresent -or
+    $PSBoundParameters.ContainsKey('ConfigPath')
+
+if (-not $AutonomousModel -and $LegacyProfile) {
+    $AutonomousModel = $LegacyProfile
+}
+if (-not $AutonomousCountryCode -and $CountryCode) {
+    $AutonomousCountryCode = $CountryCode
+}
+if (-not $AutonomousRegion -and $RegionCode) {
+    $AutonomousRegion = $RegionCode
+}
+if (-not $AutonomousRegionPreference -and $RegionPreference) {
+    $AutonomousRegionPreference = $RegionPreference
+}
+if (-not $ConfigurationPath -and $ConfigPath) {
+    $ConfigurationPath = $ConfigPath
+}
+if (-not $SkipConfigurationBackup -and $SkipConfigBackup) {
+    $SkipConfigurationBackup = $true
+}
+if (-not $ConfigurationBackupSuffix -and $ConfigBackupSuffix) {
+    $ConfigurationBackupSuffix = $ConfigBackupSuffix
+}
+if ($UseGeoIp) {
+    $AutonomousRegionSource = "GeoIp"
+}
+
 if ($DebugOutput) {
     $VerbosePreference = "Continue"
     $DebugPreference = "Continue"
@@ -115,14 +199,103 @@ function ConvertTo-StartProcessArguments {
     return $quotedArguments
 }
 
+function Start-GalaxyBookEnablerScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+
+        [string[]]$ForwardedArguments = @()
+    )
+
+    $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $ForwardedArguments
+    $isAdminSession = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if ($isAdminSession) {
+        & pwsh @launchArgs
+        return $LASTEXITCODE
+    }
+
+    $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
+    if ($gsudoPath) {
+        & gsudo pwsh @launchArgs
+        return $LASTEXITCODE
+    }
+
+    $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
+    if ($sudoPath) {
+        & sudo pwsh @launchArgs
+        return $LASTEXITCODE
+    }
+
+    $quotedLaunchArgs = ConvertTo-StartProcessArguments -Arguments $launchArgs
+    $process = Start-Process -FilePath "pwsh" -ArgumentList $quotedLaunchArgs -Verb RunAs -Wait -PassThru
+    return $process.ExitCode
+}
+
+function Invoke-WingetCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [int]$TimeoutSeconds = 120
+    )
+
+    $wingetCommand = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $wingetCommand) {
+        $wingetCommand = Get-Command winget -ErrorAction SilentlyContinue
+    }
+
+    if (-not $wingetCommand) {
+        throw "Windows Package Manager (winget) is not installed or not available in PATH."
+    }
+
+    $stdoutPath = Join-Path $env:TEMP ("gbe-winget-{0}.out.log" -f ([guid]::NewGuid().ToString('N')))
+    $stderrPath = Join-Path $env:TEMP ("gbe-winget-{0}.err.log" -f ([guid]::NewGuid().ToString('N')))
+
+    try {
+        $process = Start-Process -FilePath $wingetCommand.Source -ArgumentList $Arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+        $null = Wait-Process -Id $process.Id -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+
+        $output = @()
+        if (Test-Path $stdoutPath) {
+            $output += Get-Content $stdoutPath -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $stderrPath) {
+            $output += Get-Content $stderrPath -ErrorAction SilentlyContinue
+        }
+
+        $process.Refresh()
+        return @{
+            TimedOut = -not $process.HasExited
+            ExitCode = if ($process.HasExited) { $process.ExitCode } else { $null }
+            Output   = ($output -join [Environment]::NewLine)
+        }
+    }
+    finally {
+        Remove-Item $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-InteractivePause {
     if (-not $script:IsAutonomous) {
-        pause
+        Write-Host ""
+        Write-Host "Press any key to continue..." -ForegroundColor Yellow
+        $null = [Console]::ReadKey($true)
+        Write-Host ""
     }
 }
 
 function Clear-Host {
     try {
+        if ($Host.UI -and $Host.UI.SupportsVirtualTerminal) {
+            Write-Host "$([char]27)[3J$([char]27)[2J$([char]27)[H" -NoNewline
+            return
+        }
+
         Microsoft.PowerShell.Core\Clear-Host
     }
     catch {
@@ -161,7 +334,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 # Self-elevation: Try gsudo first (preserves console), fallback to native UAC
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if (-not $isAdmin) {
+if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
 
     $forwardedArgs = @()
@@ -188,7 +361,12 @@ if (-not $isAdmin) {
         if ($paramValue -is [Array]) {
             if ($paramValue.Count -gt 0) {
                 $forwardedArgs += "-$paramName"
-                $forwardedArgs += @($paramValue | ForEach-Object { $_.ToString() })
+                # Join array elements with commas for -File parameter consistency
+                $joined = ($paramValue | ForEach-Object { 
+                    $s = $_.ToString()
+                    if ($s -match ' ') { "`"$s`"" } else { $s }
+                }) -join ','
+                $forwardedArgs += $joined
             }
             continue
         }
@@ -239,15 +417,17 @@ if (-not $isAdmin) {
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
     $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-    Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait
+    $elevatedProcess = Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
     Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
-    exit
+    exit $elevatedProcess.ExitCode
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "3.1.0"
+$SCRIPT_VERSION = "3.1.5"
 $GITHUB_REPO = "Bananz0/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+$INTEL_WIFI_DRIVER_GUIDANCE = "For best Samsung app compatibility, keep Intel Wi-Fi drivers on v23 and avoid v24 until Samsung updates their SDK."
+$LATEST_SSSE_VERSION = "8.0.5.0"
 
 # LOGGING SETUP
 $script:LogFile = Join-Path $env:TEMP "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
@@ -261,7 +441,7 @@ elseif ($LogDirectory) {
     $script:LogDirectory = $LogDirectory
     $script:LogFile = Join-Path $LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 }
-elseif ($script:IsAutonomous) {
+elseif ($script:IsAutonomous -and -not $script:IsConfigurationOnly) {
     $script:LogDirectory = "C:\GalaxyBook\Logs"
     $script:LogFile = Join-Path $script:LogDirectory "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 }
@@ -271,7 +451,7 @@ if ($script:LogDirectory -and -not (Test-Path $script:LogDirectory) -and -not $T
 }
 $script:LoggingEnabled = (-not $TestMode)
 
-function Write-Log {
+function Write-GbeLog {
     param(
         [string]$Message,
         [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS", "DEBUG")]
@@ -287,7 +467,7 @@ function Write-Log {
         Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
     }
     catch {
-        # Silently fail if logging doesn't work
+            Write-Debug "Failed to write log entry: $($_.Exception.Message)"
     }
 }
 
@@ -295,9 +475,9 @@ function Write-LogSection {
     param([string]$SectionName)
     
     $separator = "=" * 80
-    Write-Log $separator
-    Write-Log "  $SectionName"
-    Write-Log $separator
+    Write-GbeLog $separator
+    Write-GbeLog "  $SectionName"
+    Write-GbeLog $separator
 }
 
 function Write-LogSystemInfo {
@@ -308,17 +488,17 @@ function Write-LogSystemInfo {
         $cs = Get-CimInstance Win32_ComputerSystem
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
         
-        Write-Log "Script Version: $SCRIPT_VERSION"
-        Write-Log "Windows: $($os.Caption) (Build $($os.BuildNumber))"
-        Write-Log "Computer: $($cs.Manufacturer) $($cs.Model)"
-        Write-Log "CPU: $($cpu.Name)"
-        Write-Log "RAM: $([math]::Round($cs.TotalPhysicalMemory / 1GB, 2)) GB"
-        Write-Log "PowerShell: $($PSVersionTable.PSVersion)"
-        Write-Log "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Write-Log "Command Line: $($MyInvocation.Line)"
+        Write-GbeLog "Script Version: $SCRIPT_VERSION"
+        Write-GbeLog "Windows: $($os.Caption) (Build $($os.BuildNumber))"
+        Write-GbeLog "Computer: $($cs.Manufacturer) $($cs.Model)"
+        Write-GbeLog "CPU: $($cpu.Name)"
+        Write-GbeLog "RAM: $([math]::Round($cs.TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-GbeLog "PowerShell: $($PSVersionTable.PSVersion)"
+        Write-GbeLog "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-GbeLog "Command Line: $($MyInvocation.Line)"
     }
     catch {
-        Write-Log "Failed to gather system info: $($_.Exception.Message)" -Level ERROR
+        Write-GbeLog "Failed to gather system info: $($_.Exception.Message)" -Level ERROR
     }
 }
 
@@ -332,8 +512,8 @@ function Write-LogHardwareInfo {
         
         if ($wifiDevices) {
             foreach ($wifi in $wifiDevices) {
-                Write-Log "Wi-Fi (Intel): $($wifi.FriendlyName)"
-                Write-Log "  Hardware ID: $($wifi.HardwareID[0])"
+                Write-GbeLog "Wi-Fi (Intel): $($wifi.FriendlyName)"
+                Write-GbeLog "  Hardware ID: $($wifi.HardwareID[0])"
             }
         }
         else {
@@ -342,12 +522,12 @@ function Write-LogHardwareInfo {
             
             if ($wifiAdapters) {
                 foreach ($adapter in $wifiAdapters) {
-                    Write-Log "Wi-Fi: $($adapter.InterfaceDescription)" -Level WARNING
-                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                    Write-GbeLog "Wi-Fi: $($adapter.InterfaceDescription)" -Level WARNING
+                    Write-GbeLog "  Note: Not Intel (may not support Samsung apps)"
                 }
             }
             else {
-                Write-Log "Wi-Fi: Not detected" -Level WARNING
+                Write-GbeLog "Wi-Fi: Not detected" -Level WARNING
             }
         }
         
@@ -357,54 +537,1346 @@ function Write-LogHardwareInfo {
         
         if ($btDevices) {
             foreach ($bt in $btDevices) {
-                Write-Log "Bluetooth (Intel): $($bt.FriendlyName)"
-                Write-Log "  Hardware ID: $($bt.HardwareID[0])"
+                Write-GbeLog "Bluetooth (Intel): $($bt.FriendlyName)"
+                Write-GbeLog "  Hardware ID: $($bt.HardwareID[0])"
             }
         }
         else {
             $btAdapters = Get-PnpDevice -Class "Bluetooth" -Status "OK" -ErrorAction SilentlyContinue
             if ($btAdapters) {
                 foreach ($adapter in $btAdapters) {
-                    Write-Log "Bluetooth: $($adapter.FriendlyName)" -Level WARNING
-                    Write-Log "  Note: Not Intel (may not support Samsung apps)"
+                    Write-GbeLog "Bluetooth: $($adapter.FriendlyName)" -Level WARNING
+                    Write-GbeLog "  Note: Not Intel (may not support Samsung apps)"
                 }
             }
             else {
-                Write-Log "Bluetooth: Not detected" -Level WARNING
+                Write-GbeLog "Bluetooth: Not detected" -Level WARNING
             }
         }
     }
     catch {
-        Write-Log "Failed to detect hardware: $($_.Exception.Message)" -Level ERROR
+        Write-GbeLog "Failed to detect hardware: $($_.Exception.Message)" -Level ERROR
     }
 }
 
 
 # Galaxy Book Model Database
-$GalaxyBookModels = @{
-    '730QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03VAE.330.230322.PL'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 360'; SystemProductName = '730QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PVAE'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP730QFG-KB1UK'; EnclosureKind = 31 }
-    '750QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P03RHC.170.240226.HC'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 360'; SystemProductName = '750QGK'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRHC'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QGK-KG2US'; EnclosureKind = 31 }
-    '750QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04RHG.270.250515.SX'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 360'; SystemProductName = '750QHA'; ProductSku = 'SCAI-A5A5-A5A5-LNLM-PRHG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750QHA-KA1US'; EnclosureKind = 31 }
-    '750XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFL.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFG'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFL'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFG-KA3SE'; EnclosureKind = 10 }
-    '750XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3'; SystemProductName = '750XFH'; ProductSku = 'SCAI-A5A5-A5A5-RPLP-PCFM'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XFH-XF1BR'; EnclosureKind = 10 }
-    '750XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGK'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGK-KG1IT'; EnclosureKind = 10 }
-    '750XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4'; SystemProductName = '750XGL'; ProductSku = 'SCAI-A5A5-A5A5-RPLU-PCFP'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP750XGL-XG1BR'; EnclosureKind = 10 }
-    '930SBE' = @{ BIOSVendor = 'American Megatrends Inc.'; BIOSVersion = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Notebook 9 Series'; SystemProductName = '930SBE/931SBE/930SBV'; ProductSku = 'SCAI-A5A5-A5A5-A5A5-PAGW'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NT930SBE-K716'; EnclosureKind = 31 }
-    '930XDB' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '930XDB/931XDB/930XDY'; ProductSku = 'SCAI-A5A5-A5A5-TGL3-PRFX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP930XDB-KF6IT'; EnclosureKind = 10 }
-    '935QDC' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book Series'; SystemProductName = '935QDC'; ProductSku = 'SCAI-A5A5-A5A5-TGL4-PAKJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP935QDC-KE2US'; EnclosureKind = 31 }
-    '940XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '940XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PVAG'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XGK-KG1FR'; EnclosureKind = 10 }
-    '940XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '940XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PVAJ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP940XHA-KG3IT'; EnclosureKind = 10 }
-    '950XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book2 Pro Special Edition'; SystemProductName = '950XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHD'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP950XGK-KA2FR'; EnclosureKind = 10 }
-    '960QFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro 360'; SystemProductName = '960QFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PALN'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP964QFG-KA1IT'; EnclosureKind = 31 }
-    '960QGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro 360'; SystemProductName = '960QGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHB'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QGK-KG1IT'; EnclosureKind = 31 }
-    '960QHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro 360'; SystemProductName = '960QHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PALY'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960QHA-KG2UK'; EnclosureKind = 31 }
-    '960XFG' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Pro'; SystemProductName = '960XFG'; ProductSku = 'SCAI-ICPS-A5A5-RPLP-PRGU'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFG-KC2CL'; EnclosureKind = 10 }
-    '960XFH' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book3 Ultra'; SystemProductName = '960XFH'; ProductSku = 'SCAI-ICPS-A5A5-RPLH-PALQ'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XFH-XA2BR'; EnclosureKind = 10 }
-    '960XGK' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Pro'; SystemProductName = '960XGK'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PRHA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGK-KG1UK'; EnclosureKind = 10 }
-    '960XGL' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book4 Ultra'; SystemProductName = '960XGL'; ProductSku = 'SCAI-PROT-A5A5-MTLH-PALX'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XGL-XG2BR'; EnclosureKind = 10 }
-    '960XHA' = @{ BIOSVendor = 'American Megatrends International, LLC.'; BIOSVersion = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; SystemManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; SystemFamily = 'Galaxy Book5 Pro'; SystemProductName = '960XHA'; ProductSku = 'SCAI-PROT-A5A5-LNLM-PAMA'; BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'; BaseBoardProduct = 'NP960XHA-KG2DE'; EnclosureKind = 10 }
+$SamsungModelDefaults = [ordered]@{
+    BIOSVendor            = 'American Megatrends International, LLC.'
+    SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+    BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+    BaseBoardPrefix       = 'NP'
 }
 
+$GalaxyBookModelBlueprints = [ordered]@{
+    '730QFG' = @{ FamilyKey = 'Book3360'; BIOSVersionSample = 'P03VAE.330.230322.PL'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'VAE'; BoardSuffix = 'KB1'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750QGK' = @{ FamilyKey = 'Book4360'; BIOSVersionSample = 'P03RHC.170.240226.HC'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'RHC'; BoardSuffix = 'KG2'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750QHA' = @{ FamilyKey = 'Book5360'; BIOSVersionSample = 'P04RHG.270.250515.SX'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'RHG'; BoardSuffix = 'KA1'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '750XFG' = @{ FamilyKey = 'Book3'; BIOSVersionSample = 'P09CFL.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'CFL'; BoardSuffix = 'KA3'; BoardRegion = 'SE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XFH' = @{ FamilyKey = 'Book3'; BIOSVersionSample = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'CFM'; BoardSuffix = 'XF1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XGK' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '750XGL' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'XG1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '930SBE' = @{ FamilyKey = 'Notebook9Series'; BIOSVendor = 'American Megatrends Inc.'; BIOSVersionSample = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'A5A5'; BiosCode = 'AGW'; ProductName = '930SBE/931SBE/930SBV'; BoardPrefix = 'NT'; BoardSuffix = 'K716'; SupportsRegionBoard = $false; EnclosureKind = 31 }
+    '930XDB' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL3'; BiosCode = 'RFX'; ProductName = '930XDB/931XDB/930XDY'; BoardSuffix = 'KF6'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '935QDC' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL4'; BiosCode = 'AKJ'; BoardSuffix = 'KE2'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '940XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'VAG'; BoardSuffix = 'KG1'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '940XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'VAJ'; BoardSuffix = 'KG3'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '950XGK' = @{ FamilyKey = 'Book2Pro'; BIOSVersionSample = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHD'; BoardSuffix = 'KA2'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960QFG' = @{ FamilyKey = 'Book3Pro360'; BIOSVersionSample = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'ALN'; BoardModel = '964QFG'; BoardSuffix = 'KA1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960QGK' = @{ FamilyKey = 'Book4Pro360'; BIOSVersionSample = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHB'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960QHA' = @{ FamilyKey = 'Book5Pro360'; BIOSVersionSample = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'ALY'; BoardSuffix = 'KG2'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960XFG' = @{ FamilyKey = 'Book3Pro'; BIOSVersionSample = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'RGU'; BoardSuffix = 'KC2'; BoardRegion = 'CL'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XFH' = @{ FamilyKey = 'Book3Ultra'; BIOSVersionSample = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLH'; BiosCode = 'ALQ'; BoardSuffix = 'XA2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHA'; BoardSuffix = 'KG1'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XGL' = @{ FamilyKey = 'Book4Ultra'; BIOSVersionSample = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'ALX'; BoardSuffix = 'XG2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'AMA'; BoardSuffix = 'KG2'; BoardRegion = 'DE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+}
+
+
+function ConvertTo-SelectorKey {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $null
+    }
+
+    return (($Value -replace '^NP', '') -replace '[^A-Za-z0-9]', '').ToUpperInvariant()
+}
+
+$YearCodeMap = @{
+    2020 = "N"
+    2021 = "R"
+    2022 = "T"
+    2023 = "W"
+    2024 = "X"
+    2025 = "Y"
+    2026 = "A"
+}
+
+$RegionCatalog = @(
+    @{ Code = "US"; Continent = "NorthAmerica"; Countries = @("US") },
+    @{ Code = "CA"; Continent = "NorthAmerica"; Countries = @("CA") },
+    @{ Code = "MX"; Continent = "NorthAmerica"; Countries = @("MX") },
+    @{ Code = "BR"; Continent = "SouthAmerica"; Countries = @("BR") },
+    @{ Code = "CL"; Continent = "SouthAmerica"; Countries = @("CL") },
+    @{ Code = "UK"; Continent = "Europe"; Countries = @("UK", "GB", "IE") },
+    @{ Code = "DE"; Continent = "Europe"; Countries = @("DE") },
+    @{ Code = "FR"; Continent = "Europe"; Countries = @("FR") },
+    @{ Code = "IT"; Continent = "Europe"; Countries = @("IT") },
+    @{ Code = "SE"; Continent = "Europe"; Countries = @("SE") },
+    @{ Code = "HK"; Continent = "Asia"; Countries = @("HK") },
+    @{ Code = "TW"; Continent = "Asia"; Countries = @("TW") },
+    @{ Code = "CN"; Continent = "Asia"; Countries = @("CN") },
+    @{ Code = "KR"; Continent = "Asia"; Countries = @("KR") },
+    @{ Code = "SG"; Continent = "Asia"; Countries = @("SG") },
+    @{ Code = "MY"; Continent = "Asia"; Countries = @("MY") },
+    @{ Code = "TH"; Continent = "Asia"; Countries = @("TH") },
+    @{ Code = "VN"; Continent = "Asia"; Countries = @("VN") },
+    @{ Code = "IN"; Continent = "Asia"; Countries = @("IN") },
+    @{ Code = "AU"; Continent = "Oceania"; Countries = @("AU", "NZ") }
+)
+
+$GalaxyBookFamilies = @(
+    [ordered]@{ Key = 'Book5Pro'; Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 1 },
+    [ordered]@{ Key = 'Book5Pro360'; Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 2 },
+    [ordered]@{ Key = 'Book5360'; Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 3 },
+    [ordered]@{ Key = 'Book4Ultra'; Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 4 },
+    [ordered]@{ Key = 'Book4Pro'; Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 5 },
+    [ordered]@{ Key = 'Book4Pro360'; Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 6 },
+    [ordered]@{ Key = 'Book4'; Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 7 },
+    [ordered]@{ Key = 'Book4360'; Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 8 },
+    [ordered]@{ Key = 'Book3Ultra'; Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 9 },
+    [ordered]@{ Key = 'Book3Pro'; Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 10 },
+    [ordered]@{ Key = 'Book3Pro360'; Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 11 },
+    [ordered]@{ Key = 'Book3'; Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 12 },
+    [ordered]@{ Key = 'Book3360'; Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 13 },
+    [ordered]@{ Key = 'Book2Pro'; Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 14 },
+    [ordered]@{ Key = 'GalaxyBookSeries'; Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 15 },
+    [ordered]@{ Key = 'Notebook9Series'; Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 16 }
+)
+
+$GalaxyBookFamilyByKey = @{}
+$GalaxyBookFamilyAliasMap = @{}
+foreach ($family in $GalaxyBookFamilies) {
+    $GalaxyBookFamilyByKey[$family.Key] = $family
+    foreach ($alias in @($family.Key, $family.Label) + $family.Aliases) {
+        $GalaxyBookFamilyAliasMap[(ConvertTo-SelectorKey -Value $alias)] = $family.Label
+    }
+}
+
+$GalaxyBookModels = [ordered]@{}
+foreach ($modelCode in $GalaxyBookModelBlueprints.Keys) {
+    $blueprint = $GalaxyBookModelBlueprints[$modelCode]
+    $family = $GalaxyBookFamilyByKey[$blueprint.FamilyKey]
+    if (-not $family) {
+        throw "Model '$modelCode' references unknown family '$($blueprint.FamilyKey)'."
+    }
+
+    $boardPrefix = if ($blueprint.BoardPrefix) { $blueprint.BoardPrefix } else { $SamsungModelDefaults.BaseBoardPrefix }
+    $boardModel = if ($blueprint.BoardModel) { $blueprint.BoardModel } else { $modelCode }
+    $baseBoardProduct = if ($blueprint.SupportsRegionBoard) {
+        "$boardPrefix$boardModel-$($blueprint.BoardSuffix)$($blueprint.BoardRegion)"
+    }
+    else {
+        "$boardPrefix$boardModel-$($blueprint.BoardSuffix)"
+    }
+
+    $GalaxyBookModels[$modelCode] = [ordered]@{
+        BIOSVendor            = if ($blueprint.BIOSVendor) { $blueprint.BIOSVendor } else { $SamsungModelDefaults.BIOSVendor }
+        BIOSVersion           = $blueprint.BIOSVersionSample
+        BIOSMajorRelease      = $blueprint.BIOSMajorRelease
+        BIOSMinorRelease      = $blueprint.BIOSMinorRelease
+        SystemManufacturer    = if ($blueprint.SystemManufacturer) { $blueprint.SystemManufacturer } else { $SamsungModelDefaults.SystemManufacturer }
+        SystemFamily          = $family.Label
+        SystemProductName     = if ($blueprint.ProductName) { $blueprint.ProductName } else { $modelCode }
+        ProductSku            = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+        BaseBoardManufacturer = if ($blueprint.BaseBoardManufacturer) { $blueprint.BaseBoardManufacturer } else { $SamsungModelDefaults.BaseBoardManufacturer }
+        BaseBoardProduct      = $baseBoardProduct
+        EnclosureKind         = $blueprint.EnclosureKind
+    }
+}
+
+$DefaultBiosModelCode = '960XGL'
+$DefaultBiosFamilyLabel = 'Galaxy Book4 Ultra'
+
+function Get-GalaxyBookSelectorLabel {
+    param(
+        [string]$FamilyLabel,
+        [string]$ModelCode
+    )
+
+    if ($ModelCode -and $GalaxyBookModelBlueprints.Contains($ModelCode)) {
+        return $GalaxyBookModelBlueprints[$ModelCode].FamilyKey
+    }
+
+    if ($FamilyLabel) {
+        foreach ($family in $GalaxyBookFamilies) {
+            if ($family.Label -eq $FamilyLabel) {
+                return $family.Key
+            }
+        }
+    }
+
+    return $null
+}
+
+function Format-GalaxyBookModelDisplay {
+    param(
+        [string]$FamilyLabel,
+        [string]$SystemProductName,
+        [string]$ModelCode
+    )
+
+    $selectorLabel = Get-GalaxyBookSelectorLabel -FamilyLabel $FamilyLabel -ModelCode $ModelCode
+    $parts = @()
+
+    if ($FamilyLabel) {
+        if ($selectorLabel) {
+            $parts += "$FamilyLabel [$selectorLabel]"
+        }
+        else {
+            $parts += $FamilyLabel
+        }
+    }
+    elseif ($selectorLabel) {
+        $parts += $selectorLabel
+    }
+
+    if ($SystemProductName) {
+        $parts += "($SystemProductName)"
+    }
+
+    return ($parts -join ' ')
+}
+
+$DefaultBiosSelectorLabel = Get-GalaxyBookSelectorLabel -ModelCode $DefaultBiosModelCode
+
+function Get-DefaultBiosValues {
+    $defaultEntry = $GalaxyBookModels[$DefaultBiosModelCode]
+    if (-not $defaultEntry) {
+        throw "Default BIOS model '$DefaultBiosModelCode' is not defined."
+    }
+
+    return @{
+        BIOSVendor            = $defaultEntry.BIOSVendor
+        BIOSVersion           = $defaultEntry.BIOSVersion
+        BIOSMajorRelease      = Convert-ToHexDword -Value $defaultEntry.BIOSMajorRelease
+        BIOSMinorRelease      = Convert-ToHexDword -Value $defaultEntry.BIOSMinorRelease
+        SystemManufacturer    = $defaultEntry.SystemManufacturer
+        SystemFamily          = $defaultEntry.SystemFamily
+        SystemProductName     = $defaultEntry.SystemProductName
+        ProductSku            = $defaultEntry.ProductSku
+        EnclosureKind         = Convert-ToHexDword -Value $defaultEntry.EnclosureKind
+        BaseBoardManufacturer = $defaultEntry.BaseBoardManufacturer
+        BaseBoardProduct      = $defaultEntry.BaseBoardProduct
+    }
+}
+
+function Get-RandomChoice {
+    param([string[]]$Items)
+
+    if (-not $Items -or $Items.Count -eq 0) {
+        return $null
+    }
+
+    return $Items[(Get-Random -Minimum 0 -Maximum $Items.Count)]
+}
+
+function Convert-ToHexDword {
+    param($Value)
+
+    if ($Value -is [string] -and $Value -match '^0x') {
+        return $Value
+    }
+
+    return ('0x{0:x2}' -f [int]$Value)
+}
+
+function ConvertTo-ContinentKey {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $null
+    }
+
+    $normalized = ($Value -replace "\s", "").ToLowerInvariant()
+    switch ($normalized) {
+        "northamerica" { return "NorthAmerica" }
+        "southamerica" { return "SouthAmerica" }
+        "europe" { return "Europe" }
+        "asia" { return "Asia" }
+        "oceania" { return "Oceania" }
+        "africa" { return "Africa" }
+        default { return $null }
+    }
+}
+
+function Resolve-GeoIpCountry {
+    param([int]$TimeoutSec = 4)
+
+    $providers = @(
+        'https://ipwho.is/',
+        'https://ipapi.co/json/'
+    )
+
+    foreach ($provider in $providers) {
+        try {
+            $response = Invoke-RestMethod -Uri $provider -TimeoutSec $TimeoutSec -ErrorAction Stop
+            $countryCode = if ($response -is [string]) {
+                $null
+            }
+            else {
+                [string]$response.country_code
+            }
+
+            if ($countryCode -and $countryCode -match '^[A-Za-z]{2}$') {
+                return $countryCode.ToUpperInvariant()
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    return $null
+}
+
+function Resolve-CountryCode {
+    param(
+        [string]$SelectedCountry,
+        [switch]$UseGeoIp,
+        [int]$GeoIpTimeoutSec = 4
+    )
+
+    if ($SelectedCountry) {
+        return $SelectedCountry.ToUpperInvariant()
+    }
+
+    $country = $null
+    if ($UseGeoIp) {
+        $country = Resolve-GeoIpCountry -TimeoutSec $GeoIpTimeoutSec
+    }
+
+    if (-not $country) {
+        try {
+            $region = New-Object System.Globalization.RegionInfo((Get-Culture).Name)
+            $country = $region.TwoLetterISORegionName.ToUpperInvariant()
+        }
+        catch {
+            $country = $null
+        }
+    }
+
+    if (-not $country) {
+        $country = Resolve-GeoIpCountry -TimeoutSec $GeoIpTimeoutSec
+    }
+
+    return $country
+}
+
+function Resolve-Continent {
+    param([string]$Country)
+
+    if (-not $Country) {
+        return $null
+    }
+
+    $match = $RegionCatalog | Where-Object { $_.Countries -contains $Country -or $_.Code -eq $Country } | Select-Object -First 1
+    return $match.Continent
+}
+
+function Resolve-RegionCode {
+    param(
+        [string]$SelectedRegion,
+        [string]$Country,
+        [string]$Continent,
+        [string]$BaseBoardProduct,
+        [string]$RegionPreference
+    )
+
+    if ($SelectedRegion) {
+        return $SelectedRegion.ToUpperInvariant()
+    }
+
+    if ($BaseBoardProduct -and $BaseBoardProduct -match "^[A-Z]{2}[A-Z0-9]{6}-[A-Z0-9]{3}(?<region>[A-Z]{2})$") {
+        return $Matches.region
+    }
+
+    if ($Country) {
+        $countryCode = $Country.ToUpperInvariant()
+        if ($countryCode -eq "GB") {
+            $countryCode = "UK"
+        }
+
+        $direct = $RegionCatalog | Where-Object { $_.Code -eq $countryCode } | Select-Object -First 1
+        if ($direct) {
+            return $direct.Code
+        }
+
+        $match = $RegionCatalog | Where-Object { $_.Countries -contains $Country.ToUpperInvariant() } | Select-Object -First 1
+        if ($match) {
+            return $match.Code
+        }
+    }
+
+    $normalizedContinent = ConvertTo-ContinentKey -Value $Continent
+    if (-not $normalizedContinent) {
+        $normalizedContinent = Resolve-Continent -Country $Country
+    }
+
+    if ($normalizedContinent -eq "Africa") {
+        $normalizedContinent = "Europe"
+    }
+
+    if ($normalizedContinent) {
+        $options = $RegionCatalog | Where-Object { $_.Continent -eq $normalizedContinent }
+        if ($options) {
+            $optionCodes = $options | ForEach-Object { $_.Code }
+            if ($RegionPreference) {
+                $prefs = $RegionPreference -split ',' | ForEach-Object { $_.Trim().ToUpperInvariant() } | Where-Object { $_ -ne '' }
+                foreach ($pref in $prefs) {
+                    if ($optionCodes -contains $pref) {
+                        return $pref
+                    }
+
+                    $mapped = ($RegionCatalog | Where-Object { $_.Countries -contains $pref } | Select-Object -First 1).Code
+                    if ($mapped -and $optionCodes -contains $mapped) {
+                        return $mapped
+                    }
+                }
+            }
+
+            return Get-RandomChoice -Items ($optionCodes)
+        }
+    }
+
+    return "US"
+}
+
+function Resolve-YearCode {
+    param([int]$Year)
+
+    if ($YearCodeMap.ContainsKey($Year)) {
+        return $YearCodeMap[$Year]
+    }
+
+    throw "Unsupported year $Year."
+}
+
+function Resolve-BiosDate {
+    param([int]$Year)
+
+    $start = Get-Date -Year $Year -Month 1 -Day 5
+    $end = Get-Date -Year $Year -Month 12 -Day 20
+    $range = ($end - $start).Days
+    $offset = Get-Random -Minimum 0 -Maximum ($range + 1)
+    return $start.AddDays($offset).ToString("yyMMdd")
+}
+
+function Resolve-BiosReleaseDate {
+    param([string]$BiosDate)
+
+    $year = [int]("20" + $BiosDate.Substring(0, 2))
+    $month = [int]$BiosDate.Substring(2, 2)
+    $day = [int]$BiosDate.Substring(4, 2)
+
+    return "{0:D2}/{1:D2}/{2:D4}" -f $month, $day, $year
+}
+
+function Convert-HexStringToBytes {
+    param([string]$HexString)
+
+    $clean = ($HexString -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+    if ($clean.Length -ne 12) {
+        throw "RomHex must be 12 hex characters."
+    }
+
+    $bytes = New-Object byte[] 6
+    for ($i = 0; $i -lt 6; $i++) {
+        $bytes[$i] = [Convert]::ToByte($clean.Substring($i * 2, 2), 16)
+    }
+
+    return $bytes
+}
+
+function Convert-BytesToHexString {
+    param([byte[]]$Bytes)
+
+    return ($Bytes | ForEach-Object { $_.ToString("X2") }) -join ""
+}
+
+function Resolve-RomBytes {
+    param([string]$RomHex)
+
+    if ($RomHex) {
+        return Convert-HexStringToBytes -HexString $RomHex
+    }
+
+    $bytes = New-Object byte[] 6
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return $bytes
+}
+
+function New-SamsungSerial {
+    param([string]$YearCode)
+
+    $factory = Get-RandomChoice -Items @("R5", "R6", "R7", "KS", "RP")
+    $month = Get-RandomChoice -Items @("1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C")
+    $sequence = "{0:D5}" -f (Get-Random -Minimum 1 -Maximum 99999)
+    $suffix = Get-RandomChoice -Items @("F", "W", "X", "A")
+
+    return "$factory" + "X9FD" + "$YearCode$month$sequence$suffix"
+}
+
+function Update-ConfigurationFile {
+    param(
+        [string]$ConfigurationPath,
+        [System.Collections.IDictionary]$ConfigurationData,
+        [switch]$SkipBackup,
+        [string]$BackupSuffix
+    )
+
+    if (-not (Test-Path -Path $ConfigurationPath)) {
+        throw "ConfigurationPath not found: $ConfigurationPath"
+    }
+
+    $resolvedPath = (Resolve-Path -Path $ConfigurationPath).Path
+    $backupPath = $null
+
+    if (-not $SkipBackup) {
+        $suffix = if ($BackupSuffix) { $BackupSuffix } else { Get-Date -Format "yyyyMMdd-HHmmss" }
+        $backupPath = "$resolvedPath.bak.$suffix"
+        Copy-Item -Path $resolvedPath -Destination $backupPath -Force
+    }
+
+    $content = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+
+    $replaceKey = {
+        param([string]$Source, [string]$Section, [string]$Key, [string]$Value, [string]$Type)
+        if ($null -eq $Value -or $Value -eq "") { return $Source }
+
+        $sectionPattern = "(?s)(<key>$Section</key>\s*<dict>)(.*?)(</dict>)"
+        if ($Source -match $sectionPattern) {
+            $sectionInside = $Matches[2]
+            $keyPattern = "(?s)(<key>$Key</key>\s*<$Type>).*?(</$Type>)"
+            if ($sectionInside -match $keyPattern) {
+                $newSectionInside = $sectionInside -replace $keyPattern, ('${1}' + $Value + '${2}')
+                return $Source.Replace($sectionInside, $newSectionInside)
+            }
+        }
+
+        return $Source
+    }
+
+    $genericData = $ConfigurationData.PlatformInfo.Generic
+    $smbiosData = $ConfigurationData.SMBIOS
+
+    $content = &$replaceKey $content "Generic" "MLB" $genericData.MLB "string"
+    $content = &$replaceKey $content "Generic" "ROM" $genericData.ROM "data"
+    $content = &$replaceKey $content "Generic" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "Generic" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "Generic" "SystemProductName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "PlatformName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "SystemProductName" $genericData.SystemProductName "string"
+    $content = &$replaceKey $content "DataHub" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "DataHub" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "DataHub" "BoardProduct" $smbiosData.BoardProduct "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "MLB" $genericData.MLB "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "ROM" $genericData.ROM "data"
+    $content = &$replaceKey $content "PlatformNVRAM" "SystemSerialNumber" $genericData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "PlatformNVRAM" "SystemUUID" $genericData.SystemUUID "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSReleaseDate" $smbiosData.BIOSReleaseDate "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSVendor" $smbiosData.BIOSVendor "string"
+    $content = &$replaceKey $content "SMBIOS" "BIOSVersion" $smbiosData.BIOSVersion "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardManufacturer" $smbiosData.BoardManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardProduct" $smbiosData.BoardProduct "string"
+    $content = &$replaceKey $content "SMBIOS" "BoardSerialNumber" $smbiosData.BoardSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "ChassisManufacturer" $smbiosData.ChassisManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "ChassisSerialNumber" $smbiosData.ChassisSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemFamily" $smbiosData.SystemFamily "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemManufacturer" $smbiosData.SystemManufacturer "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemProductName" $smbiosData.SystemProductName "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemSKUNumber" $smbiosData.SystemSKUNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemSerialNumber" $smbiosData.SystemSerialNumber "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemUUID" $smbiosData.SystemUUID "string"
+    $content = &$replaceKey $content "SMBIOS" "SystemVersion" $smbiosData.SystemVersion "string"
+
+    [System.IO.File]::WriteAllText($resolvedPath, $content, (New-Object System.Text.UTF8Encoding($false)))
+
+    return $backupPath
+}
+
+function Get-GalaxyBookSelection {
+    param([string]$Selector)
+
+    if (-not $Selector) {
+        return $null
+    }
+
+    $normalized = ConvertTo-SelectorKey -Value $Selector
+    if ($normalized -and $GalaxyBookModelBlueprints.Contains($normalized)) {
+        $family = $GalaxyBookFamilyByKey[$GalaxyBookModelBlueprints[$normalized].FamilyKey]
+        return [ordered]@{
+            Label  = $normalized
+            Family = $family.Label
+            Models = @($normalized)
+        }
+    }
+
+    if ($GalaxyBookFamilyAliasMap.ContainsKey($normalized)) {
+        $label = $GalaxyBookFamilyAliasMap[$normalized]
+        $family = $GalaxyBookFamilies | Where-Object { $_.Label -eq $label } | Select-Object -First 1
+        if ($family) {
+            return [ordered]@{
+                Label  = $family.Label
+                Family = $family.Label
+                Models = @($family.Models)
+            }
+        }
+    }
+
+    $validFamilies = ($GalaxyBookFamilies | Sort-Object Order | ForEach-Object { $_.Label }) -join ", "
+    $validCodes = ($GalaxyBookModels.Keys | Sort-Object) -join ", "
+    throw "AutonomousModel '$Selector' is not a known selection. Families: $validFamilies. Codes: $validCodes"
+}
+
+function Resolve-ModelBlueprint {
+    param([string]$ModelCode)
+
+    if (-not $GalaxyBookModelBlueprints.Contains($ModelCode)) {
+        throw "Model '$ModelCode' is not available."
+    }
+
+    $entry = $GalaxyBookModelBlueprints[$ModelCode]
+    $family = $GalaxyBookFamilyByKey[$entry.FamilyKey]
+    if (-not $family) {
+        throw "Model '$ModelCode' has invalid metadata."
+    }
+
+    $segment = $entry.Segment
+    $config = $entry.Config
+    $platform = $entry.Platform
+    $biosCode = $entry.BiosCode
+    $biosShort = if ($entry.BIOSVersionSample -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } else { "P00$biosCode" }
+    $biosRevision = if ($biosShort -match '^P(?<revision>\d{2})') { $Matches.revision } else { '00' }
+    $biosDate = if ($entry.BIOSVersionSample -match '\.(?<date>\d{6})\.') { $Matches.date } else { Resolve-BiosDate -Year (Get-Date).Year }
+    $biosLine = if ($entry.BIOSVersionSample -match '\.(?<line>[A-Z0-9]{2})$') { $Matches.line } else { $null }
+    $baseBoardPrefix = if ($entry.BoardPrefix) { $entry.BoardPrefix } else { $SamsungModelDefaults.BaseBoardPrefix }
+    $baseBoardModel = if ($entry.BoardModel) { $entry.BoardModel } else { $ModelCode }
+    $baseBoardProduct = if ($entry.SupportsRegionBoard) {
+        "$baseBoardPrefix$baseBoardModel-$($entry.BoardSuffix)$($entry.BoardRegion)"
+    }
+    else {
+        "$baseBoardPrefix$baseBoardModel-$($entry.BoardSuffix)"
+    }
+
+    return [ordered]@{
+        ModelCode             = $ModelCode
+        SystemFamily          = $family.Label
+        SystemProductName     = $(if ($entry.ProductName) { $entry.ProductName } else { $ModelCode })
+        BIOSVendor            = $(if ($entry.BIOSVendor) { $entry.BIOSVendor } else { $SamsungModelDefaults.BIOSVendor })
+        SystemManufacturer    = $(if ($entry.SystemManufacturer) { $entry.SystemManufacturer } else { $SamsungModelDefaults.SystemManufacturer })
+        BaseBoardManufacturer = $(if ($entry.BaseBoardManufacturer) { $entry.BaseBoardManufacturer } else { $SamsungModelDefaults.BaseBoardManufacturer })
+        BIOSMajorRelease      = Convert-ToHexDword -Value $entry.BIOSMajorRelease
+        BIOSMinorRelease      = Convert-ToHexDword -Value $entry.BIOSMinorRelease
+        EnclosureKind         = Convert-ToHexDword -Value $entry.EnclosureKind
+        Segment               = $segment
+        Config                = $config
+        Platform              = $platform
+        BiosCode              = $biosCode
+        BiosShort             = $biosShort
+        BiosRevision          = $biosRevision
+        SampleBiosDate        = $biosDate
+        SampleBiosLine        = $biosLine
+        BaseBoardPrefix       = $baseBoardPrefix
+        BaseBoardModel        = $baseBoardModel
+        BaseBoardSuffix       = $entry.BoardSuffix
+        SupportsRegionBoard   = [bool]$entry.SupportsRegionBoard
+        BaseBoardProduct      = $baseBoardProduct
+        Year                  = [int]("20" + $biosDate.Substring(0, 2))
+    }
+}
+
+function New-GeneratedIdentityData {
+    param(
+        [string]$Selector,
+        [string]$SelectedCountry,
+        [string]$SelectedRegion,
+        [string]$RegionPreference,
+        [switch]$UseGeoIp,
+        [switch]$IncludeFullBiosVersion,
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $selection = Get-GalaxyBookSelection -Selector $Selector
+    if (-not $selection) {
+        return $null
+    }
+
+    $modelCode = if ($selection.Models.Count -eq 1) { $selection.Models[0] } else { Get-RandomChoice -Items $selection.Models }
+    $blueprint = Resolve-ModelBlueprint -ModelCode $modelCode
+    $countryCode = Resolve-CountryCode -SelectedCountry $SelectedCountry -UseGeoIp:$UseGeoIp
+    $regionCode = Resolve-RegionCode -SelectedRegion $SelectedRegion -Country $countryCode -Continent $null -BaseBoardProduct $null -RegionPreference $RegionPreference
+    $biosDate = Resolve-BiosDate -Year $blueprint.Year
+    $biosBuild = "{0:D3}" -f (Get-Random -Minimum 1 -Maximum 999)
+    $biosLine = Get-RandomChoice -Items ((@($blueprint.SampleBiosLine, "PS", "HQ", "SH", "SX", "ZQ") | Where-Object { $_ } | Select-Object -Unique))
+    $biosVersionFull = "$($blueprint.BiosShort).$biosBuild.$biosDate.$biosLine"
+    $baseBoardProduct = if ($blueprint.SupportsRegionBoard -and $blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
+        "$($blueprint.BaseBoardPrefix)$($blueprint.BaseBoardModel)-$($blueprint.BaseBoardSuffix)$regionCode"
+    }
+    elseif ($blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
+        "$($blueprint.BaseBoardPrefix)$($blueprint.BaseBoardModel)-$($blueprint.BaseBoardSuffix)"
+    }
+    else {
+        $blueprint.BaseBoardProduct
+    }
+
+    $yearCode = Resolve-YearCode -Year $blueprint.Year
+    $serial = New-SamsungSerial -YearCode $yearCode
+    $systemUuid = [guid]::NewGuid().ToString()
+    $romBytes = Resolve-RomBytes
+    $romHex = Convert-BytesToHexString -Bytes $romBytes
+    $romBase64 = [Convert]::ToBase64String($romBytes)
+    $biosReleaseDate = Resolve-BiosReleaseDate -BiosDate $biosDate
+    $systemSku = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+    $biosValues = @{
+        BIOSVendor            = $blueprint.BIOSVendor
+        BIOSVersion           = $biosVersionFull
+        BIOSMajorRelease      = $blueprint.BIOSMajorRelease
+        BIOSMinorRelease      = $blueprint.BIOSMinorRelease
+        SystemManufacturer    = $blueprint.SystemManufacturer
+        SystemFamily          = $selection.Family
+        SystemProductName     = $blueprint.SystemProductName
+        ProductSku            = $systemSku
+        EnclosureKind         = $blueprint.EnclosureKind
+        BaseBoardManufacturer = $blueprint.BaseBoardManufacturer
+        BaseBoardProduct      = $baseBoardProduct
+    }
+
+    $biosVersionForConfiguration = if ($IncludeFullBiosVersion) { $biosVersionFull } else { $blueprint.BiosShort }
+    $output = [ordered]@{
+        ResolvedFamily     = $selection.Family
+        ResolvedModelCode  = $modelCode
+        SystemSKU          = $systemSku
+        SystemFamily       = $selection.Family
+        SystemProductName  = $blueprint.SystemProductName
+        BaseBoardProduct   = $baseBoardProduct
+        RegionCode         = $regionCode
+        CountryCode        = $countryCode
+        BIOSVersion        = $blueprint.BiosShort
+        BIOSVersionFull    = $(if ($IncludeFullBiosVersion) { $biosVersionFull } else { $null })
+        BIOSReleaseDate    = $biosReleaseDate
+        SerialNumber       = $serial
+        SystemUUID         = $systemUuid
+        ROMHex             = $romHex
+        ROMBase64          = $romBase64
+        MLB                = $serial
+        BiosValues         = $biosValues
+    }
+
+    $output.ConfigurationData = [ordered]@{
+        PlatformInfo = [ordered]@{
+            Generic = [ordered]@{
+                MLB = $serial
+                ROM = $romBase64
+                SystemSerialNumber = $serial
+                SystemUUID = $systemUuid
+                SystemProductName = $blueprint.SystemProductName
+            }
+        }
+        SMBIOS = [ordered]@{
+            BIOSReleaseDate = $biosReleaseDate
+            BIOSVendor = $blueprint.BIOSVendor
+            BIOSVersion = $biosVersionForConfiguration
+            BoardManufacturer = $blueprint.BaseBoardManufacturer
+            BoardProduct = $baseBoardProduct
+            BoardSerialNumber = $serial
+            ChassisManufacturer = $blueprint.SystemManufacturer
+            ChassisSerialNumber = $serial
+            SystemFamily = $selection.Family
+            SystemManufacturer = $blueprint.SystemManufacturer
+            SystemProductName = $blueprint.SystemProductName
+            SystemSKUNumber = $systemSku
+            SystemSerialNumber = $serial
+            SystemUUID = $systemUuid
+            SystemVersion = $blueprint.BiosShort
+        }
+    }
+
+    if ($ConfigurationPath) {
+        $backupPath = Update-ConfigurationFile -ConfigurationPath $ConfigurationPath -ConfigurationData $output.ConfigurationData -SkipBackup:$SkipConfigurationBackup -BackupSuffix $ConfigurationBackupSuffix
+        $output.ConfigurationUpdate = [ordered]@{
+            ConfigurationPath = (Resolve-Path -Path $ConfigurationPath).Path
+            BackupPath = $backupPath
+        }
+    }
+
+    return $output
+}
+
+function Show-ArrowMenu {
+    param(
+        [string]$Title,
+        [string]$Prompt,
+        [object[]]$Items,
+        [int]$DefaultIndex = 0,
+        [switch]$AllowEscape,
+        [switch]$ShowNumbers,
+        [switch]$AllowNumberInput,
+        [scriptblock]$RenderHeader
+    )
+
+    if (-not $Items -or $Items.Count -eq 0) {
+        throw "No menu items were provided."
+    }
+
+    $index = [Math]::Max(0, [Math]::Min($DefaultIndex, $Items.Count - 1))
+    $numberInputEnabled = $AllowNumberInput.IsPresent -or $ShowNumbers.IsPresent
+    $numberBuffer = ""
+    $itemInlineLineCounts = @()
+    $hasDescriptions = $false
+    foreach ($menuItem in $Items) {
+        $lineCount = 1
+        if ($menuItem.PSObject.Properties.Match('Description').Count -gt 0 -and $menuItem.Description) {
+            $lineCount++
+            $hasDescriptions = $true
+        }
+
+        $itemInlineLineCounts += $lineCount
+    }
+
+    $truncateForConsole = {
+        param(
+            [string]$Text,
+            [int]$MaxWidth
+        )
+
+        if ([string]::IsNullOrEmpty($Text)) {
+            return ""
+        }
+
+        if ($MaxWidth -le 0 -or $Text.Length -le $MaxWidth) {
+            return $Text
+        }
+
+        if ($MaxWidth -le 3) {
+            return $Text.Substring(0, $MaxWidth)
+        }
+
+        return $Text.Substring(0, $MaxWidth - 3) + '...'
+    }
+
+    $writeMenuRenderLine = {
+        param(
+            [string]$Text,
+            [string]$Color = 'White'
+        )
+
+        $consoleWidth = 0
+        try {
+            $consoleWidth = $Host.UI.RawUI.WindowSize.Width
+        }
+        catch {
+            $consoleWidth = 0
+        }
+
+        if ($consoleWidth -gt 1) {
+            $renderWidth = $consoleWidth - 1
+            $Text = & $truncateForConsole $Text $renderWidth
+            if ($Text.Length -lt $renderWidth) {
+                $Text = $Text.PadRight($renderWidth)
+            }
+        }
+
+        Write-Host $Text -ForegroundColor $Color
+    }
+
+    $syncIndexFromNumberBuffer = {
+        param(
+            [string]$Buffer,
+            [int]$CurrentIndex
+        )
+
+        if ([string]::IsNullOrWhiteSpace($Buffer)) {
+            return $CurrentIndex
+        }
+
+        $parsedValue = 0
+        if ([int]::TryParse($Buffer, [ref]$parsedValue) -and $parsedValue -ge 1 -and $parsedValue -le $Items.Count) {
+            return ($parsedValue - 1)
+        }
+
+        return $CurrentIndex
+    }
+
+    Clear-Host
+    if ($RenderHeader) {
+        & $RenderHeader
+    }
+    else {
+        Write-Host ""
+        if ($Title) {
+            Write-Host $Title -ForegroundColor Cyan
+            Write-Host ""
+        }
+        if ($Prompt) {
+            Write-Host $Prompt -ForegroundColor Yellow
+            Write-Host ""
+        }
+    }
+
+    $useInPlaceRedraw = $false
+    $menuStartRow = -1
+    $showInlineDescriptions = $true
+    $clipMenuToWindow = $false
+    $viewportSize = $Items.Count
+    $viewportStartIndex = 0
+    $previousRenderLineCount = 0
+    if ($Host.UI -and $Host.UI.RawUI) {
+        try {
+            $menuStartRow = $Host.UI.RawUI.CursorPosition.Y
+            $availableRows = $Host.UI.RawUI.WindowSize.Height - $menuStartRow
+            $reservedBufferRows = 1
+            $baseFooterLineCount = 2
+            if ($numberInputEnabled) {
+                $baseFooterLineCount++
+            }
+
+            $inlineMenuLineCount = ($itemInlineLineCounts | Measure-Object -Sum).Sum
+            $inlineRenderLineCount = $inlineMenuLineCount + $baseFooterLineCount + $reservedBufferRows
+
+            $compactFooterLineCount = $baseFooterLineCount
+            if ($hasDescriptions) {
+                $compactFooterLineCount++
+            }
+
+            $compactRenderLineCount = $Items.Count + $compactFooterLineCount + $reservedBufferRows
+
+            if ($availableRows -ge $inlineRenderLineCount) {
+                $useInPlaceRedraw = $true
+            }
+            elseif ($availableRows -ge $compactRenderLineCount) {
+                $useInPlaceRedraw = $true
+                $showInlineDescriptions = $false
+            }
+            else {
+                $clippedFooterLineCount = $compactFooterLineCount + 1
+                $viewportSize = $availableRows - $clippedFooterLineCount - $reservedBufferRows
+                if ($viewportSize -gt 0) {
+                    $useInPlaceRedraw = $true
+                    $showInlineDescriptions = $false
+                    $clipMenuToWindow = $true
+                    $viewportSize = [Math]::Min($Items.Count, [Math]::Max(1, $viewportSize))
+                }
+            }
+        }
+        catch {
+            $useInPlaceRedraw = $false
+            $menuStartRow = -1
+        }
+    }
+
+    while ($true) {
+        if ($useInPlaceRedraw -and $menuStartRow -ge 0) {
+            $Host.UI.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(0, $menuStartRow)
+        }
+        else {
+            Clear-Host
+            if ($RenderHeader) {
+                & $RenderHeader
+            }
+            else {
+                Write-Host ""
+                if ($Title) {
+                    Write-Host $Title -ForegroundColor Cyan
+                    Write-Host ""
+                }
+                if ($Prompt) {
+                    Write-Host $Prompt -ForegroundColor Yellow
+                    Write-Host ""
+                }
+            }
+        }
+
+        $displayStartIndex = 0
+        $displayEndIndex = $Items.Count - 1
+        if ($clipMenuToWindow) {
+            if ($index -lt $viewportStartIndex) {
+                $viewportStartIndex = $index
+            }
+            elseif ($index -ge ($viewportStartIndex + $viewportSize)) {
+                $viewportStartIndex = $index - $viewportSize + 1
+            }
+
+            $displayEndIndex = [Math]::Min($Items.Count - 1, $viewportStartIndex + $viewportSize - 1)
+            $displayStartIndex = [Math]::Max(0, $displayEndIndex - $viewportSize + 1)
+            $viewportStartIndex = $displayStartIndex
+        }
+
+        $renderedLineCount = 0
+        for ($i = $displayStartIndex; $i -le $displayEndIndex; $i++) {
+            $item = $Items[$i]
+            $label = if ($item.PSObject.Properties.Match('Label').Count -gt 0) { $item.Label } else { [string]$item }
+            $description = if ($item.PSObject.Properties.Match('Description').Count -gt 0) { $item.Description } else { $null }
+            $numberPrefix = if ($ShowNumbers) { "[{0}] " -f ($i + 1) } else { "" }
+            $prefix = if ($i -eq $index) { '> ' } else { '  ' }
+            $baseColor = if ($item.PSObject.Properties.Match('Color').Count -gt 0 -and $item.Color) { $item.Color } else { 'White' }
+            $selectedColor = if ($item.PSObject.Properties.Match('SelectedColor').Count -gt 0 -and $item.SelectedColor) { $item.SelectedColor } else { 'Green' }
+            $color = if ($i -eq $index) { $selectedColor } else { $baseColor }
+            & $writeMenuRenderLine "$prefix$numberPrefix$label" $color
+            $renderedLineCount++
+            if ($showInlineDescriptions -and $description) {
+                & $writeMenuRenderLine "  $description" 'DarkGray'
+                $renderedLineCount++
+            }
+        }
+
+        & $writeMenuRenderLine ""
+        $renderedLineCount++
+        $instructionParts = @("Use arrows (↑↓←→)")
+        if ($numberInputEnabled) {
+            $instructionParts += "type a number and Enter"
+        }
+        else {
+            $instructionParts += "and Enter"
+        }
+        if ($AllowEscape) {
+            $instructionParts += "Esc to cancel"
+        }
+        & $writeMenuRenderLine (($instructionParts -join ', ') + '.') 'DarkGray'
+        $renderedLineCount++
+        if ($numberInputEnabled) {
+            & $writeMenuRenderLine ("Selected option: {0}" -f ($index + 1)) 'DarkGray'
+            $renderedLineCount++
+        }
+        if (-not $showInlineDescriptions -and $hasDescriptions) {
+            $selectedItem = $Items[$index]
+            $selectedDescription = if ($selectedItem.PSObject.Properties.Match('Description').Count -gt 0) { $selectedItem.Description } else { $null }
+            if ($selectedDescription) {
+                & $writeMenuRenderLine "Selected: $selectedDescription" 'DarkGray'
+                $renderedLineCount++
+            }
+        }
+        if ($clipMenuToWindow) {
+            & $writeMenuRenderLine ("Showing {0}-{1} of {2}" -f ($displayStartIndex + 1), ($displayEndIndex + 1), $Items.Count) 'DarkGray'
+            $renderedLineCount++
+        }
+
+        if ($useInPlaceRedraw -and $previousRenderLineCount -gt $renderedLineCount) {
+            for ($lineIndex = $renderedLineCount; $lineIndex -lt $previousRenderLineCount; $lineIndex++) {
+                & $writeMenuRenderLine ""
+            }
+        }
+        $previousRenderLineCount = $renderedLineCount
+
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        $digit = $null
+        if ($numberInputEnabled) {
+            if ($key.Character -match '\d') {
+                $digit = [string]$key.Character
+            } elseif ($key.VirtualKeyCode -ge 48 -and $key.VirtualKeyCode -le 57) {
+                $digit = [string]($key.VirtualKeyCode - 48)
+            } elseif ($key.VirtualKeyCode -ge 96 -and $key.VirtualKeyCode -le 105) {
+                $digit = [string]($key.VirtualKeyCode - 96)
+            }
+        }
+        if ($digit) {
+            $candidateValue = 0
+            $candidateBuffer = "$numberBuffer$digit"
+            if ([int]::TryParse($candidateBuffer, [ref]$candidateValue) -and $candidateValue -ge 1 -and $candidateValue -le $Items.Count) {
+                $numberBuffer = $candidateBuffer
+                $index = & $syncIndexFromNumberBuffer $numberBuffer $index
+                continue
+            }
+
+            $singleDigitBuffer = $digit
+            $candidateValue = 0
+            if ([int]::TryParse($singleDigitBuffer, [ref]$candidateValue) -and $candidateValue -ge 1 -and $candidateValue -le $Items.Count) {
+                $numberBuffer = $singleDigitBuffer
+                $index = & $syncIndexFromNumberBuffer $numberBuffer $index
+            }
+            continue
+        }
+
+        switch ($key.VirtualKeyCode) {
+            8 {
+                if ($numberInputEnabled -and $numberBuffer.Length -gt 0) {
+                    $numberBuffer = $numberBuffer.Substring(0, $numberBuffer.Length - 1)
+                    $index = & $syncIndexFromNumberBuffer $numberBuffer $index
+                }
+            }
+            37 {
+                $numberBuffer = ""
+                $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 }
+            }
+            38 {
+                $numberBuffer = ""
+                $index = if ($index -le 0) { $Items.Count - 1 } else { $index - 1 }
+            }
+            39 {
+                $numberBuffer = ""
+                $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 }
+            }
+            40 {
+                $numberBuffer = ""
+                $index = if ($index -ge ($Items.Count - 1)) { 0 } else { $index + 1 }
+            }
+            13 {
+                if ($numberInputEnabled -and $numberBuffer) {
+                    $index = & $syncIndexFromNumberBuffer $numberBuffer $index
+                }
+                return $Items[$index]
+            }
+            27 {
+                if ($numberInputEnabled -and $numberBuffer) {
+                    $numberBuffer = ""
+                    continue
+                }
+                if ($AllowEscape) {
+                    return $null
+                }
+            }
+        }
+    }
+}
+
+function Show-Prompt {
+    param(
+        [string]$Question,
+        [string]$Description,
+        [string]$DefaultChoice = "Yes",
+        [scriptblock]$RenderHeader
+    )
+
+    if ($script:IsAutonomous) {
+        return $DefaultChoice -match "Yes|y|Y"
+    }
+
+    $options = @(
+        [pscustomobject]@{ Label = "Yes"; Color = "Green" },
+        [pscustomobject]@{ Label = "No"; Color = "Red" }
+    )
+
+    $defaultIndex = if ($DefaultChoice -match "No|n|N") { 1 } else { 0 }
+    $title = "═══════════════════════════════════════════════════════════════"
+    $prompt = $Question
+    if ($Description) {
+        $prompt = "$Question`n  $Description"
+    }
+
+    $result = Show-ArrowMenu -Title $title -Prompt $prompt -Items $options -DefaultIndex $defaultIndex -RenderHeader $RenderHeader
+    return ($result.Label -eq "Yes")
+}
+
+function Show-RegionMenu {
+    $items = $RegionCatalog | Sort-Object Code | ForEach-Object {
+        [pscustomobject]@{
+            Label = "$($_.Code) - $($_.Continent)"
+            Description = ($_.Countries -join ", ")
+            Code = $_.Code
+        }
+    }
+
+    $selection = Show-ArrowMenu -Title "Region" -Prompt "Choose the region to use." -Items $items
+    return $selection.Code
+}
+
+function Get-GalaxyBookGenerationMenu {
+    return @(
+        [pscustomobject]@{ Label = 'Galaxy Book5'; Description = 'Current Book5 family models'; Generation = 'Book5' },
+        [pscustomobject]@{ Label = 'Galaxy Book4'; Description = 'Book4, Pro, Ultra, and 360 models'; Generation = 'Book4' },
+        [pscustomobject]@{ Label = 'Galaxy Book3'; Description = 'Book3, Pro, Ultra, and 360 models'; Generation = 'Book3' },
+        [pscustomobject]@{ Label = 'Older Samsung PCs'; Description = 'Book2, Galaxy Book Series, and Notebook 9'; Generation = 'Legacy' },
+        [pscustomobject]@{ Label = 'Legacy Default'; Description = 'Quick-pick Galaxy Book3 Ultra (960XFH)'; Selector = '960XFH' }
+    )
+}
+
+function Get-GalaxyBookFamiliesForGeneration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Generation
+    )
+
+    switch ($Generation) {
+        'Book5' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book5*' -or $_.Key -eq 'Book5360' } | Sort-Object Order
+        }
+        'Book4' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book4*' } | Sort-Object Order
+        }
+        'Book3' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book3*' } | Sort-Object Order
+        }
+        'Legacy' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -notlike 'Book5*' -and $_.Key -ne 'Book5360' -and $_.Key -notlike 'Book4*' -and $_.Key -notlike 'Book3*' } | Sort-Object Order
+        }
+        default {
+            return @()
+        }
+    }
+}
+
+function New-ModelSelectionHeaderRenderer {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Title,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+
+        [string]$AccentColor = 'Cyan',
+
+        [string]$SelectedGenerationLabel
+    )
+
+    $headerTitle = $Title
+    $headerPrompt = $Prompt
+    $headerAccentColor = $AccentColor
+    $headerSelectedGenerationLabel = $SelectedGenerationLabel
+
+    $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
+    $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
+    $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
+    $statusBoxInnerWidth = $statusBoxTop.Length - 2
+
+    $writeStatusBoxTextLine = {
+        param(
+            [string]$Text,
+            [string]$Color = 'White'
+        )
+
+        $content = if ($Text.Length -gt $statusBoxInnerWidth) {
+            $Text.Substring(0, $statusBoxInnerWidth)
+        }
+        else {
+            $Text.PadRight($statusBoxInnerWidth)
+        }
+
+        Write-Host ("│{0}│" -f $content) -ForegroundColor $Color
+    }.GetNewClosure()
+
+    return {
+        Write-Host $statusBoxTop -ForegroundColor $headerAccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $headerTitle) $headerAccentColor
+        Write-Host $statusBoxDivider -ForegroundColor $headerAccentColor
+        & $writeStatusBoxTextLine ("  {0}" -f $headerPrompt) 'Yellow'
+        if ($headerSelectedGenerationLabel) {
+            & $writeStatusBoxTextLine ("  Selected generation: {0}" -f $headerSelectedGenerationLabel) 'Gray'
+        }
+        & $writeStatusBoxTextLine "  Use arrows or number keys to choose." 'DarkGray'
+        Write-Host $statusBoxBottom -ForegroundColor $headerAccentColor
+        Write-Host ""
+    }.GetNewClosure()
+}
+
+function Resolve-InteractiveIdentityData {
+    param(
+        [switch]$IncludeFullBiosVersion,
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $selectedModel = $null
+    while (-not $selectedModel) {
+        $renderGenerationHeader = New-ModelSelectionHeaderRenderer -Title 'Galaxy Book Model Selection' -Prompt 'Choose the generation to use.'
+        $selectedGeneration = Show-ArrowMenu -Items (Get-GalaxyBookGenerationMenu) -AllowEscape -ShowNumbers -AllowNumberInput -RenderHeader $renderGenerationHeader
+        if (-not $selectedGeneration) {
+            return $null
+        }
+
+        if ($selectedGeneration.PSObject.Properties.Match('Selector').Count -gt 0 -and $selectedGeneration.Selector) {
+            $selectedModel = $selectedGeneration
+            break
+        }
+
+        $familyItems = @(Get-GalaxyBookFamiliesForGeneration -Generation $selectedGeneration.Generation | ForEach-Object {
+            [pscustomobject]@{
+                Label = $_.Label
+                Description = ($_.Models -join ', ')
+                Selector = $_.Label
+            }
+        })
+        if (-not $familyItems -or $familyItems.Count -eq 0) {
+            continue
+        }
+
+        $generationPrompt = "Choose the profile to use. Esc returns to generation selection."
+        $renderFamilyHeader = New-ModelSelectionHeaderRenderer -Title "$($selectedGeneration.Label) Models" -Prompt $generationPrompt -SelectedGenerationLabel $selectedGeneration.Label
+        $selectedModel = Show-ArrowMenu -Items $familyItems -AllowEscape -ShowNumbers -AllowNumberInput -RenderHeader $renderFamilyHeader
+    }
+
+    if (-not $selectedModel) {
+        return $null
+    }
+
+    $detectedCountry = Resolve-CountryCode
+    $detectedRegion = Resolve-RegionCode -Country $detectedCountry
+    $regionChoice = Show-ArrowMenu -Title "Region Selection" -Prompt "Detected: $detectedCountry / $detectedRegion" -Items @(
+        [pscustomobject]@{ Label = 'Use detected'; Description = "$detectedCountry / $detectedRegion"; Mode = 'Detected' },
+        [pscustomobject]@{ Label = 'Use GeoIP'; Description = 'Try a network lookup'; Mode = 'GeoIp' },
+        [pscustomobject]@{ Label = 'Choose manually'; Description = 'Pick a region'; Mode = 'Manual' }
+    )
+
+    $selectedCountry = $detectedCountry
+    $selectedRegion = $detectedRegion
+    $useGeoIp = $false
+    switch ($regionChoice.Mode) {
+        'GeoIp' {
+            $useGeoIp = $true
+            $selectedCountry = Resolve-CountryCode -UseGeoIp
+            $selectedRegion = Resolve-RegionCode -Country $selectedCountry
+        }
+        'Manual' {
+            $selectedRegion = Show-RegionMenu
+            if ($selectedRegion -eq 'UK') {
+                $selectedCountry = 'GB'
+            }
+            else {
+                $selectedCountry = $selectedRegion
+            }
+        }
+    }
+
+    return New-GeneratedIdentityData -Selector $selectedModel.Selector -SelectedCountry $selectedCountry -SelectedRegion $selectedRegion -UseGeoIp:$useGeoIp -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+}
+
+function Invoke-ConfigurationMode {
+    param(
+        [string]$Selector,
+        [string]$SelectedCountry,
+        [string]$SelectedRegion,
+        [string]$RegionPreference,
+        [ValidateSet("Locale", "GeoIp")]
+        [string]$RegionSource = "Locale",
+        [switch]$IncludeFullBiosVersion,
+        [string]$ConfigurationPath,
+        [switch]$SkipConfigurationBackup,
+        [string]$ConfigurationBackupSuffix
+    )
+
+    $result = if ($script:IsAutonomous -or $Selector) {
+        New-GeneratedIdentityData -Selector $Selector -SelectedCountry $SelectedCountry -SelectedRegion $SelectedRegion -RegionPreference $RegionPreference -UseGeoIp:($RegionSource -eq 'GeoIp') -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    }
+    else {
+        Resolve-InteractiveIdentityData -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    }
+
+    if (-not $result) {
+        return $null
+    }
+
+    Write-Host ""
+    Write-Host "Resolved: $($result.ResolvedFamily) ($($result.ResolvedModelCode))" -ForegroundColor Green
+    Write-Host "Region: $($result.RegionCode)" -ForegroundColor Gray
+    if ($result.ConfigurationUpdate) {
+        Write-Host "Configuration saved" -ForegroundColor Green
+    }
+
+    return $result
+}
 
 function Test-UpdateAvailable {
     try {
@@ -461,12 +1933,15 @@ function Update-GalaxyBookEnabler {
         Write-Host ""
         Write-Host "Starting updated installer..." -ForegroundColor Cyan
         Start-Sleep -Seconds 2
-        
-        # Launch the new installer
-        Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempFile`"" -Verb RunAs
-        
-        # Exit current installer
-        exit
+
+        try {
+            $exitCode = Start-GalaxyBookEnablerScript -ScriptPath $tempFile
+        }
+        finally {
+            Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+        }
+
+        exit $exitCode
     }
     catch {
         Write-Host "✗ Failed to download update: $_" -ForegroundColor Red
@@ -510,7 +1985,9 @@ function Test-InstallationHealth {
         $health.ComponentCount++
         try {
             $config = Get-Content $ConfigPath | ConvertFrom-Json
-            $health.GbeVersion = if ($config.InstalledVersion) { $config.InstalledVersion } else { "1.0.0" }
+            if ($config.InstalledVersion) {
+                $health.GbeVersion = $config.InstalledVersion
+            }
         }
         catch {
             Write-Verbose "Failed to read config: $_"
@@ -789,7 +2266,7 @@ $SamsungPackages = @{
     }
     "Continuity"      = @{ 
         Family    = "SAMSUNGELECTRONICSCoLtd.SamsungContinuityService_wyx1vj98g3asy"
-        Name      = "Samsung Continuity Service"
+        Name      = "Galaxy Connect"
         Critical  = $false
         Databases = @("PCMCFCoreDB.db", "PCMCFRsDB.db")
     }
@@ -919,8 +2396,6 @@ function Backup-PackageData {
 # ==================== STOP SAMSUNG APPS ====================
 
 function Stop-SamsungApps {
-    param([switch]$All)
-    
     Write-Status "Stopping Samsung apps..." -Status ACTION
     
     $processPatterns = @(
@@ -1261,10 +2736,17 @@ function Reset-AllSettingsDat {
 # ==================== AUTHENTICATION DATA ====================
 
 function Clear-AuthenticationData {
-    param([switch]$KeepCredentials)
-    
+    param(
+        [switch]$KeepCredentials,
+        [bool]$TestMode = $false
+    )
+
     Write-Status "`n=== CLEARING AUTHENTICATION DATA ===" -Status ACTION
     
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would clear authentication data (KeepCredentials: $KeepCredentials)" -Status INFO
+        return
+    }
     # Samsung Account data
     $saPath = Get-PackagePath $SamsungPackages["Account"].Family
     
@@ -1330,7 +2812,14 @@ function Clear-AuthenticationData {
 # ==================== APP REGISTRATION ====================
 
 function Invoke-AppReRegistration {
+    param([bool]$TestMode = $false)
+
     Write-Status "`n=== RE-REGISTERING SAMSUNG APPS ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would re-register all Samsung AppX packages" -Status INFO
+        return
+    }
     
     $samsungPackages = Get-AppxPackage | Where-Object { 
         $_.Name -like "*Samsung*" -or 
@@ -1360,7 +2849,14 @@ function Invoke-AppReRegistration {
 # ==================== PERMISSIONS ====================
 
 function Repair-Permissions {
+    param([bool]$TestMode = $false)
+
     Write-Status "`n=== REPAIRING PERMISSIONS ===" -Status ACTION
+    
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would repair permissions on Samsung app folders" -Status INFO
+        return
+    }
     
     $targetPackages = Get-TargetPackages
     
@@ -1727,19 +3223,18 @@ function Invoke-SoftReset {
 function Invoke-HardReset {
     param([bool]$TestMode = $false)
     
-    Write-Status "`n=== HARD RESET ===" -Status ACTION
+    $renderHeaderBlock = {
+        Write-Status "`n=== HARD RESET ===" -Status ACTION
+        Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
+    }
     
-    if ($TestMode) {
-        Write-Status "[TEST MODE] Would clear ALL data including sign-in credentials" -Status INFO
-        Write-Status "[TEST MODE] No changes applied" -Status OK
+    if (-not (Show-Prompt -Question "Are you sure?" -Description "This uses Hard Reset to wipe sign-in cache and settings" -DefaultChoice "No" -RenderHeader $renderHeaderBlock)) {
+        Write-Status "Aborted by user" -Status INFO
         return
     }
     
-    Write-Status "WARNING: This will clear ALL data including sign-in credentials!" -Status WARN
-    
-    $confirm = Read-Host "Are you sure? (yes/no)"
-    if ($confirm -ne "yes") {
-        Write-Status "Aborted by user" -Status INFO
+    if ($TestMode) {
+        Write-Status "[TEST MODE] Would perform hard reset on Samsung apps" -Status INFO
         return
     }
     
@@ -1870,7 +3365,7 @@ $script:PackageDatabase = @{
             Required    = $true
         },
         @{
-            Name        = "Samsung Continuity Service"
+            Name        = "Galaxy Connect"
             Id          = "9NGW9K44GQ5F"
             Category    = "Core"
             Description = "Enables cross-device continuity features"
@@ -2161,16 +3656,15 @@ function Get-SamsungDriverCab {
         
         foreach ($row in $rows) {
             $rowContent = $row.Groups[1].Value
-            
-            # Skip header rows and rows without Samsung
-            if ($rowContent -notmatch 'Samsung.*SoftwareComponent') {
-                continue
-            }
-            
-            # Extract title
             $title = $null
-            if ($rowContent -match '>([^<]*Samsung\s*-\s*SoftwareComponent\s*-\s*[\d\.]+[^<]*)</') {
-                $title = $Matches[1].Trim()
+            foreach ($titlePattern in @(
+                '>([^<]*Samsung\s*-\s*SoftwareComponent\s*-\s*\d+\.\d+\.\d+\.\d+[^<]*)</',
+                '>([^<]*Samsung\s+Driver\s+Update\s*\(\d+\.\d+\.\d+\.\d+\)[^<]*)</'
+            )) {
+                if ($rowContent -match $titlePattern) {
+                    $title = [System.Net.WebUtility]::HtmlDecode($Matches[1].Trim())
+                    break
+                }
             }
             
             if (-not $title) { continue }
@@ -2217,6 +3711,12 @@ function Get-SamsungDriverCab {
             Write-Error "No Samsung System Support Service drivers found"
             return $null
         }
+
+        $drivers = $drivers |
+            Group-Object Version |
+            ForEach-Object {
+                $_.Group | Sort-Object LastUpdated -Descending | Select-Object -First 1
+            }
         
         # Sort by version (descending)
         $drivers = $drivers | Sort-Object { [version]$_.Version } -Descending
@@ -2235,25 +3735,19 @@ function Get-SamsungDriverCab {
         }
         else {
             # Interactive selection
-            Write-Host ""
+            $options = @()
             for ($i = 0; $i -lt $drivers.Count; $i++) {
                 $driver = $drivers[$i]
                 $label = if ($i -eq 0) { " (Latest)" } else { "" }
-                Write-Host ("{0,2}. Version {1,-12} - {2}{3}" -f ($i + 1), $driver.Version, $driver.LastUpdated.ToString("MM/dd/yyyy"), $label) -ForegroundColor Cyan
+                $options += [pscustomobject]@{ 
+                    Label = "Version $($driver.Version)$label"
+                    Description = "Released: $($driver.LastUpdated.ToString('MM/dd/yyyy')) | Category: $($driver.Category)"
+                    Driver = $driver
+                }
             }
             
-            Write-Host ""
-            do {
-                $selection = Read-Host "Select version to download (1-$($drivers.Count))"
-                $selectionNum = $null
-                $validInput = [int]::TryParse($selection, [ref]$selectionNum) -and $selectionNum -ge 1 -and $selectionNum -le $drivers.Count
-                
-                if (-not $validInput) {
-                    Write-Host "Invalid selection. Please enter a number between 1 and $($drivers.Count)" -ForegroundColor Red
-                }
-            } while (-not $validInput)
-            
-            $drivers[$selectionNum - 1]
+            $selection = Show-ArrowMenu -Title "Multiple package versions found" -Prompt "Select version to download:" -Items $options -DefaultIndex 0
+            $selection.Driver
         }
         
         Write-Host "`nSelected: $($selectedDriver.Title)" -ForegroundColor Green
@@ -2410,72 +3904,296 @@ function Update-SSSEBinary {
     Write-Host "    ✓ Backup created: $(Split-Path $backupExePath -Leaf)" -ForegroundColor Green
     
     $fileBytes = [System.IO.File]::ReadAllBytes($ExePath)
-    
-    $patchCount = 0
-    
-    for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-        if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
-            ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
-            $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
-            $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
-            $fileBytes[$i + 7] -eq 0x0F -and $fileBytes[$i + 8] -eq 0x85) {
-            
-            $reg = if ($fileBytes[$i + 2] -eq 0xF0) { "R14" } else { "R15" }
-            $patchOffset = $i + 7
-            
-            $fileBytes[$patchOffset] = 0x48
-            $fileBytes[$patchOffset + 1] = 0xE9
-            
-            Write-Host "    Primary patch @ 0x$($patchOffset.ToString('X5')): 0F 85 -> 48 E9 (MOV $reg pattern)" -ForegroundColor Green
-            $patchCount++
-            $searchEnd = [Math]::Min($i + 512, $fileBytes.Length - 10)
-            for ($j = $i + 12; $j -lt $searchEnd; $j++) {
-                if ($fileBytes[$j] -eq 0xE8 -and
-                    $fileBytes[$j + 5] -eq 0x48 -and $fileBytes[$j + 6] -eq 0x83 -and
-                    $fileBytes[$j + 7] -eq 0xF8 -and $fileBytes[$j + 8] -eq 0xFF -and
-                    $fileBytes[$j + 9] -eq 0x75) {
-                    
-                    $secPatchOffset = $j + 9
-                    $fileBytes[$secPatchOffset] = 0xEB
-                    
-                    Write-Host "    Secondary patch @ 0x$($secPatchOffset.ToString('X5')): 75 -> EB (6.x compatibility)" -ForegroundColor Green
-                    $patchCount++
-                    break
-                }
-            }
-            break  
+
+    function Set-BytePatch {
+        param(
+            [byte[]]$Bytes,
+            [int]$Offset,
+            [byte[]]$PatchBytes
+        )
+
+        for ($index = 0; $index -lt $PatchBytes.Length; $index++) {
+            $Bytes[$Offset + $index] = $PatchBytes[$index]
         }
     }
-    
-    if ($patchCount -eq 0) {
-        $alreadyPatched = $false
-        for ($i = 0; $i -lt ($fileBytes.Length - 12); $i++) {
-            if ($fileBytes[$i] -eq 0x4C -and $fileBytes[$i + 1] -eq 0x8B -and 
-                ($fileBytes[$i + 2] -eq 0xF0 -or $fileBytes[$i + 2] -eq 0xF8) -and
-                $fileBytes[$i + 3] -eq 0x48 -and $fileBytes[$i + 4] -eq 0x83 -and
-                $fileBytes[$i + 5] -eq 0xF8 -and $fileBytes[$i + 6] -eq 0xFF -and
-                $fileBytes[$i + 7] -eq 0x48 -and $fileBytes[$i + 8] -eq 0xE9) {
-                $alreadyPatched = $true
-                break
+
+    function Find-PrimaryCandidates {
+        param(
+            [byte[]]$Bytes
+        )
+
+        $candidates = @()
+        for ($i = 0; $i -lt ($Bytes.Length - 9); $i++) {
+            if ($Bytes[$i] -ne 0x4C -or $Bytes[$i + 1] -ne 0x8B) { continue }
+            if ($Bytes[$i + 2] -ne 0xF0 -and $Bytes[$i + 2] -ne 0xF8) { continue }
+            if ($Bytes[$i + 3] -ne 0x48 -or $Bytes[$i + 4] -ne 0x83 -or $Bytes[$i + 5] -ne 0xF8 -or $Bytes[$i + 6] -ne 0xFF) { continue }
+
+            if ($Bytes[$i + 7] -eq 0x0F -and $Bytes[$i + 8] -eq 0x85) {
+                $candidates += [PSCustomObject]@{
+                    Offset      = $i
+                    PatchOffset = $i + 7
+                    IsPatched   = $false
+                }
+                continue
+            }
+
+            if ($Bytes[$i + 7] -eq 0x48 -and $Bytes[$i + 8] -eq 0xE9) {
+                $candidates += [PSCustomObject]@{
+                    Offset      = $i
+                    PatchOffset = $i + 7
+                    IsPatched   = $true
+                }
             }
         }
-        
-        if ($alreadyPatched) {
-            Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
-            return $true
+
+        return $candidates
+    }
+
+    function Find-SecondarySite {
+        param(
+            [byte[]]$Bytes,
+            [int]$PrimaryOffset
+        )
+
+        $searchEnd = [Math]::Min($PrimaryOffset + 512, $Bytes.Length - 17)
+
+        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+            if ($Bytes[$j] -eq 0xE8 -and
+                $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x83 -and
+                $Bytes[$j + 7] -eq 0xF8 -and $Bytes[$j + 8] -eq 0xFF -and
+                ($Bytes[$j + 9] -eq 0x75 -or $Bytes[$j + 9] -eq 0xEB)) {
+                return [PSCustomObject]@{
+                    PatchOffset = $j + 9
+                    IsPatched   = ($Bytes[$j + 9] -eq 0xEB)
+                    Pattern     = "A"
+                }
+            }
         }
-        else {
-            Write-Host "    ⚠ Pattern not found - unknown SSSE version" -ForegroundColor Yellow
-            Write-Host "    Please report this version for analysis" -ForegroundColor Gray
+
+        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+            if ($Bytes[$j] -eq 0x48 -and $Bytes[$j + 1] -eq 0x3B -and $Bytes[$j + 2] -eq 0xC3 -and
+                $Bytes[$j + 3] -eq 0x74 -and $Bytes[$j + 4] -eq 0x0C -and
+                $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x2B -and
+                ($Bytes[$j + 7] -eq 0xC6 -or $Bytes[$j + 7] -eq 0xC7) -and
+                $Bytes[$j + 8] -eq 0x48 -and $Bytes[$j + 9] -eq 0xD1 -and $Bytes[$j + 10] -eq 0xF8 -and
+                $Bytes[$j + 11] -eq 0x48 -and $Bytes[$j + 12] -eq 0x83 -and $Bytes[$j + 13] -eq 0xF8 -and
+                $Bytes[$j + 14] -eq 0xFF -and ($Bytes[$j + 15] -eq 0x75 -or $Bytes[$j + 15] -eq 0xEB)) {
+                return [PSCustomObject]@{
+                    PatchOffset = $j + 15
+                    IsPatched   = ($Bytes[$j + 15] -eq 0xEB)
+                    Pattern     = "B"
+                }
+            }
+        }
+
+        return $null
+    }
+
+    $primaryCandidates = Find-PrimaryCandidates -Bytes $fileBytes
+    if ($primaryCandidates.Count -eq 0) {
+        Write-Host "    ⚠ Patch pattern not found in binary" -ForegroundColor Yellow
+        return $false
+    }
+
+    $viableCandidates = @()
+    foreach ($candidate in $primaryCandidates) {
+        $secondary = Find-SecondarySite -Bytes $fileBytes -PrimaryOffset $candidate.Offset
+        if ($null -ne $secondary) {
+            $viableCandidates += [PSCustomObject]@{
+                Primary   = $candidate
+                Secondary = $secondary
+            }
+        }
+    }
+
+    if ($viableCandidates.Count -eq 0) {
+        Write-Host "    ⚠ Could not resolve patch points for this binary" -ForegroundColor Yellow
+        return $false
+    }
+
+    if ($viableCandidates.Count -gt 1) {
+        $viableCandidates = $viableCandidates | Sort-Object { $_.Primary.Offset }
+        Write-Host "    Multiple candidate windows found; using earliest match" -ForegroundColor Yellow
+    }
+
+    $target = $viableCandidates[0]
+    Write-Host "    Detected patch profile: Pattern $($target.Secondary.Pattern)" -ForegroundColor Cyan
+
+    $patchCount = 0
+
+    if (-not $target.Primary.IsPatched) {
+        Set-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
+        Write-Host "    Primary patch @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        $patchCount++
+    }
+    else {
+        Write-Host "    ✓ Primary patch already present" -ForegroundColor Green
+    }
+
+    if (-not $target.Secondary.IsPatched) {
+        Set-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
+        Write-Host "    Secondary patch @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        $patchCount++
+    }
+    else {
+        Write-Host "    ✓ Secondary patch already present" -ForegroundColor Green
+    }
+
+    if ($patchCount -eq 0) {
+        Write-Host "    ✓ Binary already patched!" -ForegroundColor Green
+        return $true
+    }
+
+    [System.IO.File]::WriteAllBytes($ExePath, $fileBytes)
+    Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+    return $true
+}
+
+function Start-SamsungSettingsAndVerify {
+    param(
+        [bool]$TestMode = $false,
+        [bool]$AutoInstall = $false,
+        [string]$Context = "SSSE installation",
+        [bool]$ShowBluetoothSyncInstructions = $false
+    )
+
+    $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
+
+    Write-Host "`nLaunching Samsung Settings..." -ForegroundColor Cyan
+
+    if ($TestMode -or $AutoInstall) {
+        Write-Host "  [$($TestMode ? 'TEST' : 'AUTO')] Skipping interactive app launch after $Context" -ForegroundColor Gray
+        return $true
+    }
+
+    $installedSettings = Get-AppxPackage -AllUsers -Name "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5" -ErrorAction SilentlyContinue
+    if (-not $installedSettings) {
+        Write-Host "  ⚠ Samsung Settings is not installed yet, so launch could not be verified." -ForegroundColor Yellow
+        return $false
+    }
+
+    $launchCommandSucceeded = $false
+
+    try {
+        Write-Host "  Attempting direct app launch..." -ForegroundColor Gray
+        Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+        $launchCommandSucceeded = $true
+    }
+    catch {
+        Write-Host "  ⚠ Direct app launch did not surface Samsung Settings." -ForegroundColor Yellow
+        Write-Host "  Retrying through explorer.exe for the interactive desktop session..." -ForegroundColor Gray
+
+        try {
+            Start-Process -FilePath "explorer.exe" -ArgumentList "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
+            $launchCommandSucceeded = $true
+        }
+        catch {
+            Write-Warning "Failed to launch Samsung Settings after ${Context}: $_"
+            Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
+            Invoke-InteractivePause
             return $false
         }
     }
-    else {
-        # Write patched bytes back to file
-        [System.IO.File]::WriteAllBytes($ExePath, $fileBytes)
-        Write-Host "    ✓ Applied $patchCount patch(es) successfully!" -ForegroundColor Green
+
+    if ($launchCommandSucceeded) {
+        Write-Host "  ✓ Samsung Settings launch command sent" -ForegroundColor Green
+        if ($ShowBluetoothSyncInstructions) {
+            Write-Host "`n  IMPORTANT: Check that Samsung Settings opened." -ForegroundColor Yellow
+            Write-Host "  For Galaxy Buds multipoint visibility, follow these steps:" -ForegroundColor Cyan
+            Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
+            Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
+            Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
+            Write-Host "    4. Open Samsung Cloud from that page" -ForegroundColor White
+            Write-Host "    5. Click 'Sync now'" -ForegroundColor White
+            Write-Host "    6. Verify your paired Samsung Buds/devices are visible" -ForegroundColor White
+            Write-Host "       (Buds2/3 variants may still vary by firmware support)" -ForegroundColor Gray
+        }
         return $true
     }
+
+    Write-Host "  Please open Samsung Settings manually from Start Menu and confirm it opens." -ForegroundColor Yellow
+    Invoke-InteractivePause
+
+    return $false
+}
+
+function Start-GalaxyBookScheduledTasks {
+    param(
+        [bool]$TestMode = $false,
+        [bool]$RequireRegistryTask = $false
+    )
+
+    if ($TestMode) {
+        Write-Host "`n[TEST] Would start scheduled tasks: $taskName, $multiControlTaskName" -ForegroundColor Gray
+        return $true
+    }
+
+    $tasksToStart = @($taskName, $multiControlTaskName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    if ($tasksToStart.Count -eq 0) {
+        return $false
+    }
+
+    Write-Host "`nStarting Galaxy Book scheduled tasks..." -ForegroundColor Cyan
+    $startedCount = 0
+
+    foreach ($scheduledTaskName in $tasksToStart) {
+        $task = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+        if (-not $task) {
+            Write-Host "  ⚠ Scheduled task not found: $scheduledTaskName" -ForegroundColor Yellow
+            continue
+        }
+
+        try {
+            $taskInfoBefore = Get-ScheduledTaskInfo -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+            Start-ScheduledTask -TaskName $scheduledTaskName -ErrorAction Stop
+
+            $started = $false
+            for ($attempt = 0; $attempt -lt 10; $attempt++) {
+                Start-Sleep -Seconds 1
+                $taskInfoAfter = Get-ScheduledTaskInfo -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
+                $taskState = (Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue).State
+
+                if ($taskState -eq 'Running' -or ($taskInfoAfter -and $taskInfoBefore -and $taskInfoAfter.LastRunTime -gt $taskInfoBefore.LastRunTime)) {
+                    $started = $true
+                    break
+                }
+            }
+
+            if ($started) {
+                Write-Host "  ✓ Started scheduled task: $scheduledTaskName" -ForegroundColor Green
+                $startedCount++
+            }
+            else {
+                Write-Host "  ⚠ Could not confirm task start: $scheduledTaskName" -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host "  ⚠ Failed to start scheduled task '$scheduledTaskName': $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    if ($RequireRegistryTask -and ($tasksToStart -contains $taskName)) {
+        $registryTaskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        $registryTaskState = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
+        $registryTaskRan = $false
+
+        if ($registryTaskState -eq 'Running') {
+            $registryTaskRan = $true
+        }
+        elseif ($registryTaskInfo) {
+            $registryTaskRan = ($registryTaskInfo.LastRunTime -gt [datetime]'2000-01-01')
+        }
+
+        if ($registryTaskRan) {
+            Write-Host "  ✓ Confirmed registry-spoof task has run: $taskName" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  ⚠ Registry-spoof task could not be confirmed as run: $taskName" -ForegroundColor Yellow
+            return $false
+        }
+    }
+
+    return ($startedCount -gt 0)
 }
 
 function Install-SystemSupportEngine {
@@ -2511,36 +4229,37 @@ function Install-SystemSupportEngine {
         [ValidateSet("Upgrade", "Keep", "Clean", "Cancel")]
         [string]$AutoExistingInstallMode = "Upgrade",
         [ValidateSet("Dual", "Stable", "Latest", "Manual")]
-        [string]$AutoStrategy = "Dual",
+        [string]$AutoStrategy = "Latest",
         [string]$AutoVersion = $null,
         [bool]$AutoRemoveExistingSettings = $true,
         [bool]$AutoDisableOriginalService = $true
     )
     
-    Write-Host "`n========================================" -ForegroundColor Yellow
-    Write-Host "  ⚠️  ADVANCED FEATURE WARNING ⚠️" -ForegroundColor Yellow
-    Write-Host "========================================`n" -ForegroundColor Yellow
+    $renderHeaderBlock = {
+        Write-Host "`n========================================" -ForegroundColor Yellow
+        Write-Host "  ⚠️  ADVANCED FEATURE WARNING ⚠️" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        
+        Write-Host "This step involves:" -ForegroundColor White
+        Write-Host "  • Binary executable patching (modifies Samsung software)" -ForegroundColor Gray
+        Write-Host "  • System service installation (runs at startup)" -ForegroundColor Gray
+        Write-Host "  • Driver installation (automated via Device Manager)" -ForegroundColor Gray
+        
+        Write-Host "`nThis is EXPERIMENTAL and may:" -ForegroundColor Yellow
+        Write-Host "  ⚠ Cause system instability" -ForegroundColor Red
+        Write-Host "  ⚠ Trigger antivirus warnings" -ForegroundColor Red
+        Write-Host "  ⚠ Require manual cleanup if something goes wrong" -ForegroundColor Red
+        
+        Write-Host "`nCompatibility:" -ForegroundColor Cyan
+        Write-Host "  ✓ Windows 11 x64 only" -ForegroundColor Green
+        Write-Host "  ✗ Windows 10 NOT supported" -ForegroundColor Red
+        Write-Host "  ✗ ARM devices NOT supported" -ForegroundColor Red
+        
+        Write-Host "`nRecommended for advanced users only." -ForegroundColor Yellow
+        Write-Host ""
+    }
     
-    Write-Host "This step involves:" -ForegroundColor White
-    Write-Host "  • Binary executable patching (modifies Samsung software)" -ForegroundColor Gray
-    Write-Host "  • System service installation (runs at startup)" -ForegroundColor Gray
-    Write-Host "  • Driver installation (automated via Device Manager)" -ForegroundColor Gray
-    
-    Write-Host "`nThis is EXPERIMENTAL and may:" -ForegroundColor Yellow
-    Write-Host "  ⚠ Cause system instability" -ForegroundColor Red
-    Write-Host "  ⚠ Trigger antivirus warnings" -ForegroundColor Red
-    Write-Host "  ⚠ Require manual cleanup if something goes wrong" -ForegroundColor Red
-    
-    Write-Host "`nCompatibility:" -ForegroundColor Cyan
-    Write-Host "  ✓ Windows 11 x64 only" -ForegroundColor Green
-    Write-Host "  ✗ Windows 10 NOT supported" -ForegroundColor Red
-    Write-Host "  ✗ ARM devices NOT supported" -ForegroundColor Red
-    
-    Write-Host "`nRecommended for advanced users only." -ForegroundColor Yellow
-    Write-Host ""
-    
-    $continue = if ($AutoInstall) { "y" } else { Read-Host "Do you want to install System Support Engine? (y/N)" }
-    if ($continue -notlike "y*") {
+    if (-not (Show-Prompt -Question "Do you want to install System Support Engine?" -Description "Required for hardware-level features like Multi Control and Quick Share." -RenderHeader $renderHeaderBlock)) {
         Write-Host "Skipping System Support Engine installation." -ForegroundColor Cyan
         return $false
     }
@@ -2627,7 +4346,7 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Check if original Samsung service needs to be disabled
+    # Enforce original Samsung service disabled to avoid patched-service conflicts.
     $originalService = $existingServices | Where-Object { $_.IsOriginal -eq $true }
     if ($originalService -and $originalService.StartType -ne 'Disabled') {
         Write-Host "`n⚠️  Original Samsung Service Detected" -ForegroundColor Yellow
@@ -2637,35 +4356,31 @@ function Install-SystemSupportEngine {
         Write-Host ""
         Write-Host "This service MUST be disabled to avoid conflicts with the patched version." -ForegroundColor Yellow
         Write-Host ""
-        
-        $disableOriginal = if ($AutoInstall) { if ($AutoDisableOriginalService) { "y" } else { "n" } } else { Read-Host "Disable original Samsung service? (Y/n)" }
-        if ($disableOriginal -notlike "n*") {
-            if ($TestMode) {
-                Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
-            }
-            else {
-                Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
-                
-                if ($originalService.Status -eq 'Running') {
-                    Write-Host "    Stopping service..." -ForegroundColor Gray
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
-                }
-                
-                Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
-                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-                
-                $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-                if ($verifyDisabled.StartType -eq 'Disabled') {
-                    Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
-                }
-            }
+
+        if (-not $AutoDisableOriginalService) {
+            Write-Host "  ⚠ Skipping disable as requested by configuration, but EXPECT CONFLICTS!" -ForegroundColor Red
+        }
+        elseif ($TestMode) {
+            Write-Host "  [TEST] Would disable original Samsung service: SamsungSystemSupportService" -ForegroundColor Gray
         }
         else {
-            Write-Host "  ⚠ WARNING: Service conflicts may occur!" -ForegroundColor Red
-            Write-Host "    The patched and original services may interfere with each other." -ForegroundColor Yellow
+            Write-Host "  Disabling SamsungSystemSupportService..." -ForegroundColor Cyan
+
+            if ($originalService.Status -eq 'Running') {
+                Write-Host "    Stopping service..." -ForegroundColor Gray
+                Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "    Setting startup type to Disabled..." -ForegroundColor Gray
+            Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+
+            $verifyDisabled = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+            if ($verifyDisabled.StartType -eq 'Disabled') {
+                Write-Host "  ✓ Original service disabled successfully" -ForegroundColor Green
+            }
+            else {
+                Write-Host "  ⚠ Failed to disable service - you may need to do this manually" -ForegroundColor Yellow
+            }
         }
         Write-Host ""
     }
@@ -2703,13 +4418,6 @@ function Install-SystemSupportEngine {
             }
         }
         
-        Write-Host "What would you like to do?" -ForegroundColor Yellow
-        Write-Host "  [1] Upgrade to new version (stops services, replaces files)" -ForegroundColor White
-        Write-Host "  [2] Keep existing installation (skip SSSE setup)" -ForegroundColor White
-        Write-Host "  [3] Clean install (removes old, installs fresh)" -ForegroundColor White
-        Write-Host "  [4] Cancel" -ForegroundColor White
-        Write-Host ""
-        
         $choice = if ($AutoInstall) {
             switch ($AutoExistingInstallMode) {
                 "Upgrade" { "1" }
@@ -2719,7 +4427,14 @@ function Install-SystemSupportEngine {
             }
         }
         else {
-            Read-Host "Enter choice [1-4]"
+            $options = @(
+                [pscustomobject]@{ Label = "Upgrade to new version"; Value = "1"; Description = "Stops services, replaces files in place" },
+                [pscustomobject]@{ Label = "Keep existing installation"; Value = "2"; Description = "Skips System Support Engine setup" },
+                [pscustomobject]@{ Label = "Clean install"; Value = "3"; Description = "Removes old installation, installs fresh" },
+                [pscustomobject]@{ Label = "Cancel"; Value = "4"; Description = "Abort installation entirely" }
+            )
+            $selection = Show-ArrowMenu -Title "Existing SSSE Installation Found" -Prompt "What would you like to do?" -Items $options -DefaultIndex 0
+            $selection.Value
         }
         
         switch ($choice) {
@@ -2728,21 +4443,22 @@ function Install-SystemSupportEngine {
                 
                 # If multiple installations found, let user choose which to upgrade
                 if ($existingInstallations.Count -gt 1) {
-                    Write-Host "`nMultiple installations found. Which one to upgrade?" -ForegroundColor Yellow
-                    for ($i = 0; $i -lt $existingInstallations.Count; $i++) {
-                        Write-Host "  [$($i + 1)] $($existingInstallations[$i].Path) (v$($existingInstallations[$i].Version))" -ForegroundColor White
-                    }
-                    Write-Host ""
-
                     if ($AutoInstall) {
                         $upgradeIndex = 0
                         Write-Host "  ✓ Auto-selecting first installation for upgrade" -ForegroundColor Gray
                     }
                     else {
-                        do {
-                            $upgradeChoice = Read-Host "Enter choice [1-$($existingInstallations.Count)]"
-                            $upgradeIndex = [int]$upgradeChoice - 1
-                        } while ($upgradeIndex -lt 0 -or $upgradeIndex -ge $existingInstallations.Count)
+                        $options = @()
+                        for ($i = 0; $i -lt $existingInstallations.Count; $i++) {
+                            $options += [pscustomobject]@{ 
+                                Label = $existingInstallations[$i].Path
+                                Description = "Version v$($existingInstallations[$i].Version)"
+                                Index = $i
+                            }
+                        }
+                        
+                        $selection = Show-ArrowMenu -Title "Multiple SSSE Installations Found" -Prompt "Which one to upgrade?" -Items $options -DefaultIndex 0
+                        $upgradeIndex = $selection.Index
                     }
                     
                     $InstallPath = $existingInstallations[$upgradeIndex].Path
@@ -2828,12 +4544,13 @@ function Install-SystemSupportEngine {
         }
     }
     
-    # Download CAB - Dual Version Strategy for Fresh Install
+    # Download CAB - direct install uses latest SSSE by default.
+    # The legacy dual-version path remains below for reference, but is intentionally disabled.
     Write-Host "`n========================================" -ForegroundColor Cyan
     Write-Host "  SSSE Installation Strategy" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     
-    # Use ForceVersion if provided (for quick upgrades), otherwise use dual-version strategy
+    # Use ForceVersion if provided (for quick upgrades), otherwise prefer a direct install.
     if ($ForceVersion) {
         $cabVersion = $ForceVersion
         $installedVersion = $ForceVersion  # Track installed version
@@ -2842,19 +4559,18 @@ function Install-SystemSupportEngine {
     }
     else {
         Write-Host ""
-        Write-Host "  Recommended: In-place upgrade strategy" -ForegroundColor Green
-        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest 7.1.2.0" -ForegroundColor Gray
-        Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
+        Write-Host "  Recommended: Direct install" -ForegroundColor Green
+        Write-Host "    • Install and patch SSSE $LATEST_SSSE_VERSION directly" -ForegroundColor Gray
+        Write-Host "    • Legacy dual-version upgrade flow is currently disabled" -ForegroundColor Gray
         Write-Host ""
 
         if ($AutoInstall) {
             switch ($AutoStrategy) {
                 "Dual" {
-                    $cabVersion = "6.1.8.0"
-                    $driverVersion = "7.1.2.0"
+                    $cabVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
-                    $useDualVersionStrategy = $true
-                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> 7.1.2.0)" -ForegroundColor Green
+                    $useDualVersionStrategy = $false
+                    Write-Host "  ⚠ Dual-version strategy requested but disabled; using direct install of $LATEST_SSSE_VERSION" -ForegroundColor Yellow
                 }
                 "Stable" {
                     $cabVersion = "6.3.3.0"
@@ -2863,14 +4579,14 @@ function Install-SystemSupportEngine {
                     Write-Host "  ✓ Auto-selected stable version: $cabVersion" -ForegroundColor Cyan
                 }
                 "Latest" {
-                    $cabVersion = "7.1.2.0"
+                    $cabVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
                     $useDualVersionStrategy = $false
                     Write-Host "  ✓ Auto-selected latest version: $cabVersion" -ForegroundColor Cyan
                 }
                 default {
                     if (-not $AutoVersion) {
-                        $AutoVersion = "6.3.3.0"
+                        $AutoVersion = $LATEST_SSSE_VERSION
                     }
                     $cabVersion = $AutoVersion
                     $installedVersion = $cabVersion
@@ -2880,39 +4596,10 @@ function Install-SystemSupportEngine {
             }
         }
         else {
-            $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
-            
-            if ($strategyChoice -like "n*") {
-                # Fallback to manual version selection
-                Write-Host ""
-                Write-Host "  Available versions:" -ForegroundColor Yellow
-                Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
-                Write-Host "    [2] 7.1.2.0 - Latest" -ForegroundColor White
-                Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
-                Write-Host ""
-                
-                $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
-                
-                $cabVersion = switch ($versionChoice) {
-                    "2" { "7.1.2.0" }
-                    "3" { $null }  # Will show interactive menu
-                    default { "6.3.3.0" }
-                }
-                
-                if ($cabVersion) {
-                    Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
-                }
-                $installedVersion = $cabVersion  # Track installed version for single-version install
-                $useDualVersionStrategy = $false
-            }
-            else {
-                # Use dual-version strategy
-                $cabVersion = "6.1.8.0"  # Primary version for patched exe
-                $driverVersion = "7.1.2.0"  # Driver version for DriverStore
-                $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
-                $useDualVersionStrategy = $true
-                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to 7.1.2.0" -ForegroundColor Green
-            }
+            $cabVersion = $LATEST_SSSE_VERSION
+            $installedVersion = $cabVersion
+            $useDualVersionStrategy = $false
+            Write-Host "  ✓ Direct install selected: $cabVersion" -ForegroundColor Cyan
         }
     }
     
@@ -2921,17 +4608,19 @@ function Install-SystemSupportEngine {
     $existingSettings = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*SamsungSettings*" }
     
     if ($existingSettings) {
-        Write-Host "  Found existing Samsung Settings packages:" -ForegroundColor Yellow
-        foreach ($app in $existingSettings) {
-            Write-Host "    • $($app.Name) v$($app.Version)" -ForegroundColor Gray
+        $renderHeaderBlock = {
+            Write-Host "  Found existing Samsung Settings packages:" -ForegroundColor Yellow
+            foreach ($app in $existingSettings) {
+                Write-Host "    • $($app.Name) v$($app.Version)" -ForegroundColor Gray
+            }
+            Write-Host ""
+            Write-Host "  These need to be removed to ensure the new driver version" -ForegroundColor Gray
+            Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
+            Write-Host ""
         }
-        Write-Host ""
-        Write-Host "  These need to be removed to ensure the new driver version" -ForegroundColor Gray
-        Write-Host "  triggers a fresh installation from the Store." -ForegroundColor Gray
-        Write-Host ""
         
-        $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { "y" } else { "n" } } else { Read-Host "Remove existing Samsung Settings packages? (Y/n)" }
-        if ($removeChoice -notlike "n*") {
+        $removeChoice = if ($AutoInstall) { if ($AutoRemoveExistingSettings) { $true } else { $false } } else { Show-Prompt -Question "Remove existing Samsung Settings packages?" -Description "Recommended to ensure a clean install." -RenderHeader $renderHeaderBlock }
+        if ($removeChoice) {
             if ($TestMode) {
                 Write-Host "  [TEST] Would remove packages: $($existingSettings.Name -join ', ')" -ForegroundColor Gray
             }
@@ -3284,13 +4973,14 @@ function Install-SystemSupportEngine {
                         Write-Host "        • Services console (services.msc) is open" -ForegroundColor Gray
                         Write-Host "        • Event Viewer is open" -ForegroundColor Gray
                         Write-Host "        • Process Explorer is open" -ForegroundColor Gray
-                        Write-Host "`n      Options:" -ForegroundColor Cyan
-                        Write-Host "        [1] Close these apps manually and I'll wait" -ForegroundColor White
-                        Write-Host "        [2] Auto-close Task Manager, Services, Event Viewer" -ForegroundColor White
-                        Write-Host "        [3] Continue waiting (will timeout in $($maxWait - $waited)s)" -ForegroundColor White
-                        Write-Host ""
+                        $options = @(
+                            [pscustomobject]@{ Label = "Close these apps manually and I'll wait"; Value = "1" },
+                            [pscustomobject]@{ Label = "Auto-close Task Manager, Services, Event Viewer"; Value = "2" },
+                            [pscustomobject]@{ Label = "Continue waiting (will timeout in $($maxWait - $waited)s)"; Value = "3" }
+                        )
                     
-                        $choice = Read-Host "      Choose option [1-3]"
+                        $selection = Show-ArrowMenu -Title "Service deletion is taking longer than usual..." -Prompt "It seems Task Manager, Services console or Event Viewer is open." -Items $options -DefaultIndex 0
+                        $choice = $selection.Value
                     
                         if ($choice -eq "2") {
                             Write-Host "      Attempting to close interfering applications..." -ForegroundColor Yellow
@@ -3470,15 +5160,15 @@ function Install-SystemSupportEngine {
             }
         }
         
-        # DUAL-VERSION STRATEGY: Download and install 7.1.2.0 driver-only
+        # DUAL-VERSION STRATEGY: Download and install latest driver-only
         if ($useDualVersionStrategy) {
-            Write-Host "`n  [DUAL-VERSION] Downloading 7.1.2.0 driver..." -ForegroundColor Cyan
+            Write-Host "`n  [DUAL-VERSION] Downloading $driverVersion driver..." -ForegroundColor Cyan
             
             $driverCabResult = Get-SamsungDriverCab -Version $driverVersion -OutputPath $tempDir
             
             if ($driverCabResult) {
-                # Extract just the driver files from 7.1.2.0
-                $driverExtractDir = Join-Path $extractDir "Driver_7120"
+                # Extract just the driver files from the latest version
+                $driverExtractDir = Join-Path $extractDir "Driver_Latest"
                 New-Item -Path $driverExtractDir -ItemType Directory -Force | Out-Null
                 
                 $expandResult = & expand.exe "$($driverCabResult.FilePath)" -F:* "$driverExtractDir" 2>&1
@@ -3486,27 +5176,27 @@ function Install-SystemSupportEngine {
                     $driverInfFile = Get-ChildItem -Path $driverExtractDir -Filter "*.inf" -File | Select-Object -First 1
                     
                     if ($driverInfFile) {
-                        Write-Host "    Installing 7.1.2.0 driver to DriverStore..." -ForegroundColor Yellow
+                        Write-Host "    Installing $driverVersion driver to DriverStore..." -ForegroundColor Yellow
                         
                         if (-not $TestMode) {
                             $driverAdded = Install-SSSEDriverToStore -InfPath $driverInfFile.FullName -TestMode:$false
                             if ($driverAdded) {
-                                Write-Host "    ✓ 7.1.2.0 driver added to DriverStore" -ForegroundColor Green
+                                Write-Host "    ✓ $driverVersion driver added to DriverStore" -ForegroundColor Green
                             }
                             else {
-                                Write-Host "    ⚠ 7.1.2.0 driver add had issues" -ForegroundColor Yellow
+                                Write-Host "    ⚠ $driverVersion driver add had issues" -ForegroundColor Yellow
                             }
                         }
                         else {
-                            Write-Host "    [TEST] Would add 7.1.2.0 driver to DriverStore" -ForegroundColor Gray
+                            Write-Host "    [TEST] Would add $driverVersion driver to DriverStore" -ForegroundColor Gray
                         }
                     }
                     else {
-                        Write-Host "    ⚠ No .inf file found in 7.1.2.0 CAB" -ForegroundColor Yellow
+                        Write-Host "    ⚠ No .inf file found in $driverVersion CAB" -ForegroundColor Yellow
                     }
                 }
                 else {
-                    Write-Host "    ⚠ Failed to extract 7.1.2.0 CAB: $expandResult" -ForegroundColor Yellow
+                    Write-Host "    ⚠ Failed to extract $driverVersion CAB: $expandResult" -ForegroundColor Yellow
                 }
                 
                 # Cleanup
@@ -3518,43 +5208,20 @@ function Install-SystemSupportEngine {
                 # DUAL-VERSION PHASE 2: Core Apps & Binary Replacement
                 # ==============================================================================
                 
-                # 1. Install Core Packages (Samsung Settings, etc.)
+                # 1. Install core packages before launching Samsung Settings, but leave Samsung Settings itself for last.
                 Write-Host "`n  [DUAL-VERSION] Installing Core Packages..." -ForegroundColor Cyan
-                Install-SamsungPackages -Packages $script:PackageDatabase.Core -TestMode $TestMode
+                $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
+                $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
+                $scheduledTasksReady = Start-GalaxyBookScheduledTasks -TestMode $TestMode -RequireRegistryTask $true
+                if (-not $scheduledTasksReady) {
+                    throw "Registry-spoof startup task was not confirmed before core package installation"
+                }
+                $null = Install-SamsungPackages -Packages @($script:PackageDatabase.Core | Where-Object { $_.Name -eq "Samsung Settings" }) -TestMode $TestMode
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
-                if ($TestMode) {
-                    Write-Host "  [TEST] Would launch Samsung Settings app" -ForegroundColor Gray
-                }
-                else {
-                    try {
-                        # Samsung Settings AppID
-                        $settingsAppId = "SAMSUNGELECTRONICSCO.LTD.SamsungSettings1.5_3c1yjt4zspk6g!App"
-                        Start-Process "shell:AppsFolder\$settingsAppId" -ErrorAction Stop
-                        Write-Host "  ✓ Samsung Settings launched" -ForegroundColor Green
-                        
-                        # Wait for user confirmation or delay
-                        Write-Host "`n  IMPORTANT: Check if Samsung Settings opened." -ForegroundColor Yellow
-                        Write-Host "  Please follow these steps to sync your devices:" -ForegroundColor Cyan
-                        Write-Host "    1. Sign in to Samsung Settings" -ForegroundColor White
-                        Write-Host "    2. Go to 'Easy Bluetooth Connection'" -ForegroundColor White
-                        Write-Host "    3. Enable 'Sync Bluetooth devices with Samsung Cloud'" -ForegroundColor White
-                        Write-Host "    4. Click on it to open Samsung Cloud" -ForegroundColor White
-                        Write-Host "    5. Click 'Sync now'" -ForegroundColor White
-                        Write-Host "    6. Verify it shows your paired Samsung devices" -ForegroundColor White
-                        Write-Host "       (Note: Buds2/3 (Pro/Non-Pro) may not appear if they don't support multipoint)" -ForegroundColor Gray
-                        Write-Host ""
-                        Write-Host "  Once you have verified the sync, press Enter to continue..." -ForegroundColor Cyan
-                        if (-not $AutoInstall) { Read-Host }
-                    }
-                    catch {
-                        Write-Warning "Failed to launch Samsung Settings: $_"
-                        Write-Host "  Please open Samsung Settings manually from Start Menu." -ForegroundColor Yellow
-                        Write-Host "  Then follow the sync instructions above." -ForegroundColor Gray
-                        if (-not $AutoInstall) { Read-Host "  Press Enter when ready..." }
-                    }
-                }
+                $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
+                Invoke-InteractivePause
                 
                 # 3. Stop Services & Processes
                 Write-Host "`n  [DUAL-VERSION] Stopping services for binary replacement..." -ForegroundColor Cyan
@@ -3567,10 +5234,10 @@ function Install-SystemSupportEngine {
                     Write-Host "  [TEST] Would stop Samsung processes and GBeSupportService" -ForegroundColor Gray
                 }
                 
-                # 4. Extract 7.1.2.0 Binary
-                Write-Host "`n  [DUAL-VERSION] Extracting 7.1.2.0 binary..." -ForegroundColor Cyan
+                # 4. Extract latest binary
+                Write-Host "`n  [DUAL-VERSION] Extracting $driverVersion binary..." -ForegroundColor Cyan
                 if ($TestMode) {
-                    Write-Host "    [TEST] Would extract 7.1.2.0 binary" -ForegroundColor Gray
+                    Write-Host "    [TEST] Would extract $driverVersion binary" -ForegroundColor Gray
                     $extract7Result = @{ Level2Dir = "Simulated" }
                 }
                 else {
@@ -3586,10 +5253,10 @@ function Install-SystemSupportEngine {
                     }
                     
                     if ($ssseExe7) {
-                        # 5. Patch 7.1.2.0 Binary
-                        Write-Host "    Patching 7.1.2.0 binary..." -ForegroundColor Yellow
+                        # 5. Patch latest binary
+                        Write-Host "    Patching $driverVersion binary..." -ForegroundColor Yellow
                         if ($TestMode) {
-                            Write-Host "    [TEST] Would patch 7.1.2.0 binary" -ForegroundColor Gray
+                            Write-Host "    [TEST] Would patch $driverVersion binary" -ForegroundColor Gray
                             $patch7Result = $true
                         }
                         else {
@@ -3600,11 +5267,11 @@ function Install-SystemSupportEngine {
                             # 6. Replace Binary
                             Write-Host "    Replacing binary in $InstallPath..." -ForegroundColor Yellow
                             if ($TestMode) {
-                                Write-Host "    [TEST] Would replace binary with 7.1.2.0 version" -ForegroundColor Gray
+                                Write-Host "    [TEST] Would replace binary with $driverVersion version" -ForegroundColor Gray
                             }
                             else {
                                 Copy-Item -Path $ssseExe7.FullName -Destination $InstallPath -Force
-                                Write-Host "    ✓ Binary replaced with 7.1.2.0 version" -ForegroundColor Green
+                                Write-Host "    ✓ Binary replaced with $driverVersion version" -ForegroundColor Green
                             }
                             
                             # Update installed version tracker
@@ -3621,25 +5288,27 @@ function Install-SystemSupportEngine {
                             }
                         }
                         else {
-                            Write-Error "Failed to patch 7.1.2.0 binary"
+                            Write-Error "Failed to patch $driverVersion binary"
                         }
                     }
                     else {
-                        Write-Error "SamsungSystemSupportEngine.exe not found in 7.1.2.0 CAB"
+                        Write-Error "SamsungSystemSupportEngine.exe not found in $driverVersion CAB"
                     }
                 }
                 else {
-                    Write-Error "Failed to extract 7.1.2.0 CAB"
+                    Write-Error "Failed to extract $driverVersion CAB"
                 }
             }
             else {
-                Write-Host "    ⚠ Failed to download 7.1.2.0 driver CAB" -ForegroundColor Yellow
+                Write-Host "    ⚠ Failed to download $driverVersion driver CAB" -ForegroundColor Yellow
             }
         }
         
         # Cleanup temp extraction
         Write-Host "`n  Cleaning up temporary files..." -ForegroundColor Gray
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        if ($extractDir -and (Test-Path $extractDir)) {
+            Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         
         # Final verification: Ensure original Samsung service is disabled and GBeSupportService is enabled
         Write-Host "`n  Verifying service configuration..." -ForegroundColor Cyan
@@ -3647,18 +5316,25 @@ function Install-SystemSupportEngine {
         $originalSvc = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
         if ($originalSvc) {
             if ($originalSvc.StartType -ne 'Disabled') {
-                Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
-                Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
-                if ($originalSvc.Status -eq 'Running') {
-                    Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                if ($TestMode) {
+                    Write-Host "    [TEST] Would disable original Samsung service..." -ForegroundColor Gray
+                }
+                else {
+                    Write-Host "    ⚠ Original Samsung service not disabled, fixing..." -ForegroundColor Yellow
+                    Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+                    if ($originalSvc.Status -eq 'Running') {
+                        Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
-            $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
-            if ($verifyOriginal.StartType -eq 'Disabled') {
-                Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
-            }
-            else {
-                Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
+            if (-not $TestMode) {
+                $verifyOriginal = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+                if ($verifyOriginal.StartType -eq 'Disabled') {
+                    Write-Host "    ✓ Original Samsung service: Disabled" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "    ⚠ Original Samsung service: $($verifyOriginal.StartType) (should be Disabled)" -ForegroundColor Yellow
+                }
             }
         }
         
@@ -3697,48 +5373,57 @@ function Install-SystemSupportEngine {
             Write-Host "  • ... and $((Get-ChildItem -Path $InstallPath -File).Count - 10) more files" -ForegroundColor Gray
         }
         
-        # Reinstall Samsung Settings and Settings Runtime from Store
-        Write-Host "`nReinstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
-        
-        $samsungPackages = @(
-            @{
-                Name = "Samsung Settings"
-                Id   = "9P2TBWSHK6HJ"
-            },
-            @{
-                Name = "Samsung Settings Runtime"
-                Id   = "9NL68DVFP841"
-            }
-        )
-        
-        foreach ($pkg in $samsungPackages) {
-            Write-Host "  Installing $($pkg.Name)..." -ForegroundColor Gray
-            if ($TestMode) {
-                Write-Host "    [TEST] Would install $($pkg.Name) via winget" -ForegroundColor Gray
-            }
-            else {
-                try {
-                    $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
+        # Install core dependencies before launching Samsung Settings.
+        Write-Host "`nInstalling core Samsung apps required before Samsung Settings launch..." -ForegroundColor Cyan
+        $corePackagesBeforeSettings = @($script:PackageDatabase.Core | Where-Object { $_.Name -ne "Samsung Settings" })
+        $null = Install-SamsungPackages -Packages $corePackagesBeforeSettings -TestMode $TestMode
+
+        $scheduledTasksReady = Start-GalaxyBookScheduledTasks -TestMode $TestMode -RequireRegistryTask $true
+        if (-not $scheduledTasksReady) {
+            throw "Registry-spoof startup task was not confirmed before core package installation"
+        }
+
+        Write-Host "`nInstalling Samsung Settings from Microsoft Store..." -ForegroundColor Cyan
+        $settingsPackage = @{
+            Name = "Samsung Settings"
+            Id   = "9P2TBWSHK6HJ"
+        }
+
+        Write-Host "  Installing $($settingsPackage.Name)..." -ForegroundColor Gray
+        if ($TestMode) {
+            Write-Host "    [TEST] Would install $($settingsPackage.Name) via winget" -ForegroundColor Gray
+        }
+        else {
+            try {
+                $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $settingsPackage.Id) -TimeoutSeconds 900
+                if ($installResult.TimedOut) {
+                    Write-Host "    ✗ winget timed out while installing $($settingsPackage.Name)" -ForegroundColor Red
+                    Write-Host "      Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
+                }
+                else {
+                    $installOutput = $installResult.Output
                     
                     if ($installOutput -match "Successfully installed|Installation completed successfully") {
-                        Write-Host "    ✓ $($pkg.Name) installed" -ForegroundColor Green
+                        Write-Host "    ✓ $($settingsPackage.Name) installed" -ForegroundColor Green
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
-                        Write-Host "    ✓ $($pkg.Name) already present" -ForegroundColor Green
+                        Write-Host "    ✓ $($settingsPackage.Name) already present" -ForegroundColor Green
                     }
                     elseif ($installOutput -match "0x80d03805|0x80D03805") {
                         Write-Host "    ⚠ Store connection error - will install after reboot" -ForegroundColor Yellow
                     }
                     else {
-                        Write-Host "    ⚠ $($pkg.Name) - may install automatically after reboot" -ForegroundColor Yellow
+                        Write-Host "    ⚠ $($settingsPackage.Name) - may install automatically after reboot" -ForegroundColor Yellow
                     }
                 }
-                catch {
-                    Write-Host "    ⚠ Could not install $($pkg.Name) automatically" -ForegroundColor Yellow
-                    Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
-                }
+            }
+            catch {
+                Write-Host "    ⚠ Could not install $($settingsPackage.Name) automatically" -ForegroundColor Yellow
+                Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
             }
         }
+
+        $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "SSSE install and Samsung Settings reinstall" -ShowBluetoothSyncInstructions $true
         
         Write-Host "`nNext Steps:" -ForegroundColor Cyan
         Write-Host "  1. Complete the rest of the installer" -ForegroundColor White
@@ -3760,7 +5445,7 @@ function Install-SystemSupportEngine {
         if ($finalVersion -and $finalVersion -like "6.*") {
             Write-Host "`n💡 UPGRADE TIP:" -ForegroundColor Cyan
             Write-Host "  You installed SSSE version $finalVersion (stable, compatible)" -ForegroundColor White
-            Write-Host "  Later, you can upgrade to 7.1.2.0 for new features:" -ForegroundColor White
+            Write-Host "  Later, you can upgrade to $LATEST_SSSE_VERSION for new features:" -ForegroundColor White
             Write-Host "    .\Install-GalaxyBookEnabler.ps1 -UpgradeSSE" -ForegroundColor Yellow
         }
         elseif ($finalVersion) {
@@ -3782,8 +5467,8 @@ function Install-SystemSupportEngine {
         
         # Cleanup on error
         if (-not $TestMode) {
-            if (Test-Path $extractDir) {
-                Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            if ($extractDir -and (Test-Path $extractDir)) {
+                Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
         
@@ -4050,18 +5735,56 @@ function Show-PackageManager {
     param(
         [bool]$TestMode = $false
     )
+
+    $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
+    $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
+    $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
+    $statusBoxInnerWidth = $statusBoxTop.Length - 2
+
+    $writeStatusBoxTextLine = {
+        param(
+            [string]$Text,
+            [string]$TextColor = 'White'
+        )
+
+        $textValue = if ($null -eq $Text) { '' } else { $Text }
+        if ($textValue.Length -gt $statusBoxInnerWidth) {
+            if ($statusBoxInnerWidth -gt 3) {
+                $textValue = $textValue.Substring(0, $statusBoxInnerWidth - 3) + '...'
+            }
+            else {
+                $textValue = $textValue.Substring(0, $statusBoxInnerWidth)
+            }
+        }
+
+        $paddedText = $textValue.PadRight($statusBoxInnerWidth)
+        Write-Host "│" -NoNewline -ForegroundColor Cyan
+        Write-Host $paddedText -NoNewline -ForegroundColor $TextColor
+        Write-Host "│" -ForegroundColor Cyan
+    }
+
+    $writeStatusBoxValueLine = {
+        param(
+            [string]$Label,
+            [string]$Value,
+            [string]$ValueColor = 'White'
+        )
+
+        $labelText = "  $Label"
+        $valueText = " $Value"
+        $paddingWidth = $statusBoxInnerWidth - $labelText.Length - $valueText.Length
+        if ($paddingWidth -lt 1) {
+            $paddingWidth = 1
+        }
+
+        Write-Host "│$labelText" -NoNewline -ForegroundColor Cyan
+        Write-Host $valueText -NoNewline -ForegroundColor $ValueColor
+        Write-Host ((" " * $paddingWidth) + "│") -ForegroundColor Cyan
+    }
     
     while ($true) {
-        Clear-Host
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "  Samsung Package Manager" -ForegroundColor Cyan
-        Write-Host "========================================`n" -ForegroundColor Cyan
-        
-        # Get installed packages for status display
-        Write-Host "Checking installed packages..." -ForegroundColor DarkGray
         $installedPkgs = Get-InstalledSamsungPackages
         
-        # Mapping of our DB names to actual AppX package name patterns
         $nameMapping = @{
             "GalaxyBookExperience" = "SamsungWelcome"
             "AISelect" = "SmartSelect"
@@ -4080,7 +5803,6 @@ function Show-PackageManager {
             "SamsungDeviceCare" = "SamsungPCCleaner"
         }
         
-        # Helper to check profile status
         function Get-ProfileStatus {
             param($ProfilePackages)
             $total = $ProfilePackages.Count
@@ -4097,10 +5819,26 @@ function Show-PackageManager {
                     }
                 }
             }
+
             return @{ Total = $total; Installed = $installed }
         }
         
-        # Calculate status for each profile
+        $formatStatus = {
+            param($status)
+
+            if ($status.Installed -eq $status.Total) { return "[Installed]" }
+            elseif ($status.Installed -eq 0) { return "[Not Installed]" }
+            else { return "[$($status.Installed)/$($status.Total)]" }
+        }
+        
+        $getStatusColor = {
+            param($status)
+
+            if ($status.Installed -eq $status.Total) { return "Green" }
+            elseif ($status.Installed -eq 0) { return "Gray" }
+            else { return "Yellow" }
+        }
+
         $coreStatus = Get-ProfileStatus $PackageDatabase.Core
         $recPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended
         $recStatus = Get-ProfileStatus $recPkgs
@@ -4110,71 +5848,58 @@ function Show-PackageManager {
         $fullStatus = Get-ProfileStatus $fullPkgs
         $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
         $allStatus = Get-ProfileStatus $allPkgs
-        
-        Clear-Host
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "  Samsung Package Manager" -ForegroundColor Cyan
-        Write-Host "========================================`n" -ForegroundColor Cyan
-        
-        # Helper to format status
-        function Format-Status($status) {
-            if ($status.Installed -eq $status.Total) { return "[Installed]" }
-            elseif ($status.Installed -eq 0) { return "[Not Installed]" }
-            else { return "[$($status.Installed)/$($status.Total)]" }
-        }
-        
-        function Get-StatusColor($status) {
-            if ($status.Installed -eq $status.Total) { return "Green" }
-            elseif ($status.Installed -eq 0) { return "Gray" }
-            else { return "Yellow" }
-        }
-        
-        Write-Host "Current Installation Status:" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "  Core Only          $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
-        Write-Host "  Recommended        $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
-        Write-Host "  Recommended Plus   $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
-        Write-Host "  Full Experience    $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
-        Write-Host "  Everything         $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
-        Write-Host ""
-        
-        Write-Host "Actions:" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "  [1] Install Profile" -ForegroundColor Green
-        Write-Host "      Add packages from a profile" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [2] Downgrade Installation" -ForegroundColor Yellow
-        Write-Host "      Remove extras, keep a smaller profile" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [3] Uninstall All Samsung Apps" -ForegroundColor Red
-        Write-Host "      Remove all Samsung packages" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [4] Back to Main Menu" -ForegroundColor Gray
-        Write-Host ""
-        
-        $managerChoice = Read-Host "Enter choice [1-4]"
+
+        $renderPackageManagerHeader = {
+            Write-Host $statusBoxTop -ForegroundColor Cyan
+            & $writeStatusBoxTextLine "  Samsung Package Manager" 'Cyan'
+            Write-Host $statusBoxDivider -ForegroundColor Cyan
+            & $writeStatusBoxValueLine "Core Only:" (& $formatStatus $coreStatus) (& $getStatusColor $coreStatus)
+            & $writeStatusBoxValueLine "Recommended:" (& $formatStatus $recStatus) (& $getStatusColor $recStatus)
+            & $writeStatusBoxValueLine "Recommended Plus:" (& $formatStatus $recPlusStatus) (& $getStatusColor $recPlusStatus)
+            & $writeStatusBoxValueLine "Full Experience:" (& $formatStatus $fullStatus) (& $getStatusColor $fullStatus)
+            & $writeStatusBoxValueLine "Everything:" (& $formatStatus $allStatus) (& $getStatusColor $allStatus)
+            if ($TestMode) {
+                & $writeStatusBoxTextLine "  TEST MODE - no changes will be applied" 'Yellow'
+            }
+            Write-Host $statusBoxBottom -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "What would you like to do?" -ForegroundColor Cyan
+            Write-Host ""
+        }.GetNewClosure()
+
+        $managerItems = @(
+            [pscustomobject]@{ Label = 'Install Profile'; Description = 'Add packages from a profile.'; Action = 'InstallProfile'; Color = 'Green' },
+            [pscustomobject]@{ Label = 'Downgrade Installation'; Description = 'Remove extras and keep a smaller profile.'; Action = 'Downgrade'; Color = 'Yellow' },
+            [pscustomobject]@{ Label = 'Uninstall All Samsung Apps'; Description = 'Remove all Samsung packages.'; Action = 'UninstallAll'; Color = 'Red' },
+            [pscustomobject]@{ Label = 'Back to Main Menu'; Description = 'Return to the installer actions.'; Action = 'Back'; Color = 'DarkGray' }
+        )
+
+        $selectedManagerItem = Show-ArrowMenu -Items $managerItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderPackageManagerHeader
+        $managerChoice = if ($selectedManagerItem) { $selectedManagerItem.Action } else { 'Back' }
         
         switch ($managerChoice) {
-            "1" {
-                # Install Profile
-                Clear-Host
-                Write-Host "========================================" -ForegroundColor Cyan
-                Write-Host "  Install Profile" -ForegroundColor Cyan
-                Write-Host "========================================`n" -ForegroundColor Cyan
+            'InstallProfile' {
+                $profileItems = @(
+                    [pscustomobject]@{ Label = "Core Only $(& $formatStatus $coreStatus)"; Description = 'Install only the core Samsung apps.'; Action = '1'; Color = (& $getStatusColor $coreStatus) },
+                    [pscustomobject]@{ Label = "Recommended $(& $formatStatus $recStatus)"; Description = 'Install the recommended baseline set.'; Action = '2'; Color = (& $getStatusColor $recStatus) },
+                    [pscustomobject]@{ Label = "Recommended Plus $(& $formatStatus $recPlusStatus)"; Description = 'Include the recommended plus additions.'; Action = '3'; Color = (& $getStatusColor $recPlusStatus) },
+                    [pscustomobject]@{ Label = "Full Experience $(& $formatStatus $fullStatus)"; Description = 'Include packages that require extra setup.'; Action = '4'; Color = (& $getStatusColor $fullStatus) },
+                    [pscustomobject]@{ Label = "Everything $(& $formatStatus $allStatus)"; Description = 'Include all packages, including known non-working ones.'; Action = '5'; Color = (& $getStatusColor $allStatus) },
+                    [pscustomobject]@{ Label = 'Cancel'; Description = 'Return to the package manager.'; Action = 'Cancel'; Color = 'DarkGray' }
+                )
+
+                $renderInstallProfileHeader = {
+                    Write-Host "========================================" -ForegroundColor Cyan
+                    Write-Host "  Install Profile" -ForegroundColor Cyan
+                    Write-Host "========================================`n" -ForegroundColor Cyan
+                    Write-Host "Select profile to install." -ForegroundColor Yellow
+                    Write-Host ""
+                }.GetNewClosure()
+
+                $selectedProfileItem = Show-ArrowMenu -Items $profileItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderInstallProfileHeader
+                $profileChoice = if ($selectedProfileItem) { $selectedProfileItem.Action } else { 'Cancel' }
                 
-                Write-Host "Select profile to install:" -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "  [1] Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
-                Write-Host "  [2] Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
-                Write-Host "  [3] Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
-                Write-Host "  [4] Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
-                Write-Host "  [5] Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
-                Write-Host "  [6] Cancel" -ForegroundColor Gray
-                Write-Host ""
-                
-                $profileChoice = Read-Host "Enter choice [1-6]"
-                
-                if ($profileChoice -in "1","2","3","4","5") {
+                if ($profileChoice -in '1','2','3','4','5') {
                     $packagesToInstall = Get-PackagesByProfile -ProfileName $profileChoice
                     
                     if ($packagesToInstall.Count -gt 0) {
@@ -4193,39 +5918,28 @@ function Show-PackageManager {
                     }
                 }
             }
-            "2" {
-                # Downgrade Profile (keep selected, remove extras)
-                Clear-Host
-                Write-Host "========================================" -ForegroundColor Yellow
-                Write-Host "  Downgrade Installation" -ForegroundColor Yellow
-                Write-Host "========================================`n" -ForegroundColor Yellow
+            'Downgrade' {
+                $downgradeItems = @(
+                    [pscustomobject]@{ Label = "Keep Everything $(& $formatStatus $allStatus)"; Description = 'No changes.'; Action = '1'; Color = (& $getStatusColor $allStatus) },
+                    [pscustomobject]@{ Label = "Keep Full Experience $(& $formatStatus $fullStatus)"; Description = 'Removes NonWorking.'; Action = '2'; Color = (& $getStatusColor $fullStatus) },
+                    [pscustomobject]@{ Label = "Keep Recommended Plus $(& $formatStatus $recPlusStatus)"; Description = 'Removes ExtraSteps and NonWorking.'; Action = '3'; Color = (& $getStatusColor $recPlusStatus) },
+                    [pscustomobject]@{ Label = "Keep Recommended $(& $formatStatus $recStatus)"; Description = 'Removes RecommendedPlus, ExtraSteps, and NonWorking.'; Action = '4'; Color = (& $getStatusColor $recStatus) },
+                    [pscustomobject]@{ Label = "Keep Core Only $(& $formatStatus $coreStatus)"; Description = 'Removes everything above Core.'; Action = '5'; Color = (& $getStatusColor $coreStatus) },
+                    [pscustomobject]@{ Label = 'Remove All'; Description = 'Use the uninstall action instead.'; Action = '6'; Color = 'Red' },
+                    [pscustomobject]@{ Label = 'Cancel'; Description = 'Return to the package manager.'; Action = 'Cancel'; Color = 'DarkGray' }
+                )
+
+                $renderDowngradeHeader = {
+                    Write-Host "========================================" -ForegroundColor Yellow
+                    Write-Host "  Downgrade Installation" -ForegroundColor Yellow
+                    Write-Host "========================================`n" -ForegroundColor Yellow
+                    Write-Host "Choose what to keep. Packages above your choice will be removed." -ForegroundColor Cyan
+                    Write-Host ""
+                }.GetNewClosure()
+
+                $selectedDowngradeItem = Show-ArrowMenu -Items $downgradeItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderDowngradeHeader
+                $profileChoice = if ($selectedDowngradeItem) { $selectedDowngradeItem.Action } else { 'Cancel' }
                 
-                Write-Host "Choose what to KEEP (packages above your choice will be removed):" -ForegroundColor Cyan
-                Write-Host ""
-                Write-Host "  [1] Keep Everything $(Format-Status $allStatus)" -ForegroundColor $(Get-StatusColor $allStatus)
-                Write-Host "      (No changes)" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [2] Keep Full Experience $(Format-Status $fullStatus)" -ForegroundColor $(Get-StatusColor $fullStatus)
-                Write-Host "      Removes: NonWorking (Recovery, Update)" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [3] Keep Recommended Plus $(Format-Status $recPlusStatus)" -ForegroundColor $(Get-StatusColor $recPlusStatus)
-                Write-Host "      Removes: ExtraSteps + NonWorking" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [4] Keep Recommended $(Format-Status $recStatus)" -ForegroundColor $(Get-StatusColor $recStatus)
-                Write-Host "      Removes: RecommendedPlus + ExtraSteps + NonWorking" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [5] Keep Core Only $(Format-Status $coreStatus)" -ForegroundColor $(Get-StatusColor $coreStatus)
-                Write-Host "      Removes: Recommended + RecommendedPlus + ExtraSteps + NonWorking" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [6] Remove All" -ForegroundColor Red
-                Write-Host "      Removes: Everything (use Uninstall All instead)" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  [7] Cancel" -ForegroundColor Gray
-                Write-Host ""
-                
-                $profileChoice = Read-Host "Enter choice [1-7]"
-                
-                # Determine which package categories to remove based on choice
                 $packagesToRemove = @()
                 $keepProfileName = ""
                 
@@ -4236,22 +5950,18 @@ function Show-PackageManager {
                         continue
                     }
                     "2" {
-                        # Keep Full Experience, remove NonWorking
                         $packagesToRemove = $PackageDatabase.NonWorking
                         $keepProfileName = "Full Experience"
                     }
                     "3" {
-                        # Keep Recommended Plus, remove ExtraSteps + NonWorking
                         $packagesToRemove = $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
                         $keepProfileName = "Recommended Plus"
                     }
                     "4" {
-                        # Keep Recommended, remove RecommendedPlus + ExtraSteps + NonWorking
                         $packagesToRemove = $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
                         $keepProfileName = "Recommended"
                     }
                     "5" {
-                        # Keep Core, remove Recommended + RecommendedPlus + ExtraSteps + NonWorking
                         $packagesToRemove = $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
                         $keepProfileName = "Core Only"
                     }
@@ -4266,7 +5976,6 @@ function Show-PackageManager {
                 }
                 
                 if ($packagesToRemove.Count -gt 0) {
-                    # Filter to only packages that are actually installed
                     $installedToRemove = @()
                     foreach ($pkg in $packagesToRemove) {
                         $dbName = $pkg.Name.Replace(" ", "")
@@ -4293,8 +6002,6 @@ function Show-PackageManager {
                     }
                     
                     Write-Host "`n⚠ This will remove $($installedToRemove.Count) installed package(s), keeping '$keepProfileName'!" -ForegroundColor Yellow
-                    
-                    # Show what will be removed
                     Write-Host "`nPackages to remove:" -ForegroundColor Gray
                     foreach ($pkg in $installedToRemove) {
                         Write-Host "  • $($pkg.Name)" -ForegroundColor DarkGray
@@ -4312,21 +6019,25 @@ function Show-PackageManager {
                         foreach ($pkg in $installedToRemove) {
                             Write-Host "  Removing $($pkg.Name)..." -ForegroundColor Gray
                             
-                            # Find the actual AppX package
                             $dbName = $pkg.Name.Replace(" ", "")
                             $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
-                            
                             $appxPkg = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*$searchName*" }
                             
                             if ($appxPkg) {
-                                try {
-                                    $appxPkg | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
-                                    Write-Host "    ✓ Removed" -ForegroundColor Green
+                                if ($TestMode) {
+                                    Write-Host "    [TEST] Would remove: $($appxPkg.Name)" -ForegroundColor Gray
                                     $uninstalled++
                                 }
-                                catch {
-                                    Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
-                                    $failed++
+                                else {
+                                    try {
+                                        $appxPkg | Remove-AppxPackage -AllUsers -ErrorAction Stop *>$null
+                                        Write-Host "    ✓ Removed" -ForegroundColor Green
+                                        $uninstalled++
+                                    }
+                                    catch {
+                                        Write-Host "    ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
+                                        $failed++
+                                    }
                                 }
                             }
                         }
@@ -4348,18 +6059,16 @@ function Show-PackageManager {
                     }
                 }
             }
-            "3" {
-                # Uninstall All
-                Clear-Host
-                Write-Host "========================================" -ForegroundColor Red
-                Write-Host "  Uninstall All Samsung Apps" -ForegroundColor Red
-                Write-Host "========================================`n" -ForegroundColor Red
+            'UninstallAll' {
+                $renderHeaderBlock = {
+                    Write-Host "========================================" -ForegroundColor Red
+                    Write-Host "  Uninstall All Samsung Apps" -ForegroundColor Red
+                    Write-Host "========================================`n" -ForegroundColor Red
+                    Write-Host "⚠ WARNING: This will uninstall ALL Samsung apps!" -ForegroundColor Yellow
+                    Write-Host ""
+                }
                 
-                Write-Host "⚠ WARNING: This will uninstall ALL Samsung apps!" -ForegroundColor Yellow
-                Write-Host ""
-                
-                $deleteData = Read-Host "Also delete app data? (y/N)"
-                $deleteDataBool = $deleteData -like "y*"
+                $deleteDataBool = Show-Prompt -Question "Also delete app data?" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
                 
                 Write-Host ""
                 $confirm = Read-Host "Type 'UNINSTALL ALL' to confirm"
@@ -4376,12 +6085,8 @@ function Show-PackageManager {
                     Start-Sleep -Seconds 1
                 }
             }
-            "4" {
-                # Back to main menu
+            'Back' {
                 return
-            }
-            default {
-                # Invalid choice, loop again
             }
         }
     }
@@ -4438,141 +6143,147 @@ function Get-InstalledSamsungPackages {
     }
     
     # Return the HashSet (use Write-Output to preserve the collection type)
-    Write-Output -NoEnumerate $installed
+    Write-Output -InputObject $installed -NoEnumerate
 }
 
 function Show-PackageSelectionMenu {
     param (
         [bool]$HasIntelWiFi
     )
-    
-    # Pre-calculate installed status
+
+    $packageMenuHasIntelWiFi = $HasIntelWiFi
     Write-Host "Checking installed packages..." -ForegroundColor DarkGray
     $installedPkgs = Get-InstalledSamsungPackages
-    
-    # Helper to check if a profile is fully installed
-    function Test-ProfileStatus {
-        param($ProfilePackages)
+
+    $profileDefinitions = @(
+        [pscustomobject]@{ Label = 'Recommended'; Profile = '2'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended); Description = 'Core plus the essential working Samsung apps.'; DefaultColor = 'Green' },
+        [pscustomobject]@{ Label = 'Recommended Plus'; Profile = '3'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus); Description = 'Recommended plus additional working apps.'; DefaultColor = 'Cyan' },
+        [pscustomobject]@{ Label = 'Full Experience'; Profile = '4'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps); Description = 'Adds packages that need extra setup after install.'; DefaultColor = 'Cyan' },
+        [pscustomobject]@{ Label = 'Everything'; Profile = '5'; Packages = ($PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking); Description = 'Includes all packages, including known non-working ones.'; DefaultColor = 'Magenta' },
+        [pscustomobject]@{ Label = 'Core Only'; Profile = '1'; Packages = $PackageDatabase.Core; Description = 'Essential packages only.'; DefaultColor = 'White' }
+    )
+
+    $testProfileStatus = {
+        param([object[]]$ProfilePackages)
+
         $total = $ProfilePackages.Count
         $installed = 0
-        
-        # Mapping of our DB names to actual AppX package name patterns
-        # Format: "DBNameWithSpacesRemoved" = "ActualAppXNamePattern"
-        $nameMapping = @{
-            "GalaxyBookExperience" = "SamsungWelcome"
-            "AISelect" = "SmartSelect"
-            "CameraShare" = "16297BCCB59BC"
-            "StorageShare" = "4438638898209"
-            "NearbyDevices" = "MyDevices"
-            "SamsungBluetoothSync" = "SamsungCloudBluetoothSync"
-            "SamsungGallery" = "PCGallery"
-            "SamsungIntelligenceService" = "SamsungIntelligence"
-            "SamsungStudioforGallery" = "SamsungStudioForGallery"
-            "SamsungScreenRecorder" = "SamsungScreenRecording"
-            "SamsungFlow" = "SamsungFlux"
-            "SmartThings" = "SmartThingsWindows"
-            "GalaxyBookSmartSwitch" = "SmartSwitchforGalaxyBook"
-            "LiveWallpaper" = "Sidia.LiveWallpaper"
-            "SamsungDeviceCare" = "SamsungPCCleaner"
-        }
-        
-        foreach ($p in $ProfilePackages) {
-            $dbName = $p.Name.Replace(" ", "")  # "Samsung Settings" -> "SamsungSettings"
-            $isInstalled = $false
-            
-            # Check if there's a special mapping for this package
-            $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
-            
-            foreach ($installedName in $installedPkgs) {
-                # Check if the installed package name contains our search name (case-insensitive)
-                if ($installedName -like "*$searchName*") {
-                    $isInstalled = $true
-                    break
-                }
+        foreach ($package in $ProfilePackages) {
+            if (Test-SamsungPackageInstalled -Package $package -InstalledPackages $installedPkgs) {
+                $installed++
             }
-            
-            if ($isInstalled) { $installed++ }
         }
+
         return @{ Total = $total; Installed = $installed }
     }
-    
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Samsung Package Selection" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    # Note about AI Select configuration step
-    Write-Host "Tip: If you include 'AI Select', a shortcut setup step appears later." -ForegroundColor Gray
-    Write-Host "" 
 
-    Write-Host "Select installation profile:`n" -ForegroundColor Yellow
-    
-    # [1] Core Only
-    $coreStatus = Test-ProfileStatus $PackageDatabase.Core
-    $coreColor = if ($coreStatus.Installed -eq $coreStatus.Total) { "Green" } elseif ($coreStatus.Installed -gt 0) { "Yellow" } else { "White" }
-    $coreText = if ($coreStatus.Installed -eq $coreStatus.Total) { "[Installed]" } elseif ($coreStatus.Installed -gt 0) { "[$($coreStatus.Installed)/$($coreStatus.Total) Installed]" } else { "" }
-    
-    Write-Host "  [1] Core Only $coreText" -ForegroundColor $coreColor
-    Write-Host "      Essential packages only (Account, Settings, Cloud)" -ForegroundColor Gray
-    Write-Host ""
-    
-    # [2] Recommended
-    $recPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended
-    $recStatus = Test-ProfileStatus $recPkgs
-    $recColor = if ($recStatus.Installed -eq $recStatus.Total) { "Green" } elseif ($recStatus.Installed -gt 0) { "Yellow" } else { "Green" }
-    $recText = if ($recStatus.Installed -eq $recStatus.Total) { "[Installed]" } elseif ($recStatus.Installed -gt 0) { "[$($recStatus.Installed)/$($recStatus.Total) Installed]" } else { "" }
+    $formatStatus = {
+        param($Status)
 
-    Write-Host "  [2] Recommended $recText" -ForegroundColor $recColor
-    Write-Host "      Core + Essential working apps (Quick Share, Notes, Gallery, Galaxy Buds, etc.)" -ForegroundColor Gray
-    if (-not $HasIntelWiFi) {
-        Write-Host "      ⚠ Note: Wireless features require Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Yellow
-        Write-Host "      Compatibility varies by hardware - see documentation for details" -ForegroundColor Gray
+        if ($Status.Installed -eq $Status.Total) { return '[Installed]' }
+        if ($Status.Installed -gt 0) { return "[$($Status.Installed)/$($Status.Total)]" }
+        return '[Not Installed]'
     }
-    Write-Host ""
-    
-    # [3] Recommended Plus
-    $recPlusPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus
-    $recPlusStatus = Test-ProfileStatus $recPlusPkgs
-    $recPlusColor = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "Green" } elseif ($recPlusStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
-    $recPlusText = if ($recPlusStatus.Installed -eq $recPlusStatus.Total) { "[Installed]" } elseif ($recPlusStatus.Installed -gt 0) { "[$($recPlusStatus.Installed)/$($recPlusStatus.Total) Installed]" } else { "" }
 
-    Write-Host "  [3] Recommended Plus $recPlusText" -ForegroundColor $recPlusColor
-    Write-Host "      Recommended + Additional working apps (Studio, SmartThings, Screen Recorder, etc.)" -ForegroundColor Gray
-    Write-Host ""
-    
-    # [4] Full Experience
-    $fullPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps
-    $fullStatus = Test-ProfileStatus $fullPkgs
-    $fullColor = if ($fullStatus.Installed -eq $fullStatus.Total) { "Green" } elseif ($fullStatus.Installed -gt 0) { "Yellow" } else { "Cyan" }
-    $fullText = if ($fullStatus.Installed -eq $fullStatus.Total) { "[Installed]" } elseif ($fullStatus.Installed -gt 0) { "[$($fullStatus.Installed)/$($fullStatus.Total) Installed]" } else { "" }
+    $getStatusColor = {
+        param($Status, [string]$DefaultColor = 'White')
 
-    Write-Host "  [4] Full Experience $fullText" -ForegroundColor $fullColor
-    Write-Host "      Recommended Plus + Apps requiring extra setup (Phone, Find, Quick Search)" -ForegroundColor Gray
-    Write-Host "      ⚠ Some apps need additional configuration after install" -ForegroundColor Yellow
-    Write-Host ""
-    
-    # [5] Everything
-    $allPkgs = $PackageDatabase.Core + $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
-    $allStatus = Test-ProfileStatus $allPkgs
-    $allColor = if ($allStatus.Installed -eq $allStatus.Total) { "Green" } elseif ($allStatus.Installed -gt 0) { "Yellow" } else { "Magenta" }
-    $allText = if ($allStatus.Installed -eq $allStatus.Total) { "[Installed]" } elseif ($allStatus.Installed -gt 0) { "[$($allStatus.Installed)/$($allStatus.Total) Installed]" } else { "" }
+        if ($Status.Installed -eq $Status.Total) { return 'Green' }
+        if ($Status.Installed -gt 0) { return 'Yellow' }
+        return $DefaultColor
+    }
 
-    Write-Host "  [5] Everything $allText" -ForegroundColor $allColor
-    Write-Host "      All packages including non-working ones (Recovery, Update)" -ForegroundColor Gray
-    Write-Host "      ⚠ Some apps will NOT work on non-Samsung devices" -ForegroundColor Red
-    Write-Host ""
-    
-    Write-Host "  [6] Custom Selection" -ForegroundColor Yellow
-    Write-Host "      Pick individual packages" -ForegroundColor Gray
-    Write-Host ""
-    
-    Write-Host "  [7] Skip Package Installation" -ForegroundColor DarkGray
-    Write-Host ""
-    
-    do {
-        $choice = Read-Host "Enter choice [1-7]"
-    } while ($choice -notin "1", "2", "3", "4", "5", "6", "7")
-    
-    return $choice
+    $summaryLines = foreach ($definition in $profileDefinitions) {
+        $status = & $testProfileStatus $definition.Packages
+        [pscustomobject]@{
+            Label = $definition.Label
+            Value = & $formatStatus $status
+            Color = & $getStatusColor $status $definition.DefaultColor
+        }
+    }
+
+    $renderPackageHeader = {
+        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+        Write-Host "│  Samsung Package Selection                                 │" -ForegroundColor Cyan
+        Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+        foreach ($line in $summaryLines) {
+            $statusText = "$($line.Label): $($line.Value)"
+            $trimmed = if ($statusText.Length -gt 59) { $statusText.Substring(0, 59) } else { $statusText.PadRight(59) }
+            Write-Host ("│{0}│" -f $trimmed) -ForegroundColor $line.Color
+        }
+        Write-Host "│  AI Select adds a shortcut setup step later.              │" -ForegroundColor DarkGray
+        if (-not $packageMenuHasIntelWiFi) {
+            Write-Host "│  Wireless features work best with Intel Wi-Fi/Bluetooth.  │" -ForegroundColor Yellow
+        }
+        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+        Write-Host ""
+    }.GetNewClosure()
+
+    $menuItems = foreach ($definition in $profileDefinitions) {
+        $status = & $testProfileStatus $definition.Packages
+        [pscustomobject]@{
+            Label       = "{0} {1}" -f $definition.Label, (& $formatStatus $status)
+            Description = $definition.Description
+            Selection   = $definition.Profile
+            Color       = & $getStatusColor $status $definition.DefaultColor
+        }
+    }
+
+    $menuItems += [pscustomobject]@{
+        Label       = 'Optional Packages'
+        Description = 'Build a custom install from category submenus. Core packages stay included.'
+        Selection   = 'Optional'
+        Color       = 'Yellow'
+    }
+
+    $menuItems += [pscustomobject]@{
+        Label       = 'Skip Package Installation'
+        Description = 'Do not install Samsung packages during this run.'
+        Selection   = 'Skip'
+        Color       = 'DarkGray'
+    }
+
+    $selection = Show-ArrowMenu -Items $menuItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderPackageHeader
+    if ($selection) { return $selection.Selection } else { return 'Skip' }
+}
+
+function Test-SamsungPackageInstalled {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Package,
+
+        [Parameter(Mandatory = $true)]
+        [object]$InstalledPackages
+    )
+
+    $nameMapping = @{
+        "GalaxyBookExperience"      = "SamsungWelcome"
+        "AISelect"                  = "SmartSelect"
+        "CameraShare"               = "16297BCCB59BC"
+        "StorageShare"              = "4438638898209"
+        "NearbyDevices"             = "MyDevices"
+        "SamsungBluetoothSync"      = "SamsungCloudBluetoothSync"
+        "SamsungGallery"            = "PCGallery"
+        "SamsungIntelligenceService" = "SamsungIntelligence"
+        "SamsungStudioforGallery"   = "SamsungStudioForGallery"
+        "SamsungScreenRecorder"     = "SamsungScreenRecording"
+        "SamsungFlow"               = "SamsungFlux"
+        "SmartThings"               = "SmartThingsWindows"
+        "GalaxyBookSmartSwitch"     = "SmartSwitchforGalaxyBook"
+        "LiveWallpaper"             = "Sidia.LiveWallpaper"
+        "SamsungDeviceCare"         = "SamsungPCCleaner"
+    }
+
+    $dbName = $Package.Name.Replace(" ", "")
+    $searchName = if ($nameMapping.ContainsKey($dbName)) { $nameMapping[$dbName] } else { $dbName }
+
+    foreach ($installedName in $InstalledPackages) {
+        if ($installedName -like "*$searchName*") {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Get-PackagesByProfile {
@@ -4665,106 +6376,138 @@ function Show-CustomPackageSelection {
     param (
         [bool]$HasIntelWiFi
     )
-    
-    $selectedPackages = @()
+
+    $selectedPackages = [System.Collections.Generic.List[object]]::new()
     $installedPkgs = Get-InstalledSamsungPackages
-    
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Custom Package Selection" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    
-    # Group packages by category for better organization
-    $categories = @{
-        "Core"         = $PackageDatabase.Core
-        "Connectivity" = @()
-        "Productivity" = @()
-        "Media"        = @()
-        "Experience"   = @()
-        "Security"     = @()
-        "Maintenance"  = @()
-        "Other"        = @()
+
+    foreach ($pkg in $PackageDatabase.Core) {
+        [void]$selectedPackages.Add($pkg)
     }
-    
-    foreach ($pkg in ($PackageDatabase.Recommended + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking)) {
-        if ($categories.ContainsKey($pkg.Category)) {
-            $categories[$pkg.Category] += $pkg
+
+    $optionalPackages = $PackageDatabase.Recommended + $PackageDatabase.RecommendedPlus + $PackageDatabase.ExtraSteps + $PackageDatabase.NonWorking
+    $categoryOrder = @('Connectivity', 'Productivity', 'Media', 'Experience', 'Security', 'Maintenance', 'Other')
+    $categories = @{}
+    foreach ($category in $categoryOrder) {
+        $categories[$category] = [System.Collections.Generic.List[object]]::new()
+    }
+
+    foreach ($pkg in $optionalPackages) {
+        $targetCategory = if ($categories.ContainsKey($pkg.Category)) { $pkg.Category } else { 'Other' }
+        [void]$categories[$targetCategory].Add($pkg)
+    }
+
+    $renderSelectionHeader = {
+        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+        Write-Host "│  Optional Package Selection                                │" -ForegroundColor Cyan
+        Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+        $coreCount = $PackageDatabase.Core.Count
+        $optionalCount = [Math]::Max(0, $selectedPackages.Count - $coreCount)
+        $summary = ("  Core included: {0}   Optional selected: {1}" -f $coreCount, $optionalCount)
+        if ($summary.Length -gt 59) {
+            $summary = $summary.Substring(0, 59)
         }
         else {
-            $categories["Other"] += $pkg
+            $summary = $summary.PadRight(59)
         }
-    }
-    
-    # Core packages (required)
-    Write-Host "CORE PACKAGES (Auto-selected):" -ForegroundColor Green
-    foreach ($pkg in $PackageDatabase.Core) {
-        $dbName = $pkg.Name.Replace(" ", "")
-        $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
-        $status = if ($isInstalled) { " [Installed]" } else { "" }
-        
-        Write-Host "  ✓ $($pkg.Name)$status" -ForegroundColor Gray
-        $selectedPackages += $pkg
-    }
-    Write-Host ""
-    
-    # Show other categories
-    $categoryOrder = @("Connectivity", "Productivity", "Media", "Experience", "Security", "Maintenance", "Other")
-    
-    foreach ($catName in $categoryOrder) {
-        $catPackages = $categories[$catName]
-        if ($catPackages.Count -eq 0) { continue }
-        
-        Write-Host "$catName PACKAGES:" -ForegroundColor Yellow
-        $selectAll = Read-Host "  Install all $catName packages? (Y/N/I for individual)"
-        
-        if ($selectAll -eq "Y" -or $selectAll -eq "y") {
-            foreach ($pkg in $catPackages) {
-                Write-Host "  ✓ $($pkg.Name)" -ForegroundColor Green
-                $selectedPackages += $pkg
-            }
+        Write-Host ("│{0}│" -f $summary) -ForegroundColor Green
+        Write-Host "│  Enter toggles packages. Done returns to the install menu. │" -ForegroundColor DarkGray
+        if (-not $HasIntelWiFi) {
+            Write-Host "│  Wireless sharing apps may be limited without Intel radio. │" -ForegroundColor Yellow
         }
-        elseif ($selectAll -eq "I" -or $selectAll -eq "i") {
-            foreach ($pkg in $catPackages) {
-                $dbName = $pkg.Name.Replace(" ", "")
-                $isInstalled = $installedPkgs.Contains($dbName) -or ($installedPkgs | Where-Object { $_ -like "*$dbName*" })
-                $statusTag = if ($isInstalled) { " [Installed]" } else { "" }
-                $statusColor = if ($isInstalled) { "Green" } else { "White" }
-                
-                Write-Host ""
-                Write-Host "  $($pkg.Name)$statusTag" -ForegroundColor $statusColor
-                Write-Host "    $($pkg.Description)" -ForegroundColor Gray
-                
-                if ($pkg.Warning) {
-                    Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
-                }
-                if ($pkg.Tip) {
-                    Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
-                }
-                if ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
-                    Write-Host "    ⚠ Requires Intel Wi-Fi + Intel Bluetooth" -ForegroundColor Red
-                }
-                
-                $prompt = if ($isInstalled) { "    Reinstall? (y/N)" } else { "    Install? (Y/N)" }
-                $install = Read-Host $prompt
-                
-                if ($isInstalled) {
-                    if ($install -eq "Y" -or $install -eq "y") {
-                        Write-Host "    ✓ Added for reinstall" -ForegroundColor Green
-                        $selectedPackages += $pkg
-                    }
-                }
-                else {
-                    if ($install -eq "Y" -or $install -eq "y") {
-                        Write-Host "    ✓ Added" -ForegroundColor Green
-                        $selectedPackages += $pkg
-                    }
-                }
-            }
-        }
+        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
         Write-Host ""
+    }.GetNewClosure()
+
+    while ($true) {
+        $categoryItems = foreach ($categoryName in $categoryOrder) {
+            $catPackages = @($categories[$categoryName])
+            if ($catPackages.Count -eq 0) {
+                continue
+            }
+
+            $selectedCount = 0
+            foreach ($pkg in $catPackages) {
+                if (($selectedPackages | Where-Object { $_.Id -eq $pkg.Id } | Select-Object -First 1)) {
+                    $selectedCount++
+                }
+            }
+
+            [pscustomobject]@{
+                Label       = "{0} [{1}/{2}]" -f $categoryName, $selectedCount, $catPackages.Count
+                Description = 'Open this category.'
+                Category    = $categoryName
+                Color       = if ($selectedCount -eq $catPackages.Count) { 'Green' } elseif ($selectedCount -gt 0) { 'Yellow' } else { 'White' }
+            }
+        }
+
+        $categoryItems += [pscustomobject]@{
+            Label       = 'Done'
+            Description = 'Return with the selected packages.'
+            Category    = 'Done'
+            Color       = 'Green'
+        }
+
+        $categoryChoice = Show-ArrowMenu -Items $categoryItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderSelectionHeader
+        if (-not $categoryChoice -or $categoryChoice.Category -eq 'Done') {
+            return @($selectedPackages)
+        }
+
+        while ($true) {
+            $packageItems = foreach ($pkg in @($categories[$categoryChoice.Category])) {
+                $isSelected = ($selectedPackages | Where-Object { $_.Id -eq $pkg.Id } | Select-Object -First 1)
+                $isInstalled = Test-SamsungPackageInstalled -Package $pkg -InstalledPackages $installedPkgs
+                $stateText = if ($isSelected) { '[x]' } else { '[ ]' }
+                $detailParts = @($pkg.Description)
+                if ($isInstalled) {
+                    $detailParts += 'Already installed.'
+                }
+                if ($pkg.Warning) {
+                    $detailParts += "Warning: $($pkg.Warning)"
+                }
+                elseif ($pkg.RequiresIntelWiFi -and -not $HasIntelWiFi) {
+                    $detailParts += 'Warning: works best with Intel Wi-Fi and Bluetooth.'
+                }
+                elseif ($pkg.Tip) {
+                    $detailParts += "Tip: $($pkg.Tip)"
+                }
+
+                [pscustomobject]@{
+                    Label       = "{0} {1}" -f $stateText, $pkg.Name
+                    Description = ($detailParts -join ' ')
+                    PackageId   = $pkg.Id
+                    IsBack      = $false
+                    Color       = if ($isSelected) { 'Green' } elseif ($pkg.Status -eq 'NotWorking') { 'Red' } elseif ($pkg.Status -eq 'RequiresExtraSteps') { 'Yellow' } else { 'White' }
+                    SelectedColor = 'Cyan'
+                }
+            }
+
+            $packageItems += [pscustomobject]@{
+                Label       = 'Back'
+                Description = 'Return to category selection.'
+                PackageId   = $null
+                IsBack      = $true
+                Color       = 'DarkGray'
+            }
+
+            $categoryHeader = New-ModelSelectionHeaderRenderer -Title "$($categoryChoice.Category) Packages" -Prompt 'Enter toggles the highlighted package. Choose Back when finished.' -AccentColor 'Yellow'
+            $packageChoice = Show-ArrowMenu -Items $packageItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $categoryHeader
+
+            if (-not $packageChoice -or $packageChoice.IsBack) {
+                break
+            }
+
+            $selectedMatch = $selectedPackages | Where-Object { $_.Id -eq $packageChoice.PackageId } | Select-Object -First 1
+            if ($selectedMatch) {
+                [void]$selectedPackages.Remove($selectedMatch)
+            }
+            else {
+                $packageToAdd = @($categories[$categoryChoice.Category]) | Where-Object { $_.Id -eq $packageChoice.PackageId } | Select-Object -First 1
+                if ($packageToAdd) {
+                    [void]$selectedPackages.Add($packageToAdd)
+                }
+            }
+        }
     }
-    
-    return $selectedPackages
 }
 
 function Install-SamsungPackages {
@@ -4792,6 +6535,52 @@ function Install-SamsungPackages {
     }
     else {
         Write-Host "`nInstalling $($Packages.Count) package(s)...`n" -ForegroundColor Cyan
+
+        try {
+            Write-Host "Preparing Windows Package Manager..." -ForegroundColor Gray
+            $wingetPreflight = Invoke-WingetCommand -Arguments @('list', '--accept-source-agreements', '--disable-interactivity', '--count', '1') -TimeoutSeconds 45
+            if ($wingetPreflight.TimedOut) {
+                Write-Host "  ✗ Windows Package Manager did not respond" -ForegroundColor Red
+                Write-Host "    This usually means winget is waiting on first-run setup or the Store source is stuck." -ForegroundColor Yellow
+                Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
+                Write-GbeLog "ERROR: winget preflight timed out before Samsung package installation" -Level ERROR
+                return @{
+                    Installed = 0
+                    Failed    = $Packages.Count
+                    Skipped   = 0
+                    Total     = $Packages.Count
+                }
+            }
+
+            if ($wingetPreflight.ExitCode -ne 0) {
+                Write-Host "  ✗ Windows Package Manager is not ready" -ForegroundColor Red
+                if ($wingetPreflight.Output) {
+                    $preflightSnippet = $wingetPreflight.Output.Substring(0, [Math]::Min(200, $wingetPreflight.Output.Length))
+                    Write-Host "    Output: $preflightSnippet" -ForegroundColor Gray
+                }
+                Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
+                Write-GbeLog "ERROR: winget preflight failed before Samsung package installation" -Level ERROR
+                Write-GbeLog "Output: $($wingetPreflight.Output)" -Level DEBUG
+                return @{
+                    Installed = 0
+                    Failed    = $Packages.Count
+                    Skipped   = 0
+                    Total     = $Packages.Count
+                }
+            }
+        }
+        catch {
+            Write-Host "  ✗ Windows Package Manager is not available" -ForegroundColor Red
+            Write-Host "    Install or repair 'App Installer', then run 'winget list' once and retry." -ForegroundColor Cyan
+            Write-Host "    Microsoft Store: ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1" -ForegroundColor Gray
+            Write-GbeLog "ERROR: winget unavailable before Samsung package installation: $($_.Exception.Message)" -Level ERROR
+            return @{
+                Installed = 0
+                Failed    = $Packages.Count
+                Skipped   = 0
+                Total     = $Packages.Count
+            }
+        }
     }
     
     foreach ($pkg in $Packages) {
@@ -4862,24 +6651,43 @@ function Install-SamsungPackages {
                 }
                 
                 # Fallback to winget check if not found in our quick check (just to be safe)
-                $checkResult = winget list --id $pkg.Id 2>&1 | Out-String
+                $checkResult = Invoke-WingetCommand -Arguments @('list', '--accept-source-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 90
+                if ($checkResult.TimedOut) {
+                    Write-Host "  ✗ Windows Package Manager timed out while checking package status" -ForegroundColor Red
+                    Write-Host "    Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
+                    Write-GbeLog "ERROR: winget list timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
+                    $failed++
+                    continue
+                }
+
+                $checkOutput = $checkResult.Output
                 
                 $pkgIdPattern = [regex]::Escape($pkg.Id)
                 $pkgNamePattern = [regex]::Escape($pkg.Name)
-                if ($checkResult -match $pkgIdPattern -or $checkResult -match $pkgNamePattern) {
+                if ($checkOutput -match $pkgIdPattern -or $checkOutput -match $pkgNamePattern) {
                     Write-Host "  ✓ Already installed (skipping)" -ForegroundColor Cyan
                     $skipped++
                 }
                 else {
                     Write-Host "  Installing..." -ForegroundColor Gray
-                    Write-Log "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
-                    $installOutput = winget install --accept-source-agreements --accept-package-agreements --id $pkg.Id 2>&1 | Out-String
+                    Write-GbeLog "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
+                    $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 900
+                    if ($installResult.TimedOut) {
+                        Write-Host "  ✗ Installation timed out" -ForegroundColor Red
+                        Write-Host "    winget stopped responding while installing this package." -ForegroundColor Yellow
+                        Write-Host "    Try running 'winget list' manually first, then retry the installer." -ForegroundColor Cyan
+                        Write-GbeLog "ERROR: winget install timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
+                        $failed++
+                        continue
+                    }
+
+                    $installOutput = $installResult.Output
                     
                     # Check for Microsoft Store connection error (0x80d03805)
                     if ($installOutput -match "0x80d03805|0x80D03805") {
                         Write-Host "  ✗ Microsoft Store connection error (0x80d03805)" -ForegroundColor Red
-                        Write-Log "ERROR: Package $($pkg.Name) failed with Microsoft Store error 0x80d03805" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) failed with Microsoft Store error 0x80d03805" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         Write-Host "" -ForegroundColor Yellow
                         Write-Host "    ═══════════════════════════════════════════════════════" -ForegroundColor Yellow
                         Write-Host "    WORKAROUND: Toggle your WiFi connection" -ForegroundColor Yellow
@@ -4899,27 +6707,27 @@ function Install-SamsungPackages {
                     # Parse output to determine actual result
                     elseif ($installOutput -match "Successfully installed|Installation completed successfully") {
                         Write-Host "  ✓ Installed successfully" -ForegroundColor Green
-                        Write-Log "SUCCESS: Package $($pkg.Name) installed successfully" -Level SUCCESS
+                        Write-GbeLog "SUCCESS: Package $($pkg.Name) installed successfully" -Level SUCCESS
                         $installed++
                     }
                     elseif ($installOutput -match "already installed|No available upgrade found|No newer package versions") {
                         Write-Host "  ✓ Already installed" -ForegroundColor Cyan
-                        Write-Log "Package $($pkg.Name) already installed (skipped)"
+                        Write-GbeLog "Package $($pkg.Name) already installed (skipped)"
                         $skipped++
                     }
                     elseif ($installOutput -match "No package found matching input criteria|No applicable update found") {
                         Write-Host "  ✗ Package not found in winget" -ForegroundColor Red
                         Write-Host "    Package ID: $($pkg.Id)" -ForegroundColor Gray
                         Write-Host "    This may require installation through Microsoft Store instead" -ForegroundColor Yellow
-                        Write-Log "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
-                    elseif ($LASTEXITCODE -ne 0) {
-                        Write-Host "  ✗ Installation failed (Exit code: $LASTEXITCODE)" -ForegroundColor Red
+                    elseif ($installResult.ExitCode -ne 0) {
+                        Write-Host "  ✗ Installation failed (Exit code: $($installResult.ExitCode))" -ForegroundColor Red
                         Write-Host "    Output: $($installOutput.Substring(0, [Math]::Min(200, $installOutput.Length)))" -ForegroundColor Gray
-                        Write-Log "ERROR: Package $($pkg.Name) failed with exit code $LASTEXITCODE" -Level ERROR
-                        Write-Log "Output: $installOutput" -Level DEBUG
+                        Write-GbeLog "ERROR: Package $($pkg.Name) failed with exit code $($installResult.ExitCode)" -Level ERROR
+                        Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
                     }
                     else {
@@ -5094,82 +6902,18 @@ function Test-IntelBluetooth {
 }
 
 function Show-ModelSelectionMenu {
-    <#
-    .SYNOPSIS
-        Display interactive menu for Galaxy Book model selection
-    .DESCRIPTION
-        Shows categorized menu of 21 Galaxy Book models and returns selected model's registry values
-    #>
-    
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Select Galaxy Book Model to Spoof" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-    
-    Write-Host "Available Models:" -ForegroundColor Yellow
-    Write-Host ""
-    
-    # Group models by family for easier selection
-    $modelGroups = @{
-        'Galaxy Book5'        = @('960XHA', '940XHA', '960QHA', '750QHA')
-        'Galaxy Book4'        = @('960XGL', '960XGK', '940XGK', '960QGK', '750XGK', '750XGL', '750QGK')
-        'Galaxy Book3'        = @('960XFH', '960XFG', '960QFG', '750XFG', '750XFH', '730QFG')
-        'Galaxy Book2/Series' = @('950XGK', '930XDB', '935QDC', '930SBE')
+    $result = Resolve-InteractiveIdentityData
+    if (-not $result) {
+        return $null
     }
-    
-    $index = 1
-    $modelIndex = @{}
-    
-    foreach ($group in $modelGroups.GetEnumerator() | Sort-Object { 
-            # Custom sort: Book5 > Book4 > Book3 > Book2
-            switch ($_.Key) {
-                'Galaxy Book5' { 1 }
-                'Galaxy Book4' { 2 }
-                'Galaxy Book3' { 3 }
-                'Galaxy Book2/Series' { 4 }
-            }
-        }) {
-        Write-Host "  $($group.Key):" -ForegroundColor Magenta
-        
-        foreach ($model in $group.Value) {
-            $modelData = $GalaxyBookModels[$model]
-            $displayName = "$model - $($modelData.SystemFamily)"
-            Write-Host ("    {0,2}. {1}" -f $index, $displayName) -ForegroundColor White
-            $modelIndex[$index] = $model
-            $index++
-        }
-        Write-Host ""
-    }
-    
-    Write-Host "  Default:" -ForegroundColor Magenta
-    Write-Host "    22. Galaxy Book3 Ultra (960XFH) - Legacy Default" -ForegroundColor Gray
+
+    Write-Host "`n✓ Selected: $($result.ResolvedFamily) - $($result.ResolvedModelCode)" -ForegroundColor Green
+    Write-Host "  Product: $($result.SystemProductName)" -ForegroundColor Gray
+    Write-Host "  BIOS: $(if ($result.BIOSVersionFull) { $result.BIOSVersionFull } else { $result.BiosValues.BIOSVersion })" -ForegroundColor Gray
+    Write-Host "  Region: $($result.RegionCode)" -ForegroundColor Gray
     Write-Host ""
-    
-    # Get user selection
-    do {
-        $selection = Read-Host "Enter model number (1-22)"
-        
-        if ($selection -eq '22') {
-            # Legacy default - return null to use old default values
-            Write-Host "`n✓ Using legacy default: Galaxy Book3 Ultra (960XFH)" -ForegroundColor Green
-            return $null
-        }
-        
-        $selectedNumber = [int]$selection
-        if ($modelIndex.ContainsKey($selectedNumber)) {
-            $selectedModel = $modelIndex[$selectedNumber]
-            $selectedData = $GalaxyBookModels[$selectedModel]
-            
-            Write-Host "`n✓ Selected: $selectedModel - $($selectedData.SystemFamily)" -ForegroundColor Green
-            Write-Host "  Product: $($selectedData.SystemProductName)" -ForegroundColor Gray
-            Write-Host "  BIOS: $($selectedData.BIOSVersion)" -ForegroundColor Gray
-            Write-Host ""
-            
-            return $selectedData
-        }
-        else {
-            Write-Host "Invalid selection. Please enter a number between 1 and 22." -ForegroundColor Red
-        }
-    } while ($true)
+
+    return $result.BiosValues
 }
 
 function Resolve-AutonomousModel {
@@ -5179,13 +6923,12 @@ function Resolve-AutonomousModel {
         return $null
     }
 
-    $key = $ModelCode.ToUpperInvariant()
-    if (-not $GalaxyBookModels.ContainsKey($key)) {
-        $valid = ($GalaxyBookModels.Keys | Sort-Object) -join ", "
-        throw "AutonomousModel '$ModelCode' is not a known model. Valid values: $valid"
+    $result = New-GeneratedIdentityData -Selector $ModelCode -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -UseGeoIp:($AutonomousRegionSource -eq 'GeoIp')
+    if (-not $result) {
+        return $null
     }
 
-    return $GalaxyBookModels[$key]
+    return $result.BiosValues
 }
 
 function Get-LegacyBiosValues {
@@ -5200,20 +6943,8 @@ function Get-LegacyBiosValues {
     try {
         $content = Get-Content $OldBatchPath -Raw
         
-        # Default values (Galaxy Book3 Ultra) for comparison
-        $defaults = @{
-            BIOSVendor            = "American Megatrends International, LLC."
-            BIOSVersion           = "P04RKI.049.220408.ZQ"
-            BIOSMajorRelease      = "0x04"
-            BIOSMinorRelease      = "0x11"
-            SystemManufacturer    = "SAMSUNG ELECTRONICS CO., LTD."
-            SystemFamily          = "Galaxy Book3 Ultra"
-            SystemProductName     = "NP960XFH-XA2UK"
-            ProductSku            = "SCAI-A5A5-ADLP-PSLP"
-            EnclosureKind         = "0x1f"
-            BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
-            BaseBoardProduct      = "NP960XFH-XA2UK"
-        }
+        # Default values for comparison
+        $defaults = Get-DefaultBiosValues
         
         # Extract all 11 registry values using regex
         $values = @{}
@@ -5255,7 +6986,7 @@ function Get-LegacyBiosValues {
             $values.EnclosureKind = $Matches[1]
         }
         
-        # Check if values are custom (different from Galaxy Book3 Ultra defaults)
+        # Check if values are custom (different from the default spoof profile)
         $customCount = 0
         foreach ($key in $values.Keys) {
             if ($defaults.ContainsKey($key) -and $values[$key] -ne $defaults[$key]) {
@@ -5288,20 +7019,7 @@ function New-RegistrySpoofBatch {
         [bool]$TestMode = $false
     )
     
-    # Default values (Galaxy Book3 Ultra)
-    $defaults = @{
-        BIOSVendor            = "American Megatrends International, LLC."
-        BIOSVersion           = "P04RKI.049.220408.ZQ"
-        BIOSMajorRelease      = "0x04"
-        BIOSMinorRelease      = "0x11"
-        SystemManufacturer    = "SAMSUNG ELECTRONICS CO., LTD."
-        SystemFamily          = "Galaxy Book3 Ultra"
-        SystemProductName     = "NP960XFH-XA2UK"
-        ProductSku            = "SCAI-A5A5-ADLP-PSLP"
-        EnclosureKind         = "0x1f"
-        BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
-        BaseBoardProduct      = "NP960XFH-XA2UK"
-    }
+    $defaults = Get-DefaultBiosValues
     
     # Use custom values if provided, otherwise use defaults
     $values = if ($BiosValues) { $BiosValues } else { $defaults }
@@ -5432,6 +7150,19 @@ param(
 $ErrorActionPreference = "Stop"
 $LogDir = "C:\GalaxyBook\Logs"
 $LogFile = Join-Path -Path $LogDir -ChildPath "Init-SamsungMultiControlOnLogin.log"
+$MaxLogBytes = 2MB
+$MaxServicesToRestart = 25
+
+# Rotate the log when it grows too large
+try {
+    if ((Test-Path -Path $LogFile) -and ((Get-Item -Path $LogFile).Length -gt $MaxLogBytes)) {
+        $archive = Join-Path -Path $LogDir -ChildPath "Init-SamsungMultiControlOnLogin.old.log"
+        Move-Item -Path $LogFile -Destination $archive -Force -ErrorAction SilentlyContinue
+    }
+}
+catch {
+    # Non-fatal; continue even if rotation fails
+}
 
 function Write-Log {
     param(
@@ -5472,20 +7203,51 @@ if ($GracePeriodSeconds -gt 0) {
     Start-Sleep -Seconds $GracePeriodSeconds
 }
 
+# Keep the original SamsungSystemSupportService disabled at all times.
+try {
+    $originalService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+    if ($originalService) {
+        if ($originalService.Status -ne 'Stopped') {
+            Stop-Service -Name "SamsungSystemSupportService" -Force -ErrorAction SilentlyContinue
+            Write-Log "Stopped SamsungSystemSupportService to avoid conflicts." -Level INFO
+        }
+
+        Set-Service -Name "SamsungSystemSupportService" -StartupType Disabled -ErrorAction SilentlyContinue
+        $verifyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
+        if ($verifyService -and $verifyService.StartType -eq 'Disabled') {
+            Write-Log "SamsungSystemSupportService verified as Disabled." -Level SUCCESS
+        }
+        else {
+            Write-Log "Could not verify SamsungSystemSupportService as Disabled." -Level WARNING
+        }
+    }
+}
+catch {
+    Write-Log "Failed to enforce disabled state for SamsungSystemSupportService: $($_.Exception.Message)" -Level WARNING
+}
+
 try {
     $serviceMap = @{}
 
-    foreach ($service in (Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue)) {
-        # Exclude Samsung Internet services which can cause issues if restarted during login
-        if ($service.DisplayName -notlike "*Internet*") {
-            $serviceMap[$service.Name] = $service
-        }
-    }
+    # Known exclusions:
+    # - Samsung Internet services: can fail or be unnecessary here
+    # - SamsungSystemSupportService: often intentionally absent/stopped in spoof workflows
+    $excludedNames = @(
+        "SamsungSystemSupportService"
+    )
 
-    foreach ($service in (Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue)) {
-        if ($service.Name -notlike "*Internet*") {
-            $serviceMap[$service.Name] = $service
-        }
+    $allServices = @(
+        Get-Service -DisplayName "*Samsung*" -ErrorAction SilentlyContinue
+    ) + @(
+        Get-Service -Name "*Samsung*" -ErrorAction SilentlyContinue
+    )
+
+    foreach ($service in $allServices) {
+        if ($null -eq $service) { continue }
+        if ($service.Name -like "*Internet*" -or $service.DisplayName -like "*Internet*") { continue }
+        if ($excludedNames -contains $service.Name) { continue }
+        if ($service.StartType -eq 'Disabled') { continue }
+        $serviceMap[$service.Name] = $service
     }
 
     if ($serviceMap.Count -eq 0) {
@@ -5494,7 +7256,13 @@ try {
         exit 0
     }
 
-    foreach ($service in ($serviceMap.Values | Sort-Object -Property Name -Unique)) {
+    $servicesToRestart = @($serviceMap.Values | Sort-Object -Property Name -Unique)
+    if ($servicesToRestart.Count -gt $MaxServicesToRestart) {
+        Write-Log "Service list too large ($($servicesToRestart.Count)). Limiting to first $MaxServicesToRestart entries." -Level WARNING
+        $servicesToRestart = @($servicesToRestart | Select-Object -First $MaxServicesToRestart)
+    }
+
+    foreach ($service in $servicesToRestart) {
         try {
             Write-Log "Attempting to restart: $($service.Name) ($($service.Status))"
             Restart-Service -Name $service.Name -Force -ErrorAction Stop
@@ -5541,8 +7309,9 @@ Write-Log "Script finished"
 
 # Check if running as administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$requiresAdmin = -not $script:IsConfigurationOnly
 
-if (-not $isAdmin) {
+if ($requiresAdmin -and -not $isAdmin) {
     Write-Host "⚠ Administrator privileges required" -ForegroundColor Yellow
     Write-Host ""
     
@@ -5611,6 +7380,7 @@ if (-not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 & $sudoCommand pwsh @elevatedArgs
+                exit $LASTEXITCODE
             }
             else {
                 # Script was piped (irm | iex), need to re-download
@@ -5627,7 +7397,8 @@ if (-not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-                Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs
+                $elevatedProcess = Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
+                exit $elevatedProcess.ExitCode
             }
             else {
                 # Script was piped, show manual instructions
@@ -5680,23 +7451,37 @@ if ($script:IsAutonomous -and $AutonomousAction -ne "Install") {
     }
 }
 
+if ($script:IsConfigurationOnly) {
+    if ($WriteConfigPlist -and -not $ConfigurationPath) {
+        Write-Host "ConfigPath is required when using -WriteConfigPlist." -ForegroundColor Red
+        exit 1
+    }
+
+    $configurationResult = Invoke-ConfigurationMode -Selector $AutonomousModel -SelectedCountry $AutonomousCountryCode -SelectedRegion $AutonomousRegion -RegionPreference $AutonomousRegionPreference -RegionSource $AutonomousRegionSource -IncludeFullBiosVersion:$IncludeFullBiosVersion -ConfigurationPath $ConfigurationPath -SkipConfigurationBackup:$SkipConfigurationBackup -ConfigurationBackupSuffix $ConfigurationBackupSuffix
+    if ($null -eq $configurationResult) {
+        exit 1
+    }
+
+    return $configurationResult
+}
+
 # ==================== UPDATE SAMSUNG SETTINGS MODE ====================
 if ($UpdateSettings) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
+        Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
+        Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
+        Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
+        Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
-    Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
-    Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
-    Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
-    Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
-    Write-Host ""
-    
-    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
-    if ($proceed -like "n*") {
+    if (-not (Show-Prompt -Question "Proceed?" -Description "Start the SSSE updater process" -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nCancelled." -ForegroundColor Yellow
         exit
     }
@@ -5721,20 +7506,19 @@ if ($UpdateSettings) {
 
 # ==================== UNINSTALL MODE ====================
 if ($Uninstall) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Red
-    Write-Host "  Galaxy Book Enabler UNINSTALLER" -ForegroundColor Red
-    Write-Host "========================================`n" -ForegroundColor Red
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Red
+        Write-Host "  Galaxy Book Enabler UNINSTALLER" -ForegroundColor Red
+        Write-Host "========================================`n" -ForegroundColor Red
+        
+        Write-Host "This will remove:" -ForegroundColor Yellow
+        Write-Host "  • Scheduled tasks: $($scheduledTaskNames -join ', ')" -ForegroundColor Gray
+        Write-Host "  • Installation folder: $installPath" -ForegroundColor Gray
+        Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will remove:" -ForegroundColor Yellow
-    Write-Host "  • Scheduled tasks: $($scheduledTaskNames -join ', ')" -ForegroundColor Gray
-    Write-Host "  • Installation folder: $installPath" -ForegroundColor Gray
-    Write-Host "  • Registry spoofing will remain until next reboot" -ForegroundColor Gray
-    Write-Host ""
-    
-    $confirm = if ($script:IsAutonomous) { "Y" } else { Read-Host "Are you sure you want to uninstall? (Y/N)" }
-    
-    if ($confirm -notlike "y*") {
+    if (-not (Show-Prompt -Question "Are you sure you want to uninstall?" -Description "This will remove the program and scheduled tasks." -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nUninstall cancelled." -ForegroundColor Yellow
         Invoke-InteractivePause
         exit
@@ -5803,36 +7587,36 @@ if ($Uninstall) {
 
 # ==================== QUICK UPGRADE SSE MODE ====================
 if ($UpgradeSSE) {
-    Clear-Host
-    Write-Host "========================================" -ForegroundColor Yellow
-    Write-Host "  SSSE QUICK UPGRADE" -ForegroundColor Yellow
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Yellow
-    Write-Host "========================================`n" -ForegroundColor Yellow
+    $renderHeaderBlock = {
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "  SSSE QUICK UPGRADE" -ForegroundColor Yellow
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
+        
+        Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
+        Write-Host "to the latest version ($LATEST_SSSE_VERSION) without going through" -ForegroundColor White
+        Write-Host "the full installation process.`n" -ForegroundColor White
+        
+        Write-Host "Prerequisites:" -ForegroundColor Cyan
+        Write-Host "  • You must have already run the full installer once" -ForegroundColor Gray
+        Write-Host "  • Registry spoof must be in place" -ForegroundColor Gray
+        Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
+        Write-Host ""
+    }
     
-    Write-Host "This will upgrade your Samsung System Support Engine" -ForegroundColor White
-    Write-Host "to the latest version (7.1.2.0) without going through" -ForegroundColor White
-    Write-Host "the full installation process.`n" -ForegroundColor White
-    
-    Write-Host "Prerequisites:" -ForegroundColor Cyan
-    Write-Host "  • You must have already run the full installer once" -ForegroundColor Gray
-    Write-Host "  • Registry spoof must be in place" -ForegroundColor Gray
-    Write-Host "  • Existing SSSE installation will be upgraded" -ForegroundColor Gray
-    Write-Host ""
-    
-    $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with upgrade to 7.1.2.0? (Y/n)" }
-    if ($proceed -like "n*") {
+    if (-not (Show-Prompt -Question "Proceed with upgrade to $LATEST_SSSE_VERSION?" -RenderHeader $renderHeaderBlock)) {
         Write-Host "`nUpgrade cancelled." -ForegroundColor Yellow
         exit
     }
     
     Write-Host "`n"
-    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion "7.1.2.0" -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
+    $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -ForceVersion $LATEST_SSSE_VERSION -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
     
     if ($result) {
         Write-Host "`n========================================" -ForegroundColor Green
         Write-Host "  Upgrade Complete!" -ForegroundColor Green
         Write-Host "========================================`n" -ForegroundColor Green
-        Write-Host "SSSE has been upgraded to version 7.1.2.0" -ForegroundColor Cyan
+        Write-Host "SSSE has been upgraded to version $LATEST_SSSE_VERSION" -ForegroundColor Cyan
         Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
     }
     else {
@@ -5847,28 +7631,6 @@ if ($UpgradeSSE) {
 }
 
 # ==================== INSTALL MODE ====================
-Clear-Host
-
-if ($TestMode) {
-    Write-Host "========================================" -ForegroundColor Magenta
-    Write-Host "  Galaxy Book Enabler INSTALLER" -ForegroundColor Magenta
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Magenta
-    Write-Host "  *** TEST MODE - NO CHANGES APPLIED ***" -ForegroundColor Yellow
-    Write-Host "========================================`n" -ForegroundColor Magenta
-    Write-Host "Test mode will simulate the installation without:" -ForegroundColor Yellow
-    Write-Host "  • Creating scheduled tasks" -ForegroundColor Gray
-    Write-Host "  • Modifying registry values" -ForegroundColor Gray
-    Write-Host "  • Installing packages via winget" -ForegroundColor Gray
-    Write-Host "  • Creating/starting services" -ForegroundColor Gray
-    Write-Host ""
-}
-else {
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Galaxy Book Enabler INSTALLER" -ForegroundColor Cyan
-    Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
-}
-
 # Enhanced installation health check (4 components: config, task, C:\GalaxyBook, GBeSupportService)
 $installHealth = Test-InstallationHealth -ConfigPath $configPath -TaskName $taskName
 $alreadyInstalled = $installHealth.IsHealthy -or $installHealth.IsBroken
@@ -5876,288 +7638,352 @@ $alreadyInstalled = $installHealth.IsHealthy -or $installHealth.IsBroken
 # Initialize BIOS values variable (may be set during reinstall)
 $biosValuesToUse = $null
 
-if ($alreadyInstalled) {
-    # Display version info
-    Write-Host ""
-    Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "│  " -NoNewline -ForegroundColor Cyan
-    Write-Host "Galaxy Book Enabler" -NoNewline -ForegroundColor White
-    Write-Host " is installed                        │" -ForegroundColor Cyan
-    Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
-    Write-Host "│  GBE Version:    " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $installHealth.GbeVersion) -NoNewline -ForegroundColor Green
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "│  SSSE Version:   " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $installHealth.SsseVersion) -NoNewline -ForegroundColor Green
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "│  Installer:      " -NoNewline -ForegroundColor Cyan
-    Write-Host (" {0,-10}" -f $SCRIPT_VERSION) -NoNewline -ForegroundColor Yellow
-    Write-Host "                             │" -ForegroundColor Cyan
-    Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
-    
-    # Show component health if broken
-    if ($installHealth.IsBroken) {
+Clear-Host
+
+if (-not $alreadyInstalled) {
+    if ($TestMode) {
+        Write-Host "========================================" -ForegroundColor Magenta
+        Write-Host "  Galaxy Book Enabler INSTALLER" -ForegroundColor Magenta
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Magenta
+        Write-Host "  *** TEST MODE - NO CHANGES APPLIED ***" -ForegroundColor Yellow
+        Write-Host "========================================`n" -ForegroundColor Magenta
+        Write-Host "Test mode will simulate the installation without:" -ForegroundColor Yellow
+        Write-Host "  • Creating scheduled tasks" -ForegroundColor Gray
+        Write-Host "  • Modifying registry values" -ForegroundColor Gray
+        Write-Host "  • Installing packages via winget" -ForegroundColor Gray
+        Write-Host "  • Creating/starting services" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  ⚠ Installation appears BROKEN ($($installHealth.ComponentCount)/4 components)" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "  Component Status:" -ForegroundColor Yellow
-        $checkMark = "✓"; $crossMark = "✗"
-        Write-Host "    $( if ($installHealth.Components.Config) { $checkMark } else { $crossMark } ) Config file" -ForegroundColor $(if ($installHealth.Components.Config) { "Green" } else { "Red" })
-        Write-Host "    $( if ($installHealth.Components.Task) { $checkMark } else { $crossMark } ) Scheduled task" -ForegroundColor $(if ($installHealth.Components.Task) { "Green" } else { "Red" })
-        Write-Host "    $( if ($installHealth.Components.SsseFolder) { $checkMark } else { $crossMark } ) C:\GalaxyBook folder" -ForegroundColor $(if ($installHealth.Components.SsseFolder) { "Green" } else { "Red" })
-        Write-Host "    $( if ($installHealth.Components.Service) { $checkMark } else { $crossMark } ) GBeSupportService" -ForegroundColor $(if ($installHealth.Components.Service) { "Green" } else { "Red" })
-        Write-Host ""
-        Write-Host "  Recommendation: Choose 'Reinstall' to fix the installation" -ForegroundColor Yellow
     }
     else {
-        Write-Host "  ✓ All 4 components healthy" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  Galaxy Book Enabler INSTALLER" -ForegroundColor Cyan
+        Write-Host "  Version $SCRIPT_VERSION" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
     }
-    
+}
+
+if ($alreadyInstalled) {
+    $statusBoxTop = "┌─────────────────────────────────────────────────────────────┐"
+    $statusBoxDivider = "├─────────────────────────────────────────────────────────────┤"
+    $statusBoxBottom = "└─────────────────────────────────────────────────────────────┘"
+    $statusBoxInnerWidth = $statusBoxTop.Length - 2
+
+    $tryParseVersion = {
+        param([string]$Value)
+
+        if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "Unknown") {
+            return $null
+        }
+
+        try {
+            return [version]$Value
+        }
+        catch {
+            return $null
+        }
+    }
+
+    $installedGbeVersionObject = & $tryParseVersion $installHealth.GbeVersion
+    $installerVersionObject = & $tryParseVersion $SCRIPT_VERSION
+    $installedSsseVersionObject = & $tryParseVersion $installHealth.SsseVersion
+    $latestSsseVersionObject = & $tryParseVersion $LATEST_SSSE_VERSION
+
+    $installationHealthLabel = if ($installHealth.IsHealthy) {
+        "Healthy ($($installHealth.ComponentCount)/4)"
+    }
+    else {
+        "Broken ($($installHealth.ComponentCount)/4)"
+    }
+    $installationHealthColor = if ($installHealth.IsHealthy) { "Green" } else { "Red" }
+
+    $gbeVersionLabel = switch ($true) {
+        { -not $installedGbeVersionObject -or -not $installerVersionObject } { "unknown"; break }
+        { $installedGbeVersionObject -lt $installerVersionObject } { "older"; break }
+        { $installedGbeVersionObject -gt $installerVersionObject } { "newer"; break }
+        default { "current" }
+    }
+    $gbeVersionColor = if ($gbeVersionLabel -eq "current") { "Green" } else { "Yellow" }
+    $gbeVersionDisplay = if ($installHealth.GbeVersion -eq "Unknown") {
+        "Unknown"
+    }
+    else {
+        "$($installHealth.GbeVersion) ($gbeVersionLabel)"
+    }
+
+    $ssseVersionLabel = switch ($true) {
+        { -not $installedSsseVersionObject -or -not $latestSsseVersionObject } { "unknown"; break }
+        { $installedSsseVersionObject -lt $latestSsseVersionObject } { "outdated"; break }
+        { $installedSsseVersionObject -gt $latestSsseVersionObject } { "newer"; break }
+        default { "latest" }
+    }
+    $ssseVersionColor = if ($ssseVersionLabel -eq "latest") { "Green" } else { "Yellow" }
+    $ssseVersionDisplay = if ($installHealth.SsseVersion -eq "Unknown") {
+        "Unknown"
+    }
+    else {
+        "$($installHealth.SsseVersion) ($ssseVersionLabel)"
+    }
+
+    $writeStatusBoxTextLine = {
+        param(
+            [string]$Text,
+            [string]$TextColor = 'White'
+        )
+
+        $textValue = if ($null -eq $Text) { '' } else { $Text }
+        $textWidth = $statusBoxInnerWidth
+        if ($textValue.Length -gt $textWidth) {
+            if ($textWidth -gt 3) {
+                $textValue = $textValue.Substring(0, $textWidth - 3) + '...'
+            }
+            else {
+                $textValue = $textValue.Substring(0, $textWidth)
+            }
+        }
+
+        $paddedText = $textValue.PadRight($textWidth)
+        Write-Host "│" -NoNewline -ForegroundColor Cyan
+        Write-Host $paddedText -NoNewline -ForegroundColor $TextColor
+        Write-Host "│" -ForegroundColor Cyan
+    }
+
+    $writeStatusBoxTitleLine = {
+        $titleText = "  Galaxy Book Enabler INSTALLER"
+        $versionText = "v$SCRIPT_VERSION"
+        $spacingWidth = $statusBoxInnerWidth - $titleText.Length - $versionText.Length
+        if ($spacingWidth -lt 1) {
+            $spacingWidth = 1
+        }
+
+        & $writeStatusBoxTextLine ($titleText + (" " * $spacingWidth) + $versionText) 'Cyan'
+    }
+
+    $writeStatusBoxValueLine = {
+        param(
+            [string]$Label,
+            [string]$Value,
+            [string]$ValueColor
+        )
+
+        $labelText = "  $Label"
+        $valueText = " {0,-10}" -f $Value
+        $paddingWidth = $statusBoxInnerWidth - $labelText.Length - $valueText.Length
+        if ($paddingWidth -lt 0) {
+            $paddingWidth = 0
+        }
+
+        Write-Host "│$labelText" -NoNewline -ForegroundColor Cyan
+        Write-Host $valueText -NoNewline -ForegroundColor $ValueColor
+        Write-Host ((" " * $paddingWidth) + "│") -ForegroundColor Cyan
+    }
+
     # Check for updates from GitHub
-    Write-Host "`nChecking for updates..." -ForegroundColor Cyan
+    Write-Host "Checking for updates..." -ForegroundColor Cyan
     if ($DebugOutput) {
         Write-Host "DEBUG: IsAutonomous=$script:IsAutonomous FullyAutonomous=$($FullyAutonomous.IsPresent) AutonomousAction=$AutonomousAction" -ForegroundColor DarkGray
     }
     $updateCheck = Test-UpdateAvailable
+
+    $updateStatus = if ($updateCheck.Available) {
+        [pscustomobject]@{
+            Text  = "Update available (v$($updateCheck.LatestVersion))"
+            Color = 'Green'
+        }
+    }
+    elseif ($updateCheck.Error) {
+        [pscustomobject]@{
+            Text  = "Could not check for updates (offline?)"
+            Color = 'Yellow'
+        }
+    }
+    else {
+        [pscustomobject]@{
+            Text  = "Up to date"
+            Color = 'Green'
+        }
+    }
     
-    if ($updateCheck.Available) {
-        Write-Host "✨ New version available: v$($updateCheck.LatestVersion)" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "Release notes:" -ForegroundColor Yellow
-        if ($updateCheck.ReleaseNotes) {
-            $noteLength = [Math]::Min(500, $updateCheck.ReleaseNotes.Length)
-            Write-Host $updateCheck.ReleaseNotes.Substring(0, $noteLength) -ForegroundColor Gray
-            if ($updateCheck.ReleaseNotes.Length -gt 500) {
-                Write-Host "..." -ForegroundColor Gray
-            }
+    $mainMenuItems = if ($updateCheck.Available) {
+        @(
+            [pscustomobject]@{ Label = "Update to installer version (v$SCRIPT_VERSION)"; Description = "Reapply the local installer and keep the current setup path."; Action = 'UpdateInstaller'; Color = 'White' },
+            [pscustomobject]@{ Label = "Download and install latest version (v$($updateCheck.LatestVersion))"; Description = "Fetch the newest release from GitHub and relaunch it."; Action = 'DownloadLatest'; Color = 'Green' },
+            [pscustomobject]@{ Label = "Reinstall current version"; Description = "Remove and rebuild the current Galaxy Book Enabler installation."; Action = 'Reinstall'; Color = 'White' },
+            [pscustomobject]@{ Label = "Manage Packages (Install/Uninstall)"; Description = "Add or remove Samsung apps without a full reinstall."; Action = 'ManagePackages'; Color = 'Magenta' },
+            [pscustomobject]@{ Label = "Update/Reinstall Samsung Settings (SSSE)"; Description = "Run the SSSE flow and choose a Samsung Settings driver version."; Action = 'UpdateSsse'; Color = 'Cyan' },
+            [pscustomobject]@{ Label = "Reset/Repair Samsung Apps (Experimental)"; Description = "Run diagnostics, repair registrations, or reset Samsung app state."; Action = 'RepairApps'; Color = 'Yellow' },
+            [pscustomobject]@{ Label = "Uninstall (apps, services & scheduled task)"; Description = "Remove Samsung apps, services, startup tasks, and install folders."; Action = 'UninstallAll'; Color = 'White' },
+            [pscustomobject]@{ Label = "Uninstall (apps only)"; Description = "Keep services and tasks, but remove Samsung apps."; Action = 'UninstallApps'; Color = 'White' },
+            [pscustomobject]@{ Label = "Uninstall (services & scheduled task only)"; Description = "Keep Samsung apps, but remove services and startup tasks."; Action = 'UninstallServices'; Color = 'White' },
+            [pscustomobject]@{ Label = "Cancel"; Description = "Exit without making changes."; Action = 'Cancel'; Color = 'DarkGray' }
+        )
+    }
+    else {
+        @(
+            [pscustomobject]@{ Label = "Update to installer version (v$SCRIPT_VERSION)"; Description = "Reapply the local installer and keep the current setup path."; Action = 'UpdateInstaller'; Color = 'White' },
+            [pscustomobject]@{ Label = "Reinstall"; Description = "Remove and rebuild the current Galaxy Book Enabler installation."; Action = 'Reinstall'; Color = 'White' },
+            [pscustomobject]@{ Label = "Manage Packages (Install/Uninstall)"; Description = "Add or remove Samsung apps without a full reinstall."; Action = 'ManagePackages'; Color = 'Magenta' },
+            [pscustomobject]@{ Label = "Update/Reinstall Samsung Settings (SSSE)"; Description = "Run the SSSE flow and choose a Samsung Settings driver version."; Action = 'UpdateSsse'; Color = 'Cyan' },
+            [pscustomobject]@{ Label = "Reset/Repair Samsung Apps (Experimental)"; Description = "Run diagnostics, repair registrations, or reset Samsung app state."; Action = 'RepairApps'; Color = 'Yellow' },
+            [pscustomobject]@{ Label = "Uninstall (apps, services & scheduled task)"; Description = "Remove Samsung apps, services, startup tasks, and install folders."; Action = 'UninstallAll'; Color = 'White' },
+            [pscustomobject]@{ Label = "Uninstall (apps only)"; Description = "Keep services and tasks, but remove Samsung apps."; Action = 'UninstallApps'; Color = 'White' },
+            [pscustomobject]@{ Label = "Uninstall (services & scheduled task only)"; Description = "Keep Samsung apps, but remove services and startup tasks."; Action = 'UninstallServices'; Color = 'White' },
+            [pscustomobject]@{ Label = "Cancel"; Description = "Exit without making changes."; Action = 'Cancel'; Color = 'DarkGray' }
+        )
+    }
+
+    $renderInstalledMenuHeader = {
+        Write-Host $statusBoxTop -ForegroundColor Cyan
+        & $writeStatusBoxTitleLine
+        Write-Host $statusBoxDivider -ForegroundColor Cyan
+        & $writeStatusBoxValueLine "Installation:" "Galaxy Book Enabler" "White"
+        & $writeStatusBoxValueLine "Health:" $installationHealthLabel $installationHealthColor
+        & $writeStatusBoxValueLine "Installed GBE:" $gbeVersionDisplay $gbeVersionColor
+        & $writeStatusBoxValueLine "Installed SSSE:" $ssseVersionDisplay $ssseVersionColor
+        & $writeStatusBoxValueLine "Update:" $updateStatus.Text $updateStatus.Color
+        if ($TestMode) {
+            & $writeStatusBoxTextLine "  TEST MODE - no changes will be applied" 'Yellow'
         }
+        Write-Host $statusBoxBottom -ForegroundColor Cyan
+
+        if ($installHealth.IsBroken) {
+            Write-Host ""
+            Write-Host "  ⚠ Installation appears BROKEN ($($installHealth.ComponentCount)/4 components)" -ForegroundColor Red
+            Write-Host "  Recommendation: Choose 'Reinstall' to fix the installation" -ForegroundColor Yellow
+        }
+
         Write-Host ""
-        
         Write-Host "What would you like to do?" -ForegroundColor Cyan
-        Write-Host "  [1] Download and install latest version (v$($updateCheck.LatestVersion))" -ForegroundColor Green
-        Write-Host "  [2] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
-        Write-Host "  [3] Reinstall current version" -ForegroundColor Gray
-        Write-Host "  [4] Manage Packages (Install/Uninstall)" -ForegroundColor Magenta
-        Write-Host "  [5] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [6] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
-        Write-Host "  [7] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [8] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [9] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [10] Cancel" -ForegroundColor Gray
         Write-Host ""
-        
-        if ($script:IsAutonomous) {
-            $choice = "2"
-            Write-Host "[AUTONOMOUS] Selecting option [2] Update to installer version" -ForegroundColor Gray
-        }
-        else {
-            $choice = Read-Host "Enter choice [1-10]"
-        }
-        
-        if ($choice -eq "1") {
-            if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
-                # Will exit if successful
+    }.GetNewClosure()
+
+    :installedState while ($true) {
+        while ($true) {
+            if ($script:IsAutonomous) {
+                $selectedMenuItem = $mainMenuItems | Where-Object { $_.Action -eq 'UpdateInstaller' } | Select-Object -First 1
+                Write-Host "[AUTONOMOUS] Selecting option: $($selectedMenuItem.Label)" -ForegroundColor Gray
             }
             else {
-                Write-Host "Falling back to installer version..." -ForegroundColor Yellow
-                Start-Sleep -Seconds 2
+                $selectedMenuItem = Show-ArrowMenu -Items $mainMenuItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderInstalledMenuHeader
             }
+
+            $selectedAction = if ($selectedMenuItem) { $selectedMenuItem.Action } else { 'Cancel' }
+
+            if ($selectedAction -eq 'DownloadLatest') {
+                if (Update-GalaxyBookEnabler -DownloadUrl $updateCheck.DownloadUrl) {
+                    # Will exit if successful
+                }
+                else {
+                    Write-Host "Falling back to installer version..." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                    $selectedAction = 'UpdateInstaller'
+                }
+            }
+            
+            if ($selectedAction -eq 'ManagePackages') {
+                Show-PackageManager -TestMode $TestMode
+                continue
+            }
+            
+            if ($selectedAction -eq 'UpdateSsse') {
+                $renderHeaderBlock = {
+                    Write-Host "`n========================================" -ForegroundColor Cyan
+                    Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
+                    Write-Host "========================================`n" -ForegroundColor Cyan
+                    
+                    Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
+                    Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
+                    Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
+                    Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
+                    Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
+                    Write-Host ""
+                }
+                
+                if (-not (Show-Prompt -Question "Proceed?" -Description "Start the SSSE updater process" -RenderHeader $renderHeaderBlock)) {
+                    Write-Host "`nCancelled." -ForegroundColor Yellow
+                    continue
+                }
+                
+                $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
+                
+                if ($result) {
+                    Write-Host "`n========================================" -ForegroundColor Green
+                    Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
+                    Write-Host "========================================`n" -ForegroundColor Green
+                    Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host "`n⚠ Update may have encountered issues." -ForegroundColor Yellow
+                    Write-Host "  Check the output above for details." -ForegroundColor Gray
+                }
+                
+                Invoke-InteractivePause
+                continue
+            }
+            
+            if ($selectedAction -eq 'RepairApps') {
+                $repairMenuItems = @(
+                    [pscustomobject]@{ Label = 'Diagnostics'; Description = 'Check installed packages and device data.'; Action = 'Diagnostics'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Soft Reset'; Description = 'Clear caches only and keep current logins.'; Action = 'SoftReset'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Hard Reset'; Description = 'Clear caches, device data, and settings; login required again.'; Action = 'HardReset'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Clear Authentication'; Description = 'Remove Samsung Account DB and cached credentials.'; Action = 'ClearAuthentication'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Repair Permissions'; Description = 'Fix ACLs on Samsung app folders.'; Action = 'RepairPermissions'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Re-register Apps'; Description = 'Repair broken app registrations.'; Action = 'ReregisterApps'; Color = 'White' },
+                    [pscustomobject]@{ Label = 'Factory Reset'; Description = 'Completely wipe all Samsung data.'; Action = 'FactoryReset'; Color = 'Red' },
+                    [pscustomobject]@{ Label = 'Back to Main Menu'; Description = 'Cancel and return to the installer actions.'; Action = 'Back'; Color = 'DarkGray' }
+                )
+
+                $resetMenuSelection = Show-ArrowMenu -Title "Reset/Repair Samsung Apps (Experimental)" -Prompt "Choose a repair action." -Items $repairMenuItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape
+                $resetAction = if ($resetMenuSelection) { $resetMenuSelection.Action } else { 'Back' }
+
+                switch ($resetAction) {
+                    'Diagnostics' { Invoke-Diagnostics }
+                    'SoftReset' { Invoke-SoftReset -TestMode $TestMode }
+                    'HardReset' { Invoke-HardReset -TestMode $TestMode }
+                    'ClearAuthentication' { Clear-AuthenticationData -TestMode $TestMode }
+                    'RepairPermissions' { Repair-Permissions -TestMode $TestMode }
+                    'ReregisterApps' { Invoke-AppReRegistration -TestMode $TestMode }
+                    'FactoryReset' { Invoke-FactoryReset -TestMode $TestMode }
+                    default { }
+                }
+                
+                if ($resetAction -ne 'Back') {
+                    Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
+                    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                }
+                continue
+            }
+
+            break
         }
-    }
-    else {
-        if ($updateCheck.Error) {
-            Write-Host "⚠ Could not check for updates (offline?)" -ForegroundColor Yellow
-        }
-        else {
-            Write-Host "✓ You have the latest version" -ForegroundColor Green
-        }
-        
-        Write-Host "`nWhat would you like to do?" -ForegroundColor Cyan
-        Write-Host "  [1] Update to installer version (v$SCRIPT_VERSION)" -ForegroundColor Gray
-        Write-Host "  [2] Reinstall" -ForegroundColor Gray
-        Write-Host "  [3] Manage Packages (Install/Uninstall)" -ForegroundColor Magenta
-        Write-Host "  [4] Update/Reinstall Samsung Settings (SSSE)" -ForegroundColor Cyan
-        Write-Host "  [5] Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
-        Write-Host "  [6] Uninstall (apps, services & scheduled task)" -ForegroundColor Gray
-        Write-Host "  [7] Uninstall (apps only)" -ForegroundColor Gray
-        Write-Host "  [8] Uninstall (services & scheduled task only)" -ForegroundColor Gray
-        Write-Host "  [9] Cancel" -ForegroundColor Gray
-        Write-Host ""
-        
-        if ($script:IsAutonomous) {
-            $choice = "1"
-            Write-Host "[AUTONOMOUS] Selecting option [1] Update to installer version" -ForegroundColor Gray
-        }
-        else {
-            $choice = Read-Host "Enter choice [1-9]"
-        }
-    }
-    
-    # Handle "Manage Packages" option - same action for both menus
-    if (($updateCheck.Available -and $choice -eq "4") -or (-not $updateCheck.Available -and $choice -eq "3")) {
-        Show-PackageManager -TestMode $TestMode
-        exit
-    }
-    
-    # Handle "Update Samsung Settings" option - same action for both menus
-    if (($updateCheck.Available -and $choice -eq "5") -or (-not $updateCheck.Available -and $choice -eq "4")) {
-        Write-Host "`n========================================" -ForegroundColor Cyan
-        Write-Host "  Samsung Settings Update/Reinstall" -ForegroundColor Cyan
-        Write-Host "========================================`n" -ForegroundColor Cyan
-        
-        Write-Host "This will use the SSSE installer to update Samsung Settings." -ForegroundColor White
-        Write-Host "You'll be able to select a version and the installer will:" -ForegroundColor Gray
-        Write-Host "  • Download and patch the chosen SSSE version" -ForegroundColor Gray
-        Write-Host "  • Add driver to DriverStore" -ForegroundColor Gray
-        Write-Host "  • Configure the GBeSupportService" -ForegroundColor Gray
-        Write-Host ""
-        
-        $proceed = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed? (Y/n)" }
-        if ($proceed -like "n*") {
-            Write-Host "`nCancelled." -ForegroundColor Yellow
-            exit
-        }
-        
-        # Call the main Install-SystemSupportEngine function which handles everything properly
-        $result = Install-SystemSupportEngine -InstallPath "C:\GalaxyBook" -TestMode $TestMode -AutoInstall:$script:IsAutonomous -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService
-        
-        if ($result) {
-            Write-Host "`n========================================" -ForegroundColor Green
-            Write-Host "  ✓ Samsung Settings Update Complete!" -ForegroundColor Green
-            Write-Host "========================================`n" -ForegroundColor Green
-            Write-Host "Please reboot your PC for changes to take effect." -ForegroundColor Yellow
-        }
-        else {
-            Write-Host "`n⚠ Update may have encountered issues." -ForegroundColor Yellow
-            Write-Host "  Check the output above for details." -ForegroundColor Gray
-        }
-        
-        Invoke-InteractivePause
-        exit
-    }
-    
-    # Handle "Reset/Repair Samsung Apps" option - same action for both menus
-    if (($updateCheck.Available -and $choice -eq "6") -or (-not $updateCheck.Available -and $choice -eq "5")) {
-        Write-Host "`n========================================" -ForegroundColor Yellow
-        Write-Host "  Reset/Repair Samsung Apps (Experimental)" -ForegroundColor Yellow
-        Write-Host "========================================`n" -ForegroundColor Yellow
-        
-        Write-Host "Repair Options:" -ForegroundColor Cyan
-        Write-Host "  [1] Diagnostics" -ForegroundColor White
-        Write-Host "      Check installed packages and device data" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [2] Soft Reset" -ForegroundColor White
-        Write-Host "      Clear caches only (keeps login)" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [3] Hard Reset" -ForegroundColor White
-        Write-Host "      Clear caches + device data + settings (re-login required)" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [4] Clear Authentication" -ForegroundColor White
-        Write-Host "      Remove Samsung Account DB and credentials" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [5] Repair Permissions" -ForegroundColor White
-        Write-Host "      Fix ACLs on app folders" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [6] Re-register Apps" -ForegroundColor White
-        Write-Host "      Fix broken app registrations" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [7] Factory Reset" -ForegroundColor Red
-        Write-Host "      Completely wipe ALL Samsung data" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  [8] Back to Main Menu" -ForegroundColor Gray
-        Write-Host ""
-        
-        $resetChoice = Read-Host "Enter choice [1-8]"
-        
-        switch ($resetChoice) {
-            "1" { Invoke-Diagnostics }
-            "2" { Invoke-SoftReset -TestMode $TestMode }
-            "3" { Invoke-HardReset -TestMode $TestMode }
-            "4" { Clear-AuthenticationData }
-            "5" { Repair-Permissions }
-            "6" { Invoke-AppReRegistration }
-            "7" { Invoke-FactoryReset -TestMode $TestMode }
-            default { Write-Host "`nCancelled." -ForegroundColor Yellow }
-        }
-        
-        Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        exit
-    }
-    
-    # Remap choices for the rest of the switch
-    # The switch statement uses a unified numbering:
-    #   1 = Update to installer version
-    #   2 = Reinstall
-    #   3 = Reinstall current version (only when update available)
-    #   4 = Uninstall all (apps, services & scheduled task)
-    #   5 = Uninstall apps only
-    #   6 = Uninstall services & scheduled task only
-    #   7 = Cancel
-    
-    if ($updateCheck.Available) {
-        # Menu when update available:
-        #   [1] Download latest -> handled above
-        #   [2] Update to installer -> switch 1
-        #   [3] Reinstall current -> switch 2
-        #   [4] Update SSSE -> handled above
-        #   [5] Reset/Repair -> handled above
-        #   [6] Uninstall all -> switch 4
-        #   [7] Uninstall apps -> switch 5
-        #   [8] Uninstall services -> switch 6
-        #   [10] Cancel -> switch 7
-        if ($choice -eq "2") { $choice = "1" }       # Update to installer version
-        elseif ($choice -eq "3") { $choice = "2" }   # Reinstall current version
-        # [4] Manage Packages -> handled above
-        # [5] Update SSSE -> handled above
-        # [6] Reset/Repair -> handled above
-        elseif ($choice -eq "7") { $choice = "4" }   # Uninstall all
-        elseif ($choice -eq "8") { $choice = "5" }   # Uninstall apps only
-        elseif ($choice -eq "9") { $choice = "6" }   # Uninstall services only
-        elseif ($choice -eq "10") { $choice = "7" }  # Cancel
-    }
-    else {
-        # Menu when no update available:
-        #   [1] Update to installer -> switch 1
-        #   [2] Reinstall -> switch 2
-        #   [3] Manage Packages -> handled above
-        #   [4] Update SSSE -> handled above
-        #   [5] Reset/Repair -> handled above
-        #   [6] Uninstall all -> switch 4
-        #   [7] Uninstall apps -> switch 5
-        #   [8] Uninstall services -> switch 6
-        #   [9] Cancel -> switch 7
-        # Choices 1 and 2 stay the same
-        if ($choice -eq "6") { $choice = "4" }       # Uninstall all
-        elseif ($choice -eq "7") { $choice = "5" }   # Uninstall apps only
-        elseif ($choice -eq "8") { $choice = "6" }   # Uninstall services only
-        elseif ($choice -eq "9") { $choice = "7" }   # Cancel
-    }
-    
-    switch ($choice) {
-        "1" {
+
+        switch ($selectedAction) {
+        'UpdateInstaller' {
             Write-Host "`nUpdating to version $SCRIPT_VERSION..." -ForegroundColor Cyan
             
             # Check if there's a custom BIOS config to preserve
             if (Test-Path $batchScriptPath) {
                 $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
                 if ($backupBiosValues -and $backupBiosValues.IsCustom) {
-                    Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
-                    Write-Host "  Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Cyan
-                    Write-Host ""
-                    $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Keep your custom config? ([Y]=Keep custom, N=Use default GB3U)" }
+                    $detectedModelDisplay = Format-GalaxyBookModelDisplay -FamilyLabel $backupBiosValues.Values.SystemFamily -SystemProductName $backupBiosValues.Values.SystemProductName
                     
-                    if ($preserveChoice -eq "" -or $preserveChoice -eq "Y" -or $preserveChoice -eq "y") {
+                    $renderHeaderBlock = {
+                        Write-Host "`nUpdating to version $SCRIPT_VERSION..." -ForegroundColor Cyan
+                        Write-Host "`nDetected custom BIOS configuration:" -ForegroundColor Yellow
+                        Write-Host "  Model: $detectedModelDisplay" -ForegroundColor Cyan
+                        Write-Host ""
+                    }
+                    
+                    if (Show-Prompt -Question "Keep your custom config?" -Description "Select 'Yes' to preserve your current model/BIOS values, or 'No' to reset to default $DefaultBiosSelectorLabel." -RenderHeader $renderHeaderBlock) {
                         $biosValuesToUse = $backupBiosValues.Values
                         Write-Host "  ✓ Will preserve your custom BIOS values" -ForegroundColor Green
                     }
                     else {
-                        Write-Host "  ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+                        Write-Host "  ✓ Will use default $DefaultBiosFamilyLabel values" -ForegroundColor Green
                     }
                 }
             }
         }
-        "2" {
+        'Reinstall' {
             Write-Host "`n========================================" -ForegroundColor Yellow
             Write-Host "  Full Reinstall (Nuke + Fresh Install)" -ForegroundColor Yellow
             Write-Host "========================================`n" -ForegroundColor Yellow
@@ -6174,19 +8000,20 @@ if ($alreadyInstalled) {
                 # Fall through to simulated install
             }
             else {
-                Write-Host "This will:" -ForegroundColor Cyan
-                Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
-                Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
-                Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
-                Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
-                Write-Host "  5. Perform a fresh installation" -ForegroundColor White
-                Write-Host ""
+                $renderHeaderBlock = {
+                    Write-Host "This will:" -ForegroundColor Cyan
+                    Write-Host "  1. Backup your current BIOS configuration" -ForegroundColor White
+                    Write-Host "  2. Uninstall ALL Samsung apps" -ForegroundColor White
+                    Write-Host "  3. Remove services & scheduled task" -ForegroundColor White
+                    Write-Host "  4. Delete Samsung app data (optional)" -ForegroundColor White
+                    Write-Host "  5. Perform a fresh installation" -ForegroundColor White
+                    Write-Host ""
+                }
                 
-                $confirmReinstall = if ($script:IsAutonomous) { "Y" } else { Read-Host "Proceed with full reinstall? (Y/n)" }
-            if ($confirmReinstall -like "n*") {
-                Write-Host "`nCancelled." -ForegroundColor Yellow
-                exit
-            }
+                if (-not (Show-Prompt -Question "Proceed with full reinstall?" -Description "This will reset all settings and reinstall apps." -RenderHeader $renderHeaderBlock)) {
+                    Write-Host "`nCancelled." -ForegroundColor Yellow
+                    continue installedState
+                }
             
             # Step 1: Backup existing BIOS configuration
             $backupBiosValues = $null
@@ -6194,8 +8021,9 @@ if ($alreadyInstalled) {
                 Write-Host "`n  [1/5] Backing up BIOS configuration..." -ForegroundColor Cyan
                 $backupBiosValues = Get-LegacyBiosValues -OldBatchPath $batchScriptPath
                 if ($backupBiosValues -and $backupBiosValues.IsCustom) {
+                    $detectedModelDisplay = Format-GalaxyBookModelDisplay -FamilyLabel $backupBiosValues.Values.SystemFamily -SystemProductName $backupBiosValues.Values.SystemProductName
                     Write-Host "    ✓ Custom BIOS values backed up" -ForegroundColor Green
-                    Write-Host "      Model: $($backupBiosValues.Values.SystemFamily) ($($backupBiosValues.Values.SystemProductName))" -ForegroundColor Gray
+                    Write-Host "      Model: $detectedModelDisplay" -ForegroundColor Gray
                 }
                 else {
                     Write-Host "    ✓ Default BIOS config detected" -ForegroundColor Green
@@ -6208,22 +8036,21 @@ if ($alreadyInstalled) {
             # Ask about preserving config NOW before nuking
             if ($backupBiosValues -and $backupBiosValues.IsCustom) {
                 Write-Host ""
-                $preserveChoice = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "  Keep your custom BIOS config after reinstall? ([Y]=Keep, N=Use default GB3U)" }
+                $preserveChoice = if ($script:IsAutonomous) { $AutonomousPreserveLegacy } else { Show-Prompt -Question "Keep your custom BIOS config after reinstall?" -Description "Preserve custom values, or reset to default $DefaultBiosSelectorLabel" }
                 
-                if ($preserveChoice -eq "" -or $preserveChoice -like "y*") {
+                if ($preserveChoice) {
                     $biosValuesToUse = $backupBiosValues.Values
                     Write-Host "    ✓ Will restore custom BIOS values after reinstall" -ForegroundColor Green
                 }
                 else {
-                    Write-Host "    ✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+                    Write-Host "    ✓ Will use default $DefaultBiosFamilyLabel values" -ForegroundColor Green
                 }
             }
             
             # Step 2: Ask about deleting Samsung app data
             Write-Host "`n  [2/5] Uninstalling Samsung apps..." -ForegroundColor Cyan
             $deleteData = $false
-            $nukeConfirm = Read-Host "    Delete ALL Samsung app data too? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
+            if (Show-Prompt -Question "Delete ALL Samsung app data too? (Nuke Mode)" -Description "Deletes C:\Users\User\AppData\Local\Packages folders for Samsung apps." -DefaultChoice "No") {
                 $deleteData = $true
                 Write-Host "    ⚠ Will delete all Samsung app data" -ForegroundColor Yellow
             }
@@ -6282,16 +8109,14 @@ if ($alreadyInstalled) {
             
             # Fall through to the main installation flow below
         }
-        "3" {
-            # This case should not be reached after remapping
-            # Fall through to continue with reinstall if somehow reached
-            Write-Host "`nReinstalling..." -ForegroundColor Yellow
-        }
-        "4" {
+        'UninstallAll' {
             # Uninstall all (apps, services & scheduled task)
-            Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            $renderHeaderBlock = {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
+            }
             
             if ($TestMode) {
+                Write-Host "`nUninstalling (apps, services & scheduled task)..." -ForegroundColor Yellow
                 Write-Host "[TEST MODE] Would uninstall:" -ForegroundColor Magenta
                 Write-Host "  • All Samsung apps" -ForegroundColor Gray
                 Write-Host "  • Services (SamsungSystemSupportService, GBeSupportService)" -ForegroundColor Gray
@@ -6301,11 +8126,7 @@ if ($alreadyInstalled) {
                 exit
             }
             
-            $deleteData = $false
-            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
-                $deleteData = $true
-            }
+            $deleteData = Show-Prompt -Question "Do you also want to DELETE all Samsung app data? (Nuke Mode)" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
             
             Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             
@@ -6358,27 +8179,26 @@ if ($alreadyInstalled) {
             Write-Host "`nUninstall complete!" -ForegroundColor Green
             exit
         }
-        "5" {
+        'UninstallApps' {
             # Uninstall apps only
-            Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+            $renderHeaderBlock = {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
+            }
             
             if ($TestMode) {
+                Write-Host "`nUninstalling (apps only)..." -ForegroundColor Yellow
                 Write-Host "[TEST MODE] Would uninstall all Samsung apps" -ForegroundColor Magenta
                 Write-Host "[TEST MODE] No changes applied" -ForegroundColor Yellow
                 exit
             }
             
-            $deleteData = $false
-            $nukeConfirm = Read-Host "Do you also want to DELETE all Samsung app data? (Nuke Mode) [y/N]"
-            if ($nukeConfirm -like "y*") {
-                $deleteData = $true
-            }
+            $deleteData = Show-Prompt -Question "Do you also want to DELETE all Samsung app data? (Nuke Mode)" -Description "Deletes AppData/Local/Packages for Samsung apps" -DefaultChoice "No" -RenderHeader $renderHeaderBlock
             
             Uninstall-SamsungApps -DeleteData:$deleteData -TestMode $TestMode
             Write-Host "`nUninstall complete!" -ForegroundColor Green
             exit
         }
-        "6" {
+        'UninstallServices' {
             # Uninstall services & scheduled task only
             Write-Host "`nUninstalling (services & scheduled task only)..." -ForegroundColor Yellow
             
@@ -6440,7 +8260,7 @@ if ($alreadyInstalled) {
             Write-Host "`nUninstall complete!" -ForegroundColor Green
             exit
         }
-        "7" {
+        'Cancel' {
             Write-Host "`nCancelled." -ForegroundColor Yellow
             exit
         }
@@ -6448,6 +8268,9 @@ if ($alreadyInstalled) {
             Write-Host "`nInvalid choice. Exiting." -ForegroundColor Red
             exit
         }
+        }
+
+        break
     }
 }
 
@@ -6474,6 +8297,8 @@ if ($wifiCheck.HasWiFi) {
         Write-Host "  Compatibility varies by hardware generation" -ForegroundColor Gray
         Write-Host "  Your experience may differ - feel free to submit a" -ForegroundColor Gray
         Write-Host "  documentation issue on GitHub with your results!" -ForegroundColor Cyan
+        Write-Host "  IMPORTANT: $INTEL_WIFI_DRIVER_GUIDANCE" -ForegroundColor Yellow
+        Write-GbeLog "Intel Wi-Fi compatibility guidance: $INTEL_WIFI_DRIVER_GUIDANCE" -Level WARNING
     }
     else {
         Write-Host "⚠ Non-Intel Wi-Fi adapter detected" -ForegroundColor Yellow
@@ -6570,45 +8395,37 @@ if ((Test-Path $legacyBatchPath) -and -not $biosValuesToUse) {
     $legacyValues = Get-LegacyBiosValues -OldBatchPath $legacyBatchPath
     
     if ($legacyValues -and $legacyValues.IsCustom) {
-        Write-Host "`nCustom BIOS values detected in old QS.bat:" -ForegroundColor Cyan
+        $detectedModelDisplay = Format-GalaxyBookModelDisplay -FamilyLabel $legacyValues.Values.SystemFamily -SystemProductName $legacyValues.Values.SystemProductName
         
-        # Display all detected custom values
-        $defaults = @{
-            BIOSVendor            = "American Megatrends International, LLC."
-            BIOSVersion           = "P04RKI.049.220408.ZQ"
-            BIOSMajorRelease      = "0x04"
-            BIOSMinorRelease      = "0x11"
-            SystemManufacturer    = "SAMSUNG ELECTRONICS CO., LTD."
-            SystemFamily          = "Galaxy Book3 Ultra"
-            SystemProductName     = "NP960XFH-XA2UK"
-            ProductSku            = "SCAI-A5A5-ADLP-PSLP"
-            EnclosureKind         = "0x1f"
-            BaseBoardManufacturer = "SAMSUNG ELECTRONICS CO., LTD."
-            BaseBoardProduct      = "NP960XFH-XA2UK"
+        $renderHeaderBlock = {
+            Write-Host "`nCustom BIOS values detected in old QS.bat:" -ForegroundColor Cyan
+            
+            # Display all detected custom values
+            $defaults = Get-DefaultBiosValues
+            
+            $customCount = 0
+            foreach ($key in $legacyValues.Values.Keys | Sort-Object) {
+                $value = $legacyValues.Values[$key]
+                $isCustom = $defaults[$key] -ne $value
+                $marker = if ($isCustom) { "→" } else { " " }
+                $color = if ($isCustom) { "Green" } else { "DarkGray" }
+                Write-Host "  $marker $($key.PadRight(25)) = $value" -ForegroundColor $color
+                if ($isCustom) { $customCount++ }
+            }
+
+            Write-Host "`nDetected model: $detectedModelDisplay" -ForegroundColor Cyan
+            Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from $DefaultBiosSelectorLabel defaults" -ForegroundColor Yellow
+            Write-Host ""
         }
         
-        $customCount = 0
-        foreach ($key in $legacyValues.Values.Keys | Sort-Object) {
-            $value = $legacyValues.Values[$key]
-            $isCustom = $defaults[$key] -ne $value
-            $marker = if ($isCustom) { "→" } else { " " }
-            $color = if ($isCustom) { "Green" } else { "DarkGray" }
-            Write-Host "  $marker $($key.PadRight(25)) = $value" -ForegroundColor $color
-            if ($isCustom) { $customCount++ }
-        }
+        $preserve = if ($script:IsAutonomous) { $AutonomousPreserveLegacy } else { Show-Prompt -Question "Would you like to preserve these custom values?" -Description "Uses your old setup instead of the default $DefaultBiosSelectorLabel" -RenderHeader $renderHeaderBlock }
         
-        Write-Host "`nDetected model: $($legacyValues.Values.SystemFamily) ($($legacyValues.Values.SystemProductName))" -ForegroundColor Cyan
-        Write-Host "Custom values: $customCount/$($legacyValues.Values.Count) keys modified from GB3U defaults" -ForegroundColor Yellow
-        Write-Host ""
-        
-        $preserve = if ($script:IsAutonomous) { if ($AutonomousPreserveLegacy) { "Y" } else { "N" } } else { Read-Host "Would you like to preserve these custom values? (Y/N)" }
-        
-        if ($preserve -eq "Y" -or $preserve -eq "y") {
+        if ($preserve) {
             $biosValuesToUse = $legacyValues.Values
             Write-Host "✓ Will use your custom BIOS values" -ForegroundColor Green
         }
         else {
-            Write-Host "✓ Will use default Galaxy Book3 Ultra values" -ForegroundColor Green
+            Write-Host "✓ Will use default $DefaultBiosFamilyLabel values" -ForegroundColor Green
         }
     }
     else {
@@ -6632,7 +8449,7 @@ if ($biosValuesToUse) {
     Write-Host "✓ Registry spoof script created (custom values preserved)" -ForegroundColor Green
 }
 else {
-    Write-Host "✓ Registry spoof script created (Galaxy Book3 Ultra)" -ForegroundColor Green
+    Write-Host "✓ Registry spoof script created ($DefaultBiosFamilyLabel)" -ForegroundColor Green
 }
 Write-Host "✓ Multi Control init script created" -ForegroundColor Green
 
@@ -6737,12 +8554,12 @@ Write-Host "  (Checking all users - this may take 10-30 seconds)`n" -ForegroundC
 # Warn if Samsung Settings already installed (version mismatch risk with driver-bound install)
 if ($script:IsAutonomous) {
     if ($AutonomousInstallSsse) {
-        Write-Log "Autonomous mode: installing SSSE" -Level INFO
+        Write-GbeLog "Autonomous mode: installing SSSE" -Level INFO
         Install-SystemSupportEngine -TestMode $TestMode -AutoInstall $true -AutoExistingInstallMode $AutonomousSsseExistingMode -AutoStrategy $AutonomousSsseStrategy -AutoVersion $AutonomousSsseVersion -AutoRemoveExistingSettings:$AutonomousRemoveExistingSettings -AutoDisableOriginalService:$AutonomousDisableOriginalService | Out-Null
     }
     else {
         Write-Host "Skipping System Support Engine installation (autonomous config)." -ForegroundColor Cyan
-        Write-Log "Autonomous mode: skipping SSSE installation" -Level WARNING
+        Write-GbeLog "Autonomous mode: skipping SSSE installation" -Level WARNING
     }
 }
 else {
@@ -6759,22 +8576,30 @@ else {
         # $provisionedSettings = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*SamsungSettings*" }
         
         if ($existingSettings) {
-            Write-Host "⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
-            
-            Write-Host "`n  Installed packages:" -ForegroundColor Cyan
-            foreach ($app in $existingSettings) {
-                $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
-                Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
+            $renderHeaderBlock = {
+                Write-Host "========================================`n  STEP 5: System Support Engine (Advanced)`n========================================" -ForegroundColor Cyan
+                Write-Host "`n⚠ Existing Samsung Settings packages detected:" -ForegroundColor Yellow
+                
+                Write-Host "`n  Installed packages:" -ForegroundColor Cyan
+                foreach ($app in $existingSettings) {
+                    $userInfo = if ($app.PackageUserInformation -like "*S-1-5-18*") { " (System-wide)" } else { "" }
+                    Write-Host "    • $($app.Name) (version: $($app.Version))$userInfo" -ForegroundColor Gray
+                }
+                Write-Host ""
+                Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
+                Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
+                Write-Host ""
             }
-            
-            Write-Host ""
-            Write-Host "  Note: The System Support Engine driver triggers a specific Store version." -ForegroundColor Gray
-            Write-Host "  If versions don't match, features may misbehave." -ForegroundColor Gray
-            Write-Host ""
+
+            $options = @(
+                [pscustomobject]@{ Label = "Uninstall existing packages"; Value = "u"; Color = "Yellow"; Description = "Ensure a clean SSSE installation" },
+                [pscustomobject]@{ Label = "Continue anyway"; Value = "c"; Color = "White"; Description = "May cause feature mismatches" },
+                [pscustomobject]@{ Label = "Skip SSSE setup"; Value = "s"; Color = "DarkGray"; Description = "Do not install SSSE" }
+            )
+            $selection = Show-ArrowMenu -RenderHeader $renderHeaderBlock -Prompt "Select an option:" -Items $options -DefaultIndex 0
+            $choice = $selection.Value
              
-            $choice = Read-Host "Options: [U]ninstall existing packages, [C]ontinue anyway, [S]kip SSSE setup (U/C/S)"
-             
-            if ($choice -like "u*") {
+            if ($choice -eq "u") {
                 Write-Host "`nUninstalling existing Samsung Settings packages..." -ForegroundColor Yellow
                 if ($TestMode) {
                     Write-Host "  [TEST] Would uninstall $($existingSettings.Count) Samsung Settings packages" -ForegroundColor Gray
@@ -6795,38 +8620,39 @@ else {
                     }
                     
                     if ($removalResult.Failed.Count -gt 0) {
-                        Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
-                        foreach ($pkg in $removalResult.Failed) {
-                            Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                        $renderHeaderBlock = {
+                            Write-Host "  ✗ Failed to remove: $($removalResult.Failed.Count) package(s)" -ForegroundColor Red
+                            foreach ($pkg in $removalResult.Failed) {
+                                Write-Host "    • $($pkg.Name)" -ForegroundColor Gray
+                            }
+                            Write-Host ""
+                            Write-Host "  Manual removal options:" -ForegroundColor Yellow
+                            Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
+                            Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
+                            Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
+                            Write-Host ""
                         }
-                        Write-Host ""
-                        Write-Host "  Manual removal options:" -ForegroundColor Yellow
-                        Write-Host "    1. Try running this script in Windows PowerShell as Admin" -ForegroundColor Gray
-                        Write-Host "    2. Use Settings > Apps to uninstall Samsung Settings" -ForegroundColor Gray
-                        Write-Host "    3. Continue anyway (may cause version conflicts)" -ForegroundColor Gray
-                        Write-Host ""
                         
-                        $continueAnyway = Read-Host "Continue with SSSE installation anyway? (y/N)"
-                        if ($continueAnyway -notlike "y*") {
+                        if (-not (Show-Prompt -Question "Continue with SSSE installation anyway?" -Description "Not recommended: Proceeding with existing packages may cause issues." -DefaultChoice "No" -RenderHeader $renderHeaderBlock)) {
                             Write-Host "Skipped SSSE setup." -ForegroundColor Yellow
-                            Write-Log "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
+                            Write-GbeLog "User skipped SSSE due to existing Samsung Settings packages" -Level WARNING
                             return
                         }
                     }
                 }
                 
                 Write-Host "`nProceeding with SSSE installation (will trigger fresh Store installation)..." -ForegroundColor Green
-                Write-Log "Installing System Support Engine (SSSE)"
+                Write-GbeLog "Installing System Support Engine (SSSE)"
                 Install-SystemSupportEngine -TestMode $TestMode | Out-Null
             }
             elseif ($choice -like "c*") {
                 Write-Host "Continuing with existing packages..." -ForegroundColor Yellow
-                Write-Log "Installing SSSE with existing Samsung Settings packages"
+                Write-GbeLog "Installing SSSE with existing Samsung Settings packages"
                 Install-SystemSupportEngine -TestMode $TestMode | Out-Null
             }
             else {
                 Write-Host "Skipped SSSE setup by user choice." -ForegroundColor Yellow
-                Write-Log "User chose to skip SSSE installation"
+                Write-GbeLog "User chose to skip SSSE installation"
             }
         }
         else {
@@ -6834,7 +8660,8 @@ else {
         }
     }
     catch {
-        Install-SystemSupportEngine -TestMode $TestMode | Out-Null
+        Write-Host "⚠ Failed to inspect existing Samsung Settings packages. Skipping SSSE setup to avoid version conflicts." -ForegroundColor Yellow
+        Write-GbeLog "Skipping SSSE setup because Samsung Settings precheck failed: $($_.Exception.Message)" -Level ERROR
     }
 }
 
@@ -6894,55 +8721,67 @@ if ($script:IsAutonomous) {
 else {
     $installChoice = Show-PackageSelectionMenu -HasIntelWiFi $wifiCheck.IsIntel
 
-    if ($installChoice -eq "7") {
+    if ($installChoice -eq "Skip") {
         Write-Host "✓ Skipping package installation" -ForegroundColor Green
         Write-Host "  You can install packages manually from the Microsoft Store" -ForegroundColor Gray
     }
-    elseif ($installChoice -eq "6") {
-        # Custom selection
+    elseif ($installChoice -eq "Optional") {
         $packagesToInstall = Show-CustomPackageSelection -HasIntelWiFi $wifiCheck.IsIntel
     }
     else {
-        # Profile-based selection
         $packagesToInstall = Get-PackagesByProfile -ProfileName $installChoice
-        
-        # Show what will be installed
-        Clear-Host
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "  Installation Summary" -ForegroundColor Cyan
-        Write-Host "========================================`n" -ForegroundColor Cyan
-        
-        Write-Host "The following packages will be installed:`n" -ForegroundColor Yellow
-        
-        foreach ($pkg in $packagesToInstall) {
-            $statusColor = switch ($pkg.Status) {
-                "Working" { "Green" }
-                "RequiresExtraSteps" { "Yellow" }
-                "NotWorking" { "Red" }
-                default { "White" }
+    }
+
+    if ($packagesToInstall.Count -gt 0) {
+        $renderInstallSummaryHeader = {
+            Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+            Write-Host "│  Installation Summary                                      │" -ForegroundColor Cyan
+            Write-Host "├─────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+            $countLine = ("  Selected packages: {0}" -f $packagesToInstall.Count)
+            if ($countLine.Length -gt 59) {
+                $countLine = $countLine.Substring(0, 59)
             }
-            
-            Write-Host "  • $($pkg.Name)" -ForegroundColor $statusColor
-            
-            if ($pkg.Warning) {
-                Write-Host "    ⚠ $($pkg.Warning)" -ForegroundColor Yellow
+            else {
+                $countLine = $countLine.PadRight(59)
             }
-            if ($pkg.Tip) {
-                Write-Host "    💡 $($pkg.Tip)" -ForegroundColor Cyan
+            Write-Host ("│{0}│" -f $countLine) -ForegroundColor Green
+            foreach ($pkg in $packagesToInstall) {
+                $packageLine = "  • $($pkg.Name)"
+                if ($packageLine.Length -gt 59) {
+                    $packageLine = $packageLine.Substring(0, 59)
+                }
+                else {
+                    $packageLine = $packageLine.PadRight(59)
+                }
+                $packageColor = switch ($pkg.Status) {
+                    'Working' { 'Green' }
+                    'RequiresExtraSteps' { 'Yellow' }
+                    'NotWorking' { 'Red' }
+                    default { 'White' }
+                }
+                Write-Host ("│{0}│" -f $packageLine) -ForegroundColor $packageColor
             }
-            
-            if ($pkg.RequiresIntelWiFi -and -not $wifiCheck.IsIntel) {
-                Write-Host "    ⚠ May not work with your Wi-Fi adapter" -ForegroundColor Yellow
+            Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+            Write-Host ""
+        }.GetNewClosure()
+
+        $summaryItems = @(
+            [pscustomobject]@{
+            Label       = 'Proceed with installation'
+            Description = 'Install the selected Samsung packages.'
+            Confirm     = $true
+            Color       = 'Green'
+            },
+            [pscustomobject]@{
+            Label       = 'Cancel'
+            Description = 'Return without installing packages.'
+            Confirm     = $false
+            Color       = 'DarkGray'
             }
-        }
-        
-        Write-Host ""
-        Write-Host "Total packages: $($packagesToInstall.Count)" -ForegroundColor Cyan
-        Write-Host ""
-        
-        $confirm = Read-Host "Proceed with installation? (Y/N)"
-        
-        if ($confirm -notlike "y*") {
+        )
+
+        $confirmChoice = Show-ArrowMenu -Items $summaryItems -DefaultIndex 0 -ShowNumbers -AllowNumberInput -AllowEscape -RenderHeader $renderInstallSummaryHeader
+        if (-not $confirmChoice -or ($confirmChoice.PSObject.Properties.Match('Confirm').Count -gt 0 -and -not $confirmChoice.Confirm)) {
             Write-Host "Installation cancelled." -ForegroundColor Yellow
             Invoke-InteractivePause
             exit
@@ -7023,21 +8862,22 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
             $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
         }
         
-        Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
-        Write-Host "    $batLauncherPath" -ForegroundColor Gray
-        Write-Host "    $ps1LauncherPath" -ForegroundColor Gray
-        Write-Host ""
+        $renderHeaderBlock = {
+            Write-Host "✓ Launcher scripts created:" -ForegroundColor Green
+            Write-Host "    $batLauncherPath" -ForegroundColor Gray
+            Write-Host "    $ps1LauncherPath" -ForegroundColor Gray
+            Write-Host ""
 
-        Write-Host "Launch Options (fastest to slowest):" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "  [1] PowerToys URI Method (Recommended - Fastest)" -ForegroundColor Green
-        Write-Host "      • Install PowerToys from Microsoft Store" -ForegroundColor Gray
-        Write-Host "      • Open PowerToys → Keyboard Manager → Remap a key" -ForegroundColor Gray
-        Write-Host "      • Map a key (e.g., Right Alt) → Win+Ctrl+Alt+S" -ForegroundColor Gray
-        Write-Host "      • Then: Remap a shortcut → Win+Ctrl+Alt+S → Open URI" -ForegroundColor Gray
-        Write-Host "      • URI: shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "  [2] PowerToys Run Program (Fast)" -ForegroundColor Cyan
+            Write-Host "Launch Options (fastest to slowest):" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  [1] PowerToys URI Method (Recommended - Fastest)" -ForegroundColor Green
+            Write-Host "      • Install PowerToys from Microsoft Store" -ForegroundColor Gray
+            Write-Host "      • Open PowerToys → Keyboard Manager → Remap a key" -ForegroundColor Gray
+            Write-Host "      • Map a key (e.g., Right Alt) → Win+Ctrl+Alt+S" -ForegroundColor Gray
+            Write-Host "      • Then: Remap a shortcut → Win+Ctrl+Alt+S → Open URI" -ForegroundColor Gray
+            Write-Host "      • URI: shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk6g!App" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  [2] PowerToys Run Program (Fast)" -ForegroundColor Cyan
         Write-Host "      • Remap a shortcut → Action: Run Program" -ForegroundColor Gray
         Write-Host "      • Program: powershell.exe" -ForegroundColor Gray
         Write-Host "      • Args: -WindowStyle Hidden -File `"$ps1LauncherPath`"" -ForegroundColor Gray
@@ -7046,13 +8886,14 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
         Write-Host "      • Create AHK script to launch the URI on key press" -ForegroundColor Gray
         Write-Host "      • See README for example scripts" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  [4] Desktop shortcut (Standard)" -ForegroundColor White
-        Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
-        Write-Host ""
+            Write-Host "  [4] Desktop shortcut (Standard)" -ForegroundColor White
+            Write-Host "      • Uses explorer.exe (slight overhead)" -ForegroundColor Gray
+            Write-Host ""
+        }
 
-        $setupShortcut = if ($script:IsAutonomous) { if ($AutonomousCreateAiSelectShortcut) { "Y" } else { "N" } } else { Read-Host "Create Desktop shortcut? (Y/N)" }
+        $setupShortcut = if ($script:IsAutonomous) { $AutonomousCreateAiSelectShortcut } else { Show-Prompt -Question "Create Desktop shortcut?" -Description "Adds a shortcut to your desktop for easy access to AI Select." -DefaultChoice "No" -RenderHeader $renderHeaderBlock }
 
-        if ($setupShortcut -like "y*") {
+        if ($setupShortcut) {
             if ($TestMode) {
                 Write-Host "  [TEST] Would create desktop shortcut: AI Select" -ForegroundColor Gray
             }
@@ -7138,7 +8979,7 @@ else {
         Write-Host "  Your PC now identifies as a Samsung $fam ($prod)" -ForegroundColor Gray
     }
     else {
-        Write-Host "  Your PC now identifies as a Samsung Galaxy Book3 Ultra" -ForegroundColor Gray
+        Write-Host "  Your PC now identifies as a Samsung $DefaultBiosFamilyLabel" -ForegroundColor Gray
     }
 }
 
@@ -7190,11 +9031,11 @@ if ($TestMode) {
 }
 else {
     Write-LogSection "INSTALLATION COMPLETE"
-    Write-Log "Version: $SCRIPT_VERSION"
-    Write-Log "Install Path: $installPath"
-    Write-Log "Task Name: $taskName"
-    Write-Log "Wi-Fi: $($config.WiFiAdapter)"
-    Write-Log "Installation completed successfully at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level SUCCESS
+    Write-GbeLog "Version: $SCRIPT_VERSION"
+    Write-GbeLog "Install Path: $installPath"
+    Write-GbeLog "Task Name: $taskName"
+    Write-GbeLog "Wi-Fi: $($config.WiFiAdapter)"
+    Write-GbeLog "Installation completed successfully at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level SUCCESS
     
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "  Installation Complete!" -ForegroundColor Green

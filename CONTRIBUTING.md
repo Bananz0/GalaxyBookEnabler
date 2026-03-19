@@ -31,9 +31,18 @@ This repository implements strict branch protection. The following checks are **
 - **Workflow**: `.github/workflows/installer-smoke.yml`
 - **Purpose**: Basic verification of installer logic and environment setup on a clean Windows runner.
 
-### 3. Identity Generator Tests (`generator-tests`)
-- **Workflow**: `.github/workflows/generator-tests.yml`
-- **Purpose**: Runs Pester unit tests for the `Generate-SamsungIdentity.ps1` script to ensure valid DMI string generation.
+### 3. Identity Tests (`identity-tests`)
+- **Workflow**: `.github/workflows/identity-tests.yml`
+- **Purpose**: Runs Pester unit tests for the installer's inline identity/configuration path.
+
+### Continuous Regression Suite (`Continuous Regression Suite`)
+- **Workflow**: `.github/workflows/continuous-regression.yml`
+- **Purpose**: Adds nightly and on-change regression coverage for:
+  - Legacy migration handling (`v1.x` `QS.bat` detection and preservation behavior).
+  - Autonomous action command paths (`UpdateSettings`, `UpgradeSSE`, `UninstallAll`).
+  - Custom package argument parsing regressions.
+  - Inline identity/configuration syntax, lint, and Pester checks in the same continuous suite.
+- **Required for merge?**: No. This is an additional safety-net workflow, while the three checks above remain the branch protection requirements.
 
 ## Coding Standards
 - Use PowerShell 7 idiomatic code (avoid PS 5.1 specificisms).

@@ -1,0 +1,60 @@
+# Copyright (c) 2023-2026 Glen Muthoka Mutinda
+name: Identity Tests
+on:
+  push:
+    paths:
+      - 'Install-GalaxyBookEnabler.ps1'
+      - 'tests/**'
+      - '.github/workflows/identity-tests.yml'
+  pull_request:
+    paths:
+      - 'Install-GalaxyBookEnabler.ps1'
+      - 'tests/**'
+      - '.github/workflows/identity-tests.yml'
+
+jobs:
+  identity-tests:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [void]([System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\Install-GalaxyBookEnabler.ps1", [ref]$null, [ref]$null))
+
+      - name: Install test modules
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Module Pester -ListAvailable | Where-Object Version -eq ([version]'3.4.0'))) {
+            Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          if (-not (Get-Module PSScriptAnalyzer -ListAvailable)) {
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          }
+
+      - name: Lint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $excludedRules = @(
+            'PSAvoidUsingWriteHost',
+            'PSUseShouldProcessForStateChangingFunctions',
+            'PSUseSingularNouns',
+            'PSUseBOMForUnicodeEncodedFile'
+          )
+          $issues = Invoke-ScriptAnalyzer -Path .\Install-GalaxyBookEnabler.ps1 -Severity Warning,Error -ExcludeRule $excludedRules
+          if ($issues) {
+            $issues | Select-Object RuleName, Severity, Line, Message | Format-Table -AutoSize
+            throw "PSScriptAnalyzer found $($issues.Count) issues."
+          }
+
+      - name: Pester tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module Pester -RequiredVersion 3.4.0 -Force -ErrorAction Stop
+          Invoke-Pester -Script .\tests\Install-Configuration.Tests.ps1 -EnableExit

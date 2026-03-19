@@ -15,7 +15,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Samsung Settings Runtime | 9NL68DVFP841 | Required runtime for Settings |
 | Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
 | Knox Matrix for Windows | 9NJRV1DT8N79 | Samsung Knox security synchronization |
-| Samsung Continuity Service | 9NGW9K44GQ5F | Cross-device continuity |
+| Galaxy Connect | 9NGW9K44GQ5F | Cross-device continuity |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
 | Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features (shows available Samsung apps) |
@@ -31,7 +31,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
 | Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
 | Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
-| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. **⚠️ Under Investigation** - works intermittently on all Intel Wi-Fi, not working reliably |
+| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. |
 | Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
 | Second Screen | 9PLTXW5DX5KB | ✅ Yes | Use tablet as secondary display. Works on Wi-Fi 6/6E/7, not on Wi-Fi 5 |
@@ -159,7 +159,7 @@ Deprecated versions - use newer alternatives instead.
 - Samsung Settings + Runtime
 - Samsung Cloud
 - Knox Matrix for Windows
-- Samsung Continuity Service
+- Galaxy Connect
 - Samsung Intelligence Service
 - Samsung Bluetooth Sync
 - Galaxy Book Experience
@@ -245,4 +245,4 @@ winget search "Samsung" --source msstore
 
 ---
 
-**Last Updated**: January 10, 2026 (v3.1.0)
+**Last Updated**: March 12, 2026 (v3.1.5)
