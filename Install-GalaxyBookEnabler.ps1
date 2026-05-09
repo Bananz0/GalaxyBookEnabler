@@ -4559,18 +4559,19 @@ function Install-SystemSupportEngine {
     }
     else {
         Write-Host ""
-        Write-Host "  Recommended: Direct install" -ForegroundColor Green
-        Write-Host "    • Install and patch SSSE $LATEST_SSSE_VERSION directly" -ForegroundColor Gray
-        Write-Host "    • Legacy dual-version upgrade flow is currently disabled" -ForegroundColor Gray
+        Write-Host "  Recommended: In-place upgrade strategy" -ForegroundColor Green
+        Write-Host "    • Install stable 6.1.8.0, then auto-upgrade to latest $LATEST_SSSE_VERSION" -ForegroundColor Gray
+        Write-Host "    • Ensures Samsung Settings launches before upgrading" -ForegroundColor Gray
         Write-Host ""
 
         if ($AutoInstall) {
             switch ($AutoStrategy) {
                 "Dual" {
-                    $cabVersion = $LATEST_SSSE_VERSION
+                    $cabVersion = "6.1.8.0"
+                    $driverVersion = $LATEST_SSSE_VERSION
                     $installedVersion = $cabVersion
-                    $useDualVersionStrategy = $false
-                    Write-Host "  ⚠ Dual-version strategy requested but disabled; using direct install of $LATEST_SSSE_VERSION" -ForegroundColor Yellow
+                    $useDualVersionStrategy = $true
+                    Write-Host "  ✓ Auto-selected dual-version strategy (6.1.8.0 -> $LATEST_SSSE_VERSION)" -ForegroundColor Green
                 }
                 "Stable" {
                     $cabVersion = "6.3.3.0"
@@ -4586,7 +4587,7 @@ function Install-SystemSupportEngine {
                 }
                 default {
                     if (-not $AutoVersion) {
-                        $AutoVersion = $LATEST_SSSE_VERSION
+                        $AutoVersion = "6.3.3.0"
                     }
                     $cabVersion = $AutoVersion
                     $installedVersion = $cabVersion
@@ -4596,10 +4597,39 @@ function Install-SystemSupportEngine {
             }
         }
         else {
-            $cabVersion = $LATEST_SSSE_VERSION
-            $installedVersion = $cabVersion
-            $useDualVersionStrategy = $false
-            Write-Host "  ✓ Direct install selected: $cabVersion" -ForegroundColor Cyan
+            $strategyChoice = Read-Host "  Use in-place upgrade to latest version? ([Y]/n)"
+            
+            if ($strategyChoice -like "n*") {
+                # Fallback to manual version selection
+                Write-Host ""
+                Write-Host "  Available versions:" -ForegroundColor Yellow
+                Write-Host "    [1] 6.3.3.0 - Stable" -ForegroundColor White
+                Write-Host "    [2] $LATEST_SSSE_VERSION - Latest" -ForegroundColor White
+                Write-Host "    [3] Other   - Choose from all versions" -ForegroundColor Gray
+                Write-Host ""
+                
+                $versionChoice = Read-Host "  Select version [1-3] (default: 1)"
+                
+                $cabVersion = switch ($versionChoice) {
+                    "2" { $LATEST_SSSE_VERSION }
+                    "3" { $null }  # Will show interactive menu
+                    default { "6.3.3.0" }
+                }
+                
+                if ($cabVersion) {
+                    Write-Host "  Selected: $cabVersion" -ForegroundColor Cyan
+                }
+                $installedVersion = $cabVersion  # Track installed version for single-version install
+                $useDualVersionStrategy = $false
+            }
+            else {
+                # Use dual-version strategy
+                $cabVersion = "6.1.8.0"  # Primary version for patched exe
+                $driverVersion = $LATEST_SSSE_VERSION  # Driver version for DriverStore
+                $installedVersion = $cabVersion  # Track current installed version (updated after binary replacement)
+                $useDualVersionStrategy = $true
+                Write-Host "  ✓ Will install 6.1.8.0 then upgrade to $LATEST_SSSE_VERSION" -ForegroundColor Green
+            }
         }
     }
     
@@ -5221,6 +5251,8 @@ function Install-SystemSupportEngine {
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
                 $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
+                Write-Host "`n  IMPORTANT: Please sign in to Samsung Settings and confirm the UI is working." -ForegroundColor Yellow
+                Write-Host "  Once you have signed in and confirmed, press any key to install the latest version." -ForegroundColor White
                 Invoke-InteractivePause
                 
                 # 3. Stop Services & Processes
