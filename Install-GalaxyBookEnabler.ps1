@@ -4011,32 +4011,33 @@ function Update-SSSEBinary {
         return $false
     }
 
+    $viableCandidates = @($viableCandidates | Sort-Object { $_.Primary.Offset })
     if ($viableCandidates.Count -gt 1) {
-        $viableCandidates = $viableCandidates | Sort-Object { $_.Primary.Offset }
-        Write-Host "    Multiple candidate windows found; using earliest match" -ForegroundColor Yellow
+        Write-Host "    $($viableCandidates.Count) candidate windows found; patching all of them" -ForegroundColor Yellow
     }
-
-    $target = $viableCandidates[0]
-    Write-Host "    Detected patch profile: Pattern $($target.Secondary.Pattern)" -ForegroundColor Cyan
 
     $patchCount = 0
 
-    if (-not $target.Primary.IsPatched) {
-        Set-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
-        Write-Host "    Primary patch @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
-        $patchCount++
-    }
-    else {
-        Write-Host "    ✓ Primary patch already present" -ForegroundColor Green
-    }
+    foreach ($target in $viableCandidates) {
+        Write-Host "    Detected patch profile: Pattern $($target.Secondary.Pattern)" -ForegroundColor Cyan
 
-    if (-not $target.Secondary.IsPatched) {
-        Set-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
-        Write-Host "    Secondary patch @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
-        $patchCount++
-    }
-    else {
-        Write-Host "    ✓ Secondary patch already present" -ForegroundColor Green
+        if (-not $target.Primary.IsPatched) {
+            Set-BytePatch -Bytes $fileBytes -Offset $target.Primary.PatchOffset -PatchBytes ([byte[]]@(0x48, 0xE9))
+            Write-Host "    Primary patch @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+            $patchCount++
+        }
+        else {
+            Write-Host "    ✓ Primary patch already present @ 0x$($target.Primary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        }
+
+        if (-not $target.Secondary.IsPatched) {
+            Set-BytePatch -Bytes $fileBytes -Offset $target.Secondary.PatchOffset -PatchBytes ([byte[]]@(0xEB))
+            Write-Host "    Secondary patch @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+            $patchCount++
+        }
+        else {
+            Write-Host "    ✓ Secondary patch already present @ 0x$($target.Secondary.PatchOffset.ToString('X5'))" -ForegroundColor Green
+        }
     }
 
     if ($patchCount -eq 0) {
