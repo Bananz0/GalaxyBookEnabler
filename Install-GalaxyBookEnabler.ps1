@@ -429,6 +429,14 @@ $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 $INTEL_WIFI_DRIVER_GUIDANCE = "For best Samsung app compatibility, keep Intel Wi-Fi drivers on v23 and avoid v24 until Samsung updates their SDK."
 $LATEST_SSSE_VERSION = "8.0.5.0"
 
+# SSSE BINARY PATCH CONSTANTS
+# Bytes scanned past a primary check site while looking for its paired secondary check.
+$SSSE_SECONDARY_SEARCH_WINDOW = 1024
+# Bytes skipped before scanning, so a primary site cannot match its own instructions.
+$SSSE_SECONDARY_SEARCH_START_GAP = 12
+# Longest secondary pattern; keeps the scan inside the buffer.
+$SSSE_SECONDARY_PATTERN_LENGTH = 17
+
 # LOGGING SETUP
 $script:LogFile = Join-Path $env:TEMP "GalaxyBookEnabler_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 $script:LogDirectory = $null
@@ -3952,12 +3960,16 @@ function Update-SSSEBinary {
     function Find-SecondarySite {
         param(
             [byte[]]$Bytes,
-            [int]$PrimaryOffset
+            [int]$PrimaryOffset,
+            [int]$Boundary
         )
 
-        $searchEnd = [Math]::Min($PrimaryOffset + 512, $Bytes.Length - 17)
+        # Never scan past the next primary site: a secondary belongs to the primary it follows.
+        $searchEnd = [Math]::Min($PrimaryOffset + $SSSE_SECONDARY_SEARCH_WINDOW, $Boundary)
+        $searchEnd = [Math]::Min($searchEnd, $Bytes.Length - $SSSE_SECONDARY_PATTERN_LENGTH)
+        $searchStart = $PrimaryOffset + $SSSE_SECONDARY_SEARCH_START_GAP
 
-        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+        for ($j = $searchStart; $j -lt $searchEnd; $j++) {
             if ($Bytes[$j] -eq 0xE8 -and
                 $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x83 -and
                 $Bytes[$j + 7] -eq 0xF8 -and $Bytes[$j + 8] -eq 0xFF -and
@@ -3970,7 +3982,7 @@ function Update-SSSEBinary {
             }
         }
 
-        for ($j = $PrimaryOffset + 12; $j -lt $searchEnd; $j++) {
+        for ($j = $searchStart; $j -lt $searchEnd; $j++) {
             if ($Bytes[$j] -eq 0x48 -and $Bytes[$j + 1] -eq 0x3B -and $Bytes[$j + 2] -eq 0xC3 -and
                 $Bytes[$j + 3] -eq 0x74 -and $Bytes[$j + 4] -eq 0x0C -and
                 $Bytes[$j + 5] -eq 0x48 -and $Bytes[$j + 6] -eq 0x2B -and
@@ -3989,15 +4001,17 @@ function Update-SSSEBinary {
         return $null
     }
 
-    $primaryCandidates = Find-PrimaryCandidates -Bytes $fileBytes
+    $primaryCandidates = @(Find-PrimaryCandidates -Bytes $fileBytes)
     if ($primaryCandidates.Count -eq 0) {
         Write-Host "    ⚠ Patch pattern not found in binary" -ForegroundColor Yellow
         return $false
     }
 
     $viableCandidates = @()
-    foreach ($candidate in $primaryCandidates) {
-        $secondary = Find-SecondarySite -Bytes $fileBytes -PrimaryOffset $candidate.Offset
+    for ($index = 0; $index -lt $primaryCandidates.Count; $index++) {
+        $candidate = $primaryCandidates[$index]
+        $boundary = if ($index + 1 -lt $primaryCandidates.Count) { $primaryCandidates[$index + 1].Offset } else { $fileBytes.Length }
+        $secondary = Find-SecondarySite -Bytes $fileBytes -PrimaryOffset $candidate.Offset -Boundary $boundary
         if ($null -ne $secondary) {
             $viableCandidates += [PSCustomObject]@{
                 Primary   = $candidate
