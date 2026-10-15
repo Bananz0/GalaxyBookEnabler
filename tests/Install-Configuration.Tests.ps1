@@ -139,6 +139,12 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
             '960XGK' = @{ Board = 'NP960XGK-KG1UK'; Country = 'UK' }
             '960XGL' = @{ Board = 'NP960XGL-XG2BR'; Country = 'BR' }
             '960XHA' = @{ Board = 'NP960XHA-KG2DE'; Country = 'DE' }
+            # Galaxy Book6 series — real SKU format: P{BiosCode}-{model}-{platform}-0
+            '760VJG' = @{ Board = 'NP760VJG-KG5DE'; Country = 'DE'; SkuPattern = '^P[A-Z]{3}-[0-9]{3}[A-Z]{3}-PTL[HU]-0$' }
+            '944XJG' = @{ Board = 'NP944XJG-KG5SE'; Country = 'SE'; SkuPattern = '^P[A-Z]{3}-[0-9]{3}[A-Z]{3}-PTL[HU]-0$' }
+            '960UJG' = @{ Board = 'NP960UJG-KG2CA'; Country = 'CA'; SkuPattern = '^P[A-Z]{3}-[0-9]{3}[A-Z]{3}-PTL[HU]-0$' }
+            '960UJH' = @{ Board = 'NP960UJH-XG7UK'; Country = 'UK'; SkuPattern = '^P[A-Z]{3}-[0-9]{3}[A-Z]{3}-PTL[HU]-0$' }
+            '960XJG' = @{ Board = 'NP960XJG-KG2CA'; Country = 'CA'; SkuPattern = '^P[A-Z]{3}-[0-9]{3}[A-Z]{3}-PTL[HU]-0$' }
         }
 
         foreach ($modelCode in $expectedBoardProducts.Keys) {
@@ -147,7 +153,8 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
 
             $result.ResolvedModelCode | Should Be $modelCode
             $result.BaseBoardProduct | Should Be $testCase.Board
-            $result.SystemSKU | Should Match '^SCAI-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-P[A-Z0-9]{3}$'
+            $skuPattern = if ($testCase.SkuPattern) { $testCase.SkuPattern } else { '^SCAI-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-P[A-Z0-9]{3}$' }
+            $result.SystemSKU | Should Match $skuPattern
         }
     }
 
@@ -172,6 +179,12 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
 
     It 'accepts all configured family aliases' {
         $selectors = @(
+            @{ Selector = 'Book6Pro'; Expected = 'Galaxy Book6 Pro' },
+            @{ Selector = 'Galaxy Book6 Pro'; Expected = 'Galaxy Book6 Pro' },
+            @{ Selector = 'Book6Ultra'; Expected = 'Galaxy Book6 Ultra' },
+            @{ Selector = 'Galaxy Book6 Ultra'; Expected = 'Galaxy Book6 Ultra' },
+            @{ Selector = 'Book6'; Expected = 'Galaxy Book6' },
+            @{ Selector = 'Galaxy Book6'; Expected = 'Galaxy Book6' },
             @{ Selector = 'Book5Pro'; Expected = 'Galaxy Book5 Pro' },
             @{ Selector = 'Galaxy Book5 Pro'; Expected = 'Galaxy Book5 Pro' },
             @{ Selector = 'Book5Pro360'; Expected = 'Galaxy Book5 Pro 360' },
@@ -218,6 +231,9 @@ Describe 'Install-GalaxyBookEnabler.ps1 configuration mode' {
 
     It 'accepts selector-style family keys for every configured family' {
         $familyKeys = @(
+            'Book6Pro',
+            'Book6Ultra',
+            'Book6',
             'Book5Pro',
             'Book5Pro360',
             'Book5360',

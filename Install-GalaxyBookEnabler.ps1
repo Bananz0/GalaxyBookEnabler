@@ -576,20 +576,25 @@ $GalaxyBookModelBlueprints = [ordered]@{
     '750XFH' = @{ FamilyKey = 'Book3'; BIOSVersionSample = 'P09CFM.030.241212.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'CFM'; BoardSuffix = 'XF1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '750XGK' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P02CFP.015.240409.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '750XGL' = @{ FamilyKey = 'Book4'; BIOSVersionSample = 'P07CFP.020.250208.HQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'RPLU'; BiosCode = 'CFP'; BoardSuffix = 'XG1'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '760VJG' = @{ FamilyKey = 'Book6'; BIOSVersionSample = 'PRVK.1.2.48.546'; BIOSMajorRelease = 5; BIOSMinorRelease = 39; BiosVersionMajor = 1; BiosVersionMinor = 2; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'PTLU'; BiosCode = 'RVK'; ProductName = 'Galaxy Book6'; SystemManufacturer = 'Samsung'; BaseBoardManufacturer = 'Samsung'; BoardSuffix = 'KG5'; BoardRegion = 'DE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '930SBE' = @{ FamilyKey = 'Notebook9Series'; BIOSVendor = 'American Megatrends Inc.'; BIOSVersionSample = 'P07AGW.046.230519.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 13; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'A5A5'; BiosCode = 'AGW'; ProductName = '930SBE/931SBE/930SBV'; BoardPrefix = 'NT'; BoardSuffix = 'K716'; SupportsRegionBoard = $false; EnclosureKind = 31 }
     '930XDB' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P13RFX.071.240415.SP'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL3'; BiosCode = 'RFX'; ProductName = '930XDB/931XDB/930XDY'; BoardSuffix = 'KF6'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '935QDC' = @{ FamilyKey = 'GalaxyBookSeries'; BIOSVersionSample = 'P04AKJ.016.231123.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 19; Segment = 'A5A5'; Config = 'A5A5'; Platform = 'TGL4'; BiosCode = 'AKJ'; BoardSuffix = 'KE2'; BoardRegion = 'US'; SupportsRegionBoard = $true; EnclosureKind = 31 }
     '940XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P09VAG.690.240503.03'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'VAG'; BoardSuffix = 'KG1'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '940XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05VAJ.280.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'VAJ'; BoardSuffix = 'KG3'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '944XJG' = @{ FamilyKey = 'Book6Pro'; BIOSVersionSample = 'PRHK.1.2.48.546'; BIOSMajorRelease = 5; BIOSMinorRelease = 39; BiosVersionMajor = 1; BiosVersionMinor = 2; Segment = 'PROT'; Config = 'A5A5'; Platform = 'PTLH'; BiosCode = 'RHK'; SkuModelCode = '940XJG'; ProductName = 'Galaxy Book6 Pro'; SystemManufacturer = 'Samsung'; BaseBoardManufacturer = 'Samsung'; BoardSuffix = 'KG5'; BoardRegion = 'SE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '950XGK' = @{ FamilyKey = 'Book2Pro'; BIOSVersionSample = 'P06RHD.270.250102.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHD'; BoardSuffix = 'KA2'; BoardRegion = 'FR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960QFG' = @{ FamilyKey = 'Book3Pro360'; BIOSVersionSample = 'P07ALN.260.240415.SH'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'ALN'; BoardModel = '964QFG'; BoardSuffix = 'KA1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
     '960QGK' = @{ FamilyKey = 'Book4Pro360'; BIOSVersionSample = 'P14RHB.460.250425.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHB'; BoardSuffix = 'KG1'; BoardRegion = 'IT'; SupportsRegionBoard = $true; EnclosureKind = 31 }
     '960QHA' = @{ FamilyKey = 'Book5Pro360'; BIOSVersionSample = 'P15ALY.360.250515.02'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'ALY'; BoardSuffix = 'KG2'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 31 }
+    '960UJG' = @{ FamilyKey = 'Book6Ultra'; BIOSVersionSample = 'PRUK.1.2.48.546'; BIOSMajorRelease = 5; BIOSMinorRelease = 39; BiosVersionMajor = 1; BiosVersionMinor = 2; Segment = 'PROT'; Config = 'A5A5'; Platform = 'PTLH'; BiosCode = 'RUK'; ProductName = 'Galaxy Book6 Ultra'; SystemManufacturer = 'Samsung'; BaseBoardManufacturer = 'Samsung'; BoardSuffix = 'KG2'; BoardRegion = 'CA'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960UJH' = @{ FamilyKey = 'Book6Ultra'; BIOSVersionSample = 'PRUH.1.2.48.546'; BIOSMajorRelease = 5; BIOSMinorRelease = 39; BiosVersionMajor = 1; BiosVersionMinor = 2; Segment = 'PROT'; Config = 'A5A5'; Platform = 'PTLH'; BiosCode = 'RUH'; ProductName = 'Galaxy Book6 Ultra'; SystemManufacturer = 'Samsung'; BaseBoardManufacturer = 'Samsung'; BoardSuffix = 'XG7'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960XFG' = @{ FamilyKey = 'Book3Pro'; BIOSVersionSample = 'P07RGU.330.240529.ZQ'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLP'; BiosCode = 'RGU'; BoardSuffix = 'KC2'; BoardRegion = 'CL'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960XFH' = @{ FamilyKey = 'Book3Ultra'; BIOSVersionSample = 'P07ALQ.190.240418.PS'; BIOSMajorRelease = 5; BIOSMinorRelease = 27; Segment = 'ICPS'; Config = 'A5A5'; Platform = 'RPLH'; BiosCode = 'ALQ'; BoardSuffix = 'XA2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960XGK' = @{ FamilyKey = 'Book4Pro'; BIOSVersionSample = 'P12RHA.550.241030.04'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'RHA'; BoardSuffix = 'KG1'; BoardRegion = 'UK'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960XGL' = @{ FamilyKey = 'Book4Ultra'; BIOSVersionSample = 'P08ALX.400.250306.05'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'MTLH'; BiosCode = 'ALX'; BoardSuffix = 'XG2'; BoardRegion = 'BR'; SupportsRegionBoard = $true; EnclosureKind = 10 }
     '960XHA' = @{ FamilyKey = 'Book5Pro'; BIOSVersionSample = 'P05AMA.140.250210.01'; BIOSMajorRelease = 5; BIOSMinorRelease = 32; Segment = 'PROT'; Config = 'A5A5'; Platform = 'LNLM'; BiosCode = 'AMA'; BoardSuffix = 'KG2'; BoardRegion = 'DE'; SupportsRegionBoard = $true; EnclosureKind = 10 }
+    '960XJG' = @{ FamilyKey = 'Book6Pro'; BIOSVersionSample = 'PRXK.1.2.48.546'; BIOSMajorRelease = 5; BIOSMinorRelease = 39; BiosVersionMajor = 1; BiosVersionMinor = 2; Segment = 'PROT'; Config = 'A5A5'; Platform = 'PTLH'; BiosCode = 'RXK'; ProductName = 'Galaxy Book6 Pro'; SystemManufacturer = 'Samsung'; BaseBoardManufacturer = 'Samsung'; BoardSuffix = 'KG2'; BoardRegion = 'CA'; SupportsRegionBoard = $true; EnclosureKind = 10 }
 }
 
 
@@ -637,22 +642,25 @@ $RegionCatalog = @(
 )
 
 $GalaxyBookFamilies = @(
-    [ordered]@{ Key = 'Book5Pro'; Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 1 },
-    [ordered]@{ Key = 'Book5Pro360'; Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 2 },
-    [ordered]@{ Key = 'Book5360'; Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 3 },
-    [ordered]@{ Key = 'Book4Ultra'; Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 4 },
-    [ordered]@{ Key = 'Book4Pro'; Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 5 },
-    [ordered]@{ Key = 'Book4Pro360'; Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 6 },
-    [ordered]@{ Key = 'Book4'; Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 7 },
-    [ordered]@{ Key = 'Book4360'; Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 8 },
-    [ordered]@{ Key = 'Book3Ultra'; Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 9 },
-    [ordered]@{ Key = 'Book3Pro'; Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 10 },
-    [ordered]@{ Key = 'Book3Pro360'; Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 11 },
-    [ordered]@{ Key = 'Book3'; Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 12 },
-    [ordered]@{ Key = 'Book3360'; Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 13 },
-    [ordered]@{ Key = 'Book2Pro'; Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 14 },
-    [ordered]@{ Key = 'GalaxyBookSeries'; Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 15 },
-    [ordered]@{ Key = 'Notebook9Series'; Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 16 }
+    [ordered]@{ Key = 'Book6Pro'; Label = 'Galaxy Book6 Pro'; Aliases = @('Book6Pro'); Models = @('944XJG', '960XJG'); Order = 1 },
+    [ordered]@{ Key = 'Book6Ultra'; Label = 'Galaxy Book6 Ultra'; Aliases = @('Book6Ultra'); Models = @('960UJG', '960UJH'); Order = 2 },
+    [ordered]@{ Key = 'Book6'; Label = 'Galaxy Book6'; Aliases = @('Book6'); Models = @('760VJG'); Order = 3 },
+    [ordered]@{ Key = 'Book5Pro'; Label = 'Galaxy Book5 Pro'; Aliases = @('Book5Pro'); Models = @('940XHA', '960XHA'); Order = 4 },
+    [ordered]@{ Key = 'Book5Pro360'; Label = 'Galaxy Book5 Pro 360'; Aliases = @('Book5Pro360', 'Book5360Pro'); Models = @('960QHA'); Order = 5 },
+    [ordered]@{ Key = 'Book5360'; Label = 'Galaxy Book5 360'; Aliases = @('Book5360'); Models = @('750QHA'); Order = 6 },
+    [ordered]@{ Key = 'Book4Ultra'; Label = 'Galaxy Book4 Ultra'; Aliases = @('Book4Ultra'); Models = @('960XGL'); Order = 7 },
+    [ordered]@{ Key = 'Book4Pro'; Label = 'Galaxy Book4 Pro'; Aliases = @('Book4Pro'); Models = @('940XGK', '960XGK'); Order = 8 },
+    [ordered]@{ Key = 'Book4Pro360'; Label = 'Galaxy Book4 Pro 360'; Aliases = @('Book4Pro360', 'Book4360Pro'); Models = @('960QGK'); Order = 9 },
+    [ordered]@{ Key = 'Book4'; Label = 'Galaxy Book4'; Aliases = @('Book4'); Models = @('750XGK', '750XGL'); Order = 10 },
+    [ordered]@{ Key = 'Book4360'; Label = 'Galaxy Book4 360'; Aliases = @('Book4360'); Models = @('750QGK'); Order = 11 },
+    [ordered]@{ Key = 'Book3Ultra'; Label = 'Galaxy Book3 Ultra'; Aliases = @('Book3Ultra'); Models = @('960XFH'); Order = 12 },
+    [ordered]@{ Key = 'Book3Pro'; Label = 'Galaxy Book3 Pro'; Aliases = @('Book3Pro'); Models = @('960XFG'); Order = 13 },
+    [ordered]@{ Key = 'Book3Pro360'; Label = 'Galaxy Book3 Pro 360'; Aliases = @('Book3Pro360', 'Book3360Pro'); Models = @('960QFG'); Order = 14 },
+    [ordered]@{ Key = 'Book3'; Label = 'Galaxy Book3'; Aliases = @('Book3'); Models = @('750XFG', '750XFH'); Order = 15 },
+    [ordered]@{ Key = 'Book3360'; Label = 'Galaxy Book3 360'; Aliases = @('Book3360'); Models = @('730QFG'); Order = 16 },
+    [ordered]@{ Key = 'Book2Pro'; Label = 'Galaxy Book2 Pro Special Edition'; Aliases = @('Book2ProSpecialEdition', 'Book2Pro'); Models = @('950XGK'); Order = 17 },
+    [ordered]@{ Key = 'GalaxyBookSeries'; Label = 'Galaxy Book Series'; Aliases = @('GalaxyBookSeries'); Models = @('930XDB', '935QDC'); Order = 18 },
+    [ordered]@{ Key = 'Notebook9Series'; Label = 'Notebook 9 Series'; Aliases = @('Notebook9Series'); Models = @('930SBE'); Order = 19 }
 )
 
 $GalaxyBookFamilyByKey = @{}
@@ -689,15 +697,20 @@ foreach ($modelCode in $GalaxyBookModelBlueprints.Keys) {
         SystemManufacturer    = if ($blueprint.SystemManufacturer) { $blueprint.SystemManufacturer } else { $SamsungModelDefaults.SystemManufacturer }
         SystemFamily          = $family.Label
         SystemProductName     = if ($blueprint.ProductName) { $blueprint.ProductName } else { $modelCode }
-        ProductSku            = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+        ProductSku            = if ($blueprint.BiosVersionMajor) {
+            $skuModel = if ($blueprint.SkuModelCode) { $blueprint.SkuModelCode } else { $boardModel }
+            "P$($blueprint.BiosCode)-$skuModel-$($blueprint.Platform)-0"
+        } else {
+            "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+        }
         BaseBoardManufacturer = if ($blueprint.BaseBoardManufacturer) { $blueprint.BaseBoardManufacturer } else { $SamsungModelDefaults.BaseBoardManufacturer }
         BaseBoardProduct      = $baseBoardProduct
         EnclosureKind         = $blueprint.EnclosureKind
     }
 }
 
-$DefaultBiosModelCode = '960XGL'
-$DefaultBiosFamilyLabel = 'Galaxy Book4 Ultra'
+$DefaultBiosModelCode = '944XJG'
+$DefaultBiosFamilyLabel = 'Galaxy Book6 Pro'
 
 function Get-GalaxyBookSelectorLabel {
     param(
@@ -1157,10 +1170,12 @@ function Resolve-ModelBlueprint {
     $config = $entry.Config
     $platform = $entry.Platform
     $biosCode = $entry.BiosCode
-    $biosShort = if ($entry.BIOSVersionSample -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } else { "P00$biosCode" }
+    $biosShort = if ($entry.BIOSVersionSample -match '^(P\d{2}[A-Z0-9]{3})') { $Matches[1] } elseif ($entry.BIOSVersionSample -match '^([A-Z]{4})(?=\.\d)') { $Matches[1] } else { "P00$biosCode" }
     $biosRevision = if ($biosShort -match '^P(?<revision>\d{2})') { $Matches.revision } else { '00' }
     $biosDate = if ($entry.BIOSVersionSample -match '\.(?<date>\d{6})\.') { $Matches.date } else { Resolve-BiosDate -Year (Get-Date).Year }
     $biosLine = if ($entry.BIOSVersionSample -match '\.(?<line>[A-Z0-9]{2})$') { $Matches.line } else { $null }
+    $biosVersionMajor = if ($null -ne $entry.BiosVersionMajor) { [int]$entry.BiosVersionMajor } else { $null }
+    $biosVersionMinor = if ($null -ne $entry.BiosVersionMinor) { [int]$entry.BiosVersionMinor } else { $null }
     $baseBoardPrefix = if ($entry.BoardPrefix) { $entry.BoardPrefix } else { $SamsungModelDefaults.BaseBoardPrefix }
     $baseBoardModel = if ($entry.BoardModel) { $entry.BoardModel } else { $ModelCode }
     $baseBoardProduct = if ($entry.SupportsRegionBoard) {
@@ -1188,6 +1203,9 @@ function Resolve-ModelBlueprint {
         BiosRevision          = $biosRevision
         SampleBiosDate        = $biosDate
         SampleBiosLine        = $biosLine
+        BiosVersionMajor      = $biosVersionMajor
+        BiosVersionMinor      = $biosVersionMinor
+        SkuModelCode          = $entry.SkuModelCode
         BaseBoardPrefix       = $baseBoardPrefix
         BaseBoardModel        = $baseBoardModel
         BaseBoardSuffix       = $entry.BoardSuffix
@@ -1222,7 +1240,12 @@ function New-GeneratedIdentityData {
     $biosDate = Resolve-BiosDate -Year $blueprint.Year
     $biosBuild = "{0:D3}" -f (Get-Random -Minimum 1 -Maximum 999)
     $biosLine = Get-RandomChoice -Items ((@($blueprint.SampleBiosLine, "PS", "HQ", "SH", "SX", "ZQ") | Where-Object { $_ } | Select-Object -Unique))
-    $biosVersionFull = "$($blueprint.BiosShort).$biosBuild.$biosDate.$biosLine"
+    $biosVersionFull = if ($null -ne $blueprint.BiosVersionMajor) {
+        $biosPatch = Get-Random -Minimum 100 -Maximum 999
+        "$($blueprint.BiosShort).$($blueprint.BiosVersionMajor).$($blueprint.BiosVersionMinor).$biosBuild.$biosPatch"
+    } else {
+        "$($blueprint.BiosShort).$biosBuild.$biosDate.$biosLine"
+    }
     $baseBoardProduct = if ($blueprint.SupportsRegionBoard -and $blueprint.BaseBoardPrefix -and $blueprint.BaseBoardSuffix) {
         "$($blueprint.BaseBoardPrefix)$($blueprint.BaseBoardModel)-$($blueprint.BaseBoardSuffix)$regionCode"
     }
@@ -1240,7 +1263,12 @@ function New-GeneratedIdentityData {
     $romHex = Convert-BytesToHexString -Bytes $romBytes
     $romBase64 = [Convert]::ToBase64String($romBytes)
     $biosReleaseDate = Resolve-BiosReleaseDate -BiosDate $biosDate
-    $systemSku = "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+    $systemSku = if ($null -ne $blueprint.BiosVersionMajor) {
+        $skuModel = if ($blueprint.SkuModelCode) { $blueprint.SkuModelCode } else { $blueprint.BaseBoardModel }
+        "P$($blueprint.BiosCode)-$skuModel-$($blueprint.Platform)-0"
+    } else {
+        "SCAI-$($blueprint.Segment)-$($blueprint.Config)-$($blueprint.Platform)-P$($blueprint.BiosCode)"
+    }
     $biosValues = @{
         BIOSVendor            = $blueprint.BIOSVendor
         BIOSVersion           = $biosVersionFull
@@ -1685,7 +1713,8 @@ function Show-RegionMenu {
 
 function Get-GalaxyBookGenerationMenu {
     return @(
-        [pscustomobject]@{ Label = 'Galaxy Book5'; Description = 'Current Book5 family models'; Generation = 'Book5' },
+        [pscustomobject]@{ Label = 'Galaxy Book6'; Description = 'Latest Book6 Pro, Ultra, and standard models'; Generation = 'Book6' },
+        [pscustomobject]@{ Label = 'Galaxy Book5'; Description = 'Book5, Pro, Pro 360, and 360 models'; Generation = 'Book5' },
         [pscustomobject]@{ Label = 'Galaxy Book4'; Description = 'Book4, Pro, Ultra, and 360 models'; Generation = 'Book4' },
         [pscustomobject]@{ Label = 'Galaxy Book3'; Description = 'Book3, Pro, Ultra, and 360 models'; Generation = 'Book3' },
         [pscustomobject]@{ Label = 'Older Samsung PCs'; Description = 'Book2, Galaxy Book Series, and Notebook 9'; Generation = 'Legacy' },
@@ -1700,6 +1729,9 @@ function Get-GalaxyBookFamiliesForGeneration {
     )
 
     switch ($Generation) {
+        'Book6' {
+            return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book6*' } | Sort-Object Order
+        }
         'Book5' {
             return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book5*' -or $_.Key -eq 'Book5360' } | Sort-Object Order
         }
@@ -1710,7 +1742,7 @@ function Get-GalaxyBookFamiliesForGeneration {
             return $GalaxyBookFamilies | Where-Object { $_.Key -like 'Book3*' } | Sort-Object Order
         }
         'Legacy' {
-            return $GalaxyBookFamilies | Where-Object { $_.Key -notlike 'Book5*' -and $_.Key -ne 'Book5360' -and $_.Key -notlike 'Book4*' -and $_.Key -notlike 'Book3*' } | Sort-Object Order
+            return $GalaxyBookFamilies | Where-Object { $_.Key -notlike 'Book6*' -and $_.Key -notlike 'Book5*' -and $_.Key -ne 'Book5360' -and $_.Key -notlike 'Book4*' -and $_.Key -notlike 'Book3*' } | Sort-Object Order
         }
         default {
             return @()
