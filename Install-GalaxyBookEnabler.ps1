@@ -199,6 +199,30 @@ function ConvertTo-StartProcessArguments {
     return $quotedArguments
 }
 
+function Get-ClassicPwshPath {
+    <#
+    .SYNOPSIS
+        Returns a pwsh.exe that isn't the Microsoft Store (MSIX) build, or $null.
+    .DESCRIPTION
+        Store PowerShell lives under WindowsApps and can't load the CIM/MI native
+        layer (#124). Its app execution alias also isn't usable by SYSTEM tasks.
+    #>
+    param(
+        [string[]]$Candidates = @(
+            (Join-Path $PSHOME 'pwsh.exe'),
+            (Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe')
+        ) + @(Get-Command pwsh.exe -All -CommandType Application -ErrorAction SilentlyContinue | ForEach-Object Source)
+    )
+
+    foreach ($candidate in $Candidates) {
+        if ($candidate -and $candidate -notlike '*\WindowsApps\*' -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 function Start-GalaxyBookEnablerScript {
     param(
         [Parameter(Mandatory = $true)]
@@ -209,26 +233,28 @@ function Start-GalaxyBookEnablerScript {
 
     $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $ForwardedArguments
     $isAdminSession = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $pwshExe = Get-ClassicPwshPath
+    if (-not $pwshExe) { $pwshExe = "pwsh" }
 
     if ($isAdminSession) {
-        & pwsh @launchArgs
+        & $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
     if ($gsudoPath) {
-        & gsudo pwsh @launchArgs
+        & gsudo $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
     if ($sudoPath) {
-        & sudo pwsh @launchArgs
+        & sudo $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $quotedLaunchArgs = ConvertTo-StartProcessArguments -Arguments $launchArgs
-    $process = Start-Process -FilePath "pwsh" -ArgumentList $quotedLaunchArgs -Verb RunAs -Wait -PassThru
+    $process = Start-Process -FilePath $pwshExe -ArgumentList $quotedLaunchArgs -Verb RunAs -Wait -PassThru
     return $process.ExitCode
 }
 
@@ -261,11 +287,11 @@ function Invoke-WingetCommand {
         }
 
         $output = @()
-        if (Test-Path $stdoutPath) {
-            $output += Get-Content $stdoutPath -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stdoutPath) {
+            $output += Get-Content -LiteralPath $stdoutPath -Encoding utf8 -ErrorAction SilentlyContinue
         }
-        if (Test-Path $stderrPath) {
-            $output += Get-Content $stderrPath -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stderrPath) {
+            $output += Get-Content -LiteralPath $stderrPath -Encoding utf8 -ErrorAction SilentlyContinue
         }
 
         $process.Refresh()
@@ -277,6 +303,120 @@ function Invoke-WingetCommand {
     }
     finally {
         Remove-Item $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-WingetInstallSucceeded {
+    param(
+        [hashtable]$Result
+    )
+
+    if (-not $Result -or $Result.TimedOut) {
+        return $false
+    }
+
+    # Exit codes work on localized Windows; the English text is only a fallback.
+    # 0x8A15002B = no applicable upgrade, 0x8A150061 = package already installed
+    if ($Result.ExitCode -in @(0, -1978335189, -1978335135)) {
+        return $true
+    }
+
+    return ($Result.Output -match "Successfully installed|Installation completed successfully|already installed|No available upgrade found|No newer package versions")
+}
+
+function Invoke-StorePackageInstall {
+    <#
+    .SYNOPSIS
+        Installs a Microsoft Store package via winget, retrying once on failure.
+    .DESCRIPTION
+        Pins the msstore source so winget doesn't fall back to other sources, and
+        retries once because Store acquisition often fails transiently (#111, #91).
+        Returns the last Invoke-WingetCommand result plus the attempt count.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackageId,
+
+        [string]$PackageName = $PackageId,
+
+        [int]$TimeoutSeconds = 900
+    )
+
+    $installArgs = @('install', '--source', 'msstore', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $PackageId)
+    $maxAttempts = 2
+    $result = $null
+
+    $attemptsMade = 0
+
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $attemptsMade = $attempt
+        $result = Invoke-WingetCommand -Arguments $installArgs -TimeoutSeconds $TimeoutSeconds
+
+        # Retrying won't help when the package doesn't exist in the Store source (0x8A150014),
+        # or when winget hung: that's usually a first-run prompt, and another 15 minutes won't clear it
+        $notFound = ($result.ExitCode -eq -1978335212) -or ($result.Output -match "No package found matching input criteria")
+        if ((Test-WingetInstallSucceeded -Result $result) -or $notFound -or $result.TimedOut) {
+            break
+        }
+
+        if ($attempt -lt $maxAttempts) {
+            $reason = if ($result.TimedOut) { "timed out" } else { "exit code $($result.ExitCode)" }
+            Write-Host "  Install attempt $attempt failed ($reason), retrying..." -ForegroundColor Yellow
+            Write-GbeLog "WARNING: winget install attempt $attempt for $PackageName (ID: $PackageId) failed ($reason), retrying" -Level WARNING
+            Write-GbeLog "Output: $($result.Output)" -Level DEBUG
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    $result.Attempts = $attemptsMade
+    return $result
+}
+
+function Open-StorePackagePages {
+    <#
+    .SYNOPSIS
+        Logs Store links for packages winget couldn't install and opens them in the browser.
+    .DESCRIPTION
+        Uses the apps.microsoft.com web listing so each package gets its own browser tab
+        (the Store app is single-window, so ms-windows-store:// links would replace each other).
+        Links are always printed and logged; tabs are only opened in interactive runs,
+        and not at all with -LinksOnly (e.g. when winget itself is broken and every app failed).
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Packages,
+
+        [switch]$LinksOnly
+    )
+
+    if ($Packages.Count -eq 0) {
+        return
+    }
+
+    Write-Host "`nThese apps couldn't be installed automatically. Install them from the Microsoft Store:" -ForegroundColor Yellow
+    Write-GbeLog "Packages needing manual Store install: $($Packages.Count)" -Level WARNING
+
+    foreach ($pkg in $Packages) {
+        $webUrl = "https://apps.microsoft.com/detail/$($pkg.Id)"
+        $storeUrl = "ms-windows-store://pdp/?ProductId=$($pkg.Id)"
+        Write-Host "  • $($pkg.Name): $webUrl" -ForegroundColor White
+        Write-GbeLog "Manual install: $($pkg.Name) (ID: $($pkg.Id)) $webUrl | $storeUrl" -Level WARNING
+    }
+
+    if ($script:IsAutonomous -or $LinksOnly) {
+        return
+    }
+
+    Write-Host "`nOpening the Store pages in your browser..." -ForegroundColor Cyan
+    foreach ($pkg in $Packages) {
+        try {
+            # Launch through explorer.exe so the browser opens un-elevated in the user's session
+            Start-Process -FilePath "explorer.exe" -ArgumentList "https://apps.microsoft.com/detail/$($pkg.Id)"
+            Start-Sleep -Milliseconds 500
+        }
+        catch {
+            Write-GbeLog "Could not open Store page for $($pkg.Name): $($_.Exception.Message)" -Level WARNING
+        }
     }
 }
 
@@ -331,11 +471,76 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     exit 1
 }
 
+# Use UTF-8 for console and native command I/O so non-ASCII user folders
+# (e.g. C:\Users\Žygimantas) survive cmd/winget/pnputil round-trips (#127)
+try {
+    $script:Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [Console]::OutputEncoding = $script:Utf8NoBom
+    [Console]::InputEncoding = $script:Utf8NoBom
+    $OutputEncoding = $script:Utf8NoBom
+}
+catch {
+    # No attached console (redirected/CI host); PowerShell's own file I/O is already UTF-8
+    Write-Debug "Console encoding not changed: $($_.Exception.Message)"
+}
+
+# Microsoft Store PowerShell can fail to load the CIM/MI native layer on some systems, which
+# breaks hardware detection and scheduled task creation (#124). Relaunch in a regular install
+# when there is one; otherwise only stop if CIM is actually broken in this session.
+$script:IsStorePowerShell = $PSHOME -like '*\WindowsApps\*'
+$script:PwshPath = Get-ClassicPwshPath
+$relaunchInClassicPwsh = $false
+
+if ($script:IsStorePowerShell -and -not $script:IsConfigurationOnly) {
+    $cimWorks = $true
+    if (-not $script:PwshPath) {
+        try {
+            $null = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        }
+        catch {
+            $cimWorks = $false
+        }
+    }
+
+    if ($script:PwshPath) {
+        Write-Host "⚠ Microsoft Store PowerShell detected, relaunching in $($script:PwshPath)" -ForegroundColor Yellow
+        $relaunchInClassicPwsh = $true
+    }
+    elseif ($cimWorks) {
+        Write-Host "⚠ Running in Microsoft Store PowerShell. It works here, but the regular build is more reliable:" -ForegroundColor Yellow
+        Write-Host "   winget install --id Microsoft.PowerShell --source winget" -ForegroundColor Gray
+    }
+    else {
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host "  ERROR: Microsoft Store PowerShell is not supported" -ForegroundColor Red
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "You are running: $PSHOME" -ForegroundColor Yellow
+        Write-Host "The Store build can't create scheduled tasks or read hardware info (WMI/CIM)." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Install the regular PowerShell 7 build:" -ForegroundColor Cyan
+        Write-Host "   winget install --id Microsoft.PowerShell --source winget" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Or download the MSI from: https://aka.ms/powershell" -ForegroundColor Cyan
+        Write-Host "Then run this script again; it will pick up the new install automatically." -ForegroundColor Gray
+        Write-Host ""
+        Invoke-InteractivePause
+        exit 1
+    }
+}
+
+if (-not $script:PwshPath) {
+    $script:PwshPath = "pwsh"
+}
+
 # Self-elevation: Try gsudo first (preserves console), fallback to native UAC
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
-    Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+if ((-not $script:IsConfigurationOnly) -and ((-not $isAdmin) -or $relaunchInClassicPwsh)) {
+    if (-not $isAdmin) {
+        Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+    }
 
     $forwardedArgs = @()
     foreach ($entry in $PSBoundParameters.GetEnumerator()) {
@@ -382,23 +587,31 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     
     # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
     $tempScript = Join-Path $env:TEMP "GBE_Elevated_$([System.IO.Path]::GetRandomFileName()).ps1"
-    if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+    if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
         Copy-Item -LiteralPath $PSCommandPath -Destination $tempScript -Force
     }
     else {
-        $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
+        $MyInvocation.MyCommand.Definition | Out-File -LiteralPath $tempScript -Encoding utf8BOM -Force
     }
     $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript) + $forwardedArgs
 
     if ($DebugOutput) {
         Write-Host "DEBUG: Elevation args: $($elevatedArgs -join ' ')" -ForegroundColor DarkGray
     }
-    
+
+    # Already elevated, only switching away from Store PowerShell
+    if ($isAdmin) {
+        & $script:PwshPath @elevatedArgs
+        $exitCode = $LASTEXITCODE
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        exit $exitCode
+    }
+
     # Try gsudo first (faster, preserves console context)
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
     if ($gsudoPath) {
         Write-Host "  Using gsudo for elevation..." -ForegroundColor Gray
-        & gsudo pwsh @elevatedArgs
+        & gsudo $script:PwshPath @elevatedArgs
         $exitCode = $LASTEXITCODE
         Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
         exit $exitCode
@@ -408,7 +621,7 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
     if ($sudoPath) {
         Write-Host "  Using Windows sudo for elevation..." -ForegroundColor Gray
-        & sudo pwsh @elevatedArgs
+        & sudo $script:PwshPath @elevatedArgs
         $exitCode = $LASTEXITCODE
         Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
         exit $exitCode
@@ -417,7 +630,7 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
     $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-    $elevatedProcess = Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
+    $elevatedProcess = Start-Process $script:PwshPath -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
     Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
     exit $elevatedProcess.ExitCode
 }
@@ -464,7 +677,7 @@ function Write-GbeLog {
     $logEntry = "[$timestamp] [$Level] $Message"
     
     try {
-        Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
+        Add-Content -LiteralPath $script:LogFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
     }
     catch {
             Write-Debug "Failed to write log entry: $($_.Exception.Message)"
@@ -1991,7 +2204,7 @@ function Test-InstallationHealth {
         Returns version info and component status for enhanced detection.
     #>
     param(
-        [string]$ConfigPath = "$env:USERPROFILE\GalaxyBookEnablerData\gbe-config.json",
+        [string]$ConfigPath = (Join-Path $env:USERPROFILE ".galaxy-book-enabler\gbe-config.json"),
         [string]$TaskName = "GalaxyBookEnabler",
         [string]$SssePath = "C:\GalaxyBook"
     )
@@ -2012,11 +2225,11 @@ function Test-InstallationHealth {
     }
     
     # Check 1: Config file
-    if (Test-Path $ConfigPath) {
+    if (Test-Path -LiteralPath $ConfigPath) {
         $health.Components.Config = $true
         $health.ComponentCount++
         try {
-            $config = Get-Content $ConfigPath | ConvertFrom-Json
+            $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding utf8 | ConvertFrom-Json
             if ($config.InstalledVersion) {
                 $health.GbeVersion = $config.InstalledVersion
             }
@@ -4228,6 +4441,162 @@ function Start-GalaxyBookScheduledTasks {
     return ($startedCount -gt 0)
 }
 
+function Get-InstalledSsseEngineVersion {
+    <#
+    .SYNOPSIS
+        Returns the FileVersion of the installed SamsungSystemSupportService.exe, or $null.
+    .DESCRIPTION
+        Looks at every service whose ImagePath points at SamsungSystemSupportService.exe
+        (GBeSupportService*, or a genuine INF-installed SamsungSystemSupportService).
+        Prefers the enabler's own GBeSupportService*, then services that aren't disabled, so a
+        leftover original service with an older exe doesn't decide the version.
+    #>
+    param(
+        [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services"
+    )
+
+    $candidates = foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
+        $properties = Get-ItemProperty -LiteralPath $serviceKey.PSPath -ErrorAction SilentlyContinue
+        if (-not $properties.ImagePath) { continue }
+
+        $exePath = [Environment]::ExpandEnvironmentVariables(([string]$properties.ImagePath).Trim().Trim('"'))
+        if ($exePath -notlike '*\SamsungSystemSupportService.exe') { continue }
+        if (-not (Test-Path -LiteralPath $exePath)) { continue }
+
+        [pscustomobject]@{
+            ExePath  = $exePath
+            IsGbe    = $serviceKey.PSChildName -like 'GBeSupportService*'
+            Disabled = $properties.Start -eq 4
+        }
+    }
+
+    foreach ($candidate in @($candidates | Sort-Object -Property @{ Expression = 'IsGbe'; Descending = $true }, @{ Expression = 'Disabled'; Descending = $false })) {
+        $fileVersion = (Get-Item -LiteralPath $candidate.ExePath).VersionInfo.FileVersion
+        if ($fileVersion) {
+            return $fileVersion.Trim()
+        }
+    }
+
+    return $null
+}
+
+function Set-SamsungSettingsRegistration {
+    <#
+    .SYNOPSIS
+        Writes the registry values Samsung's own SSSE install and engine would have written.
+    .DESCRIPTION
+        GalaxyBookEnabler installs SSSE with sc.exe instead of SFourSWComp15.inf, and on a
+        registry-only spoof the engine reads the real manufacturer from WMI. Samsung Settings
+        then reports "the service is not working" (#94, #51). This mirrors the original flow:
+          - INF AddReg: Services\<svc>\Parameters  Version=<DriverVersion>, Interface=6 (REG_SZ)
+          - Engine:     Services\<svc>             Version=<engine version>         (REG_SZ)
+          - Engine:     SOFTWARE\Samsung\SamsungSettings ModelType/Manufacturer/BIOSVersion/
+                        EngineVersion (REG_SZ) and ModuleSystem Version (REG_SZ),
+                        CheckSingleBom/SupportComputerInfo (REG_DWORD 1)
+        Manufacturer and BIOSVersion come from the (spoofed) BIOS key, like the engine does on
+        genuine or firmware-spoofed hardware. When the spoof hasn't been applied yet (first
+        install, before STEP 8), -Identity supplies the chosen model's values instead.
+        Per-module feature flags are left to the engine.
+    #>
+    param(
+        [string]$EngineVersion,
+        [hashtable]$Identity,
+        [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services",
+        [string]$SettingsKey = "HKLM:\SOFTWARE\Samsung\SamsungSettings",
+        [string]$BiosKey = "HKLM:\HARDWARE\DESCRIPTION\System\BIOS",
+        [bool]$TestMode = $false
+    )
+
+    if (-not $EngineVersion) {
+        $EngineVersion = Get-InstalledSsseEngineVersion -ServicesRoot $ServicesRoot
+    }
+
+    if (-not $EngineVersion) {
+        Write-Verbose "SSSE not installed; skipping Samsung Settings registration"
+        return $false
+    }
+
+    $bios = Get-ItemProperty -LiteralPath $BiosKey -ErrorAction SilentlyContinue
+    $manufacturer = $bios.SystemManufacturer
+    $biosVersion = $bios.BIOSVersion
+    if ($Identity -and $Identity.SystemManufacturer -and ($manufacturer -notmatch 'Samsung')) {
+        $manufacturer = $Identity.SystemManufacturer
+        $biosVersion = $Identity.BIOSVersion
+    }
+
+    if ($TestMode) {
+        Write-Host "  [TEST] Would register SSSE $EngineVersion for Samsung Settings (service Parameters + $SettingsKey)" -ForegroundColor Gray
+        return $true
+    }
+
+    # Every SSSE service plus the original service name Samsung Settings knows about
+    $serviceNames = [System.Collections.Generic.List[string]]::new()
+    foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
+        $imagePath = (Get-ItemProperty -LiteralPath $serviceKey.PSPath -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
+        if (($serviceKey.PSChildName -eq 'SamsungSystemSupportService') -or ($imagePath -like '*\SamsungSystemSupportService.exe*')) {
+            $serviceNames.Add($serviceKey.PSChildName)
+        }
+    }
+
+    foreach ($serviceName in $serviceNames) {
+        $serviceKeyPath = Join-Path $ServicesRoot $serviceName
+        $parametersPath = Join-Path $serviceKeyPath 'Parameters'
+
+        New-ItemProperty -LiteralPath $serviceKeyPath -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+        if ($serviceName -eq 'SamsungSystemSupportService') {
+            New-ItemProperty -LiteralPath $serviceKeyPath -Name 'DisplayName' -PropertyType String -Value 'SamsungSystemSupportService' -Force | Out-Null
+        }
+
+        if (-not (Test-Path -LiteralPath $parametersPath)) {
+            New-Item -Path $parametersPath | Out-Null
+        }
+        New-ItemProperty -LiteralPath $parametersPath -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+        New-ItemProperty -LiteralPath $parametersPath -Name 'Interface' -PropertyType String -Value '6' -Force | Out-Null
+        Write-GbeLog "Registered SSSE $EngineVersion on service $serviceName (Parameters Version/Interface)"
+    }
+
+    if (-not (Test-Path -LiteralPath $SettingsKey)) {
+        New-Item -Path $SettingsKey -Force | Out-Null
+    }
+    New-ItemProperty -LiteralPath $SettingsKey -Name 'ModelType' -PropertyType String -Value 'NotePC' -Force | Out-Null
+    if ($manufacturer) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'Manufacturer' -PropertyType String -Value $manufacturer -Force | Out-Null
+    }
+    if ($biosVersion) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'BIOSVersion' -PropertyType String -Value $biosVersion -Force | Out-Null
+    }
+    New-ItemProperty -LiteralPath $SettingsKey -Name 'EngineVersion' -PropertyType String -Value $EngineVersion -Force | Out-Null
+
+    $moduleSystemKey = Join-Path $SettingsKey 'ModuleSystem'
+    if (-not (Test-Path -LiteralPath $moduleSystemKey)) {
+        New-Item -Path $moduleSystemKey | Out-Null
+    }
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'CheckSingleBom' -PropertyType DWord -Value 1 -Force | Out-Null
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'SupportComputerInfo' -PropertyType DWord -Value 1 -Force | Out-Null
+
+    Write-GbeLog "Seeded $SettingsKey (Manufacturer=$manufacturer, BIOSVersion=$biosVersion, EngineVersion=$EngineVersion)"
+    return $true
+}
+
+function Invoke-SamsungSettingsRegistration {
+    # Runs Set-SamsungSettingsRegistration with the chosen model as fallback identity; never throws
+    param(
+        [bool]$TestMode = $false
+    )
+
+    try {
+        $identity = if ($script:biosValuesToUse) { $script:biosValuesToUse } else { Get-DefaultBiosValues }
+        if (Set-SamsungSettingsRegistration -Identity $identity -TestMode $TestMode) {
+            Write-Host "✓ Registered SSSE with Samsung Settings" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "⚠ Could not register SSSE with Samsung Settings: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
+    }
+}
+
 function Install-SystemSupportEngine {
     <#
     .SYNOPSIS
@@ -4523,6 +4892,8 @@ function Install-SystemSupportEngine {
             }
             "2" {
                 Write-Host "`n✓ Keeping existing installation" -ForegroundColor Green
+                # Older installs never got these values, so add them even when SSSE is kept
+                Invoke-SamsungSettingsRegistration -TestMode $TestMode
                 return $true
             }
             "3" {
@@ -5282,6 +5653,7 @@ function Install-SystemSupportEngine {
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
+                Invoke-SamsungSettingsRegistration -TestMode $TestMode
                 $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
                 Write-Host "`n  IMPORTANT: Please sign in to Samsung Settings and confirm the UI is working." -ForegroundColor Yellow
                 Write-Host "  Once you have signed in and confirmed, press any key to install the latest version." -ForegroundColor White
@@ -5459,7 +5831,7 @@ function Install-SystemSupportEngine {
         }
         else {
             try {
-                $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $settingsPackage.Id) -TimeoutSeconds 900
+                $installResult = Invoke-StorePackageInstall -PackageId $settingsPackage.Id -PackageName $settingsPackage.Name -TimeoutSeconds 900
                 if ($installResult.TimedOut) {
                     Write-Host "    ✗ winget timed out while installing $($settingsPackage.Name)" -ForegroundColor Red
                     Write-Host "      Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
@@ -5480,12 +5852,20 @@ function Install-SystemSupportEngine {
                         Write-Host "    ⚠ $($settingsPackage.Name) - may install automatically after reboot" -ForegroundColor Yellow
                     }
                 }
+
+                if (-not (Test-WingetInstallSucceeded -Result $installResult)) {
+                    Open-StorePackagePages -Packages @([pscustomobject]$settingsPackage)
+                }
             }
             catch {
                 Write-Host "    ⚠ Could not install $($settingsPackage.Name) automatically" -ForegroundColor Yellow
                 Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
+                Open-StorePackagePages -Packages @([pscustomobject]$settingsPackage)
             }
         }
+
+        # Register before the first launch so Samsung Settings sees a working service (#94)
+        Invoke-SamsungSettingsRegistration -TestMode $TestMode
 
         $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "SSSE install and Samsung Settings reinstall" -ShowBluetoothSyncInstructions $true
         
@@ -5515,7 +5895,9 @@ function Install-SystemSupportEngine {
         elseif ($finalVersion) {
             Write-Host "`n✓ You are running the latest SSSE version ($finalVersion)" -ForegroundColor Green
         }
-        
+
+        Invoke-SamsungSettingsRegistration -TestMode $TestMode
+
         if (-not $AutoInstall) {
             Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
@@ -6608,6 +6990,7 @@ function Install-SamsungPackages {
                 Write-Host "    This usually means winget is waiting on first-run setup or the Store source is stuck." -ForegroundColor Yellow
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
                 Write-GbeLog "ERROR: winget preflight timed out before Samsung package installation" -Level ERROR
+                Open-StorePackagePages -Packages $Packages -LinksOnly
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6625,6 +7008,7 @@ function Install-SamsungPackages {
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
                 Write-GbeLog "ERROR: winget preflight failed before Samsung package installation" -Level ERROR
                 Write-GbeLog "Output: $($wingetPreflight.Output)" -Level DEBUG
+                Open-StorePackagePages -Packages $Packages -LinksOnly
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6638,6 +7022,7 @@ function Install-SamsungPackages {
             Write-Host "    Install or repair 'App Installer', then run 'winget list' once and retry." -ForegroundColor Cyan
             Write-Host "    Microsoft Store: ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1" -ForegroundColor Gray
             Write-GbeLog "ERROR: winget unavailable before Samsung package installation: $($_.Exception.Message)" -Level ERROR
+            Open-StorePackagePages -Packages $Packages -LinksOnly
             return @{
                 Installed = 0
                 Failed    = $Packages.Count
@@ -6647,6 +7032,8 @@ function Install-SamsungPackages {
         }
     }
     
+    $failedPackages = [System.Collections.Generic.List[object]]::new()
+
     foreach ($pkg in $Packages) {
         Write-Host "[$($installed + $failed + $skipped + 1)/$($Packages.Count)] " -NoNewline -ForegroundColor Gray
         Write-Host "$($pkg.Name)" -ForegroundColor White
@@ -6721,6 +7108,7 @@ function Install-SamsungPackages {
                     Write-Host "    Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
                     Write-GbeLog "ERROR: winget list timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                     $failed++
+                    [void]$failedPackages.Add($pkg)
                     continue
                 }
 
@@ -6735,13 +7123,14 @@ function Install-SamsungPackages {
                 else {
                     Write-Host "  Installing..." -ForegroundColor Gray
                     Write-GbeLog "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
-                    $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 900
+                    $installResult = Invoke-StorePackageInstall -PackageId $pkg.Id -PackageName $pkg.Name -TimeoutSeconds 900
                     if ($installResult.TimedOut) {
                         Write-Host "  ✗ Installation timed out" -ForegroundColor Red
                         Write-Host "    winget stopped responding while installing this package." -ForegroundColor Yellow
                         Write-Host "    Try running 'winget list' manually first, then retry the installer." -ForegroundColor Cyan
                         Write-GbeLog "ERROR: winget install timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                         continue
                     }
 
@@ -6766,6 +7155,7 @@ function Install-SamsungPackages {
                         Write-Host "    Store link: ms-windows-store://pdp/?ProductId=$($pkg.Id)" -ForegroundColor Gray
                         Write-Host "" -ForegroundColor Yellow
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     # Winget always returns 0 even when "already installed" or "no upgrade found"
                     # Parse output to determine actual result
@@ -6786,6 +7176,7 @@ function Install-SamsungPackages {
                         Write-GbeLog "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
                         Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     elseif ($installResult.ExitCode -ne 0) {
                         Write-Host "  ✗ Installation failed (Exit code: $($installResult.ExitCode))" -ForegroundColor Red
@@ -6793,6 +7184,7 @@ function Install-SamsungPackages {
                         Write-GbeLog "ERROR: Package $($pkg.Name) failed with exit code $($installResult.ExitCode)" -Level ERROR
                         Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     else {
                         # Exit code 0 but unclear message - assume already installed/up to date
@@ -6804,12 +7196,17 @@ function Install-SamsungPackages {
             catch {
                 Write-Host "  ✗ Error: $_" -ForegroundColor Red
                 $failed++
+                [void]$failedPackages.Add($pkg)
             }
         }
         
         Write-Host ""
     }
-    
+
+    if ($failedPackages.Count -gt 0) {
+        Open-StorePackagePages -Packages $failedPackages.ToArray()
+    }
+
     return @{
         Installed = $installed
         Failed    = $failed
@@ -6869,8 +7266,8 @@ function Install-SSSEDriverToStore {
             $pnputilProc.Refresh()
             if ($pnputilProc.ExitCode -ne 0) {
                 $pnputilOutput = @()
-                if (Test-Path $pnputilOut) { $pnputilOutput += Get-Content $pnputilOut -ErrorAction SilentlyContinue }
-                if (Test-Path $pnputilErr) { $pnputilOutput += Get-Content $pnputilErr -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $pnputilOut) { $pnputilOutput += Get-Content -LiteralPath $pnputilOut -Encoding utf8 -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $pnputilErr) { $pnputilOutput += Get-Content -LiteralPath $pnputilErr -Encoding utf8 -ErrorAction SilentlyContinue }
                 Write-Host "    ✗ Failed to add INF to store" -ForegroundColor Red
                 Write-Host "      Error: $($pnputilOutput -join ' ')" -ForegroundColor Red
                 return $false
@@ -7000,12 +7397,12 @@ function Get-LegacyBiosValues {
         [string]$OldBatchPath
     )
     
-    if (-not (Test-Path $OldBatchPath)) {
+    if (-not (Test-Path -LiteralPath $OldBatchPath)) {
         return $null
     }
-    
+
     try {
-        $content = Get-Content $OldBatchPath -Raw
+        $content = Get-Content -LiteralPath $OldBatchPath -Raw -Encoding utf8
         
         # Default values for comparison
         $defaults = Get-DefaultBiosValues
@@ -7029,7 +7426,7 @@ function Get-LegacyBiosValues {
         if ($content -match 'SystemProductName.*?/d\s+"([^"]+)"') {
             $values.SystemProductName = $Matches[1]
         }
-        if ($content -match 'ProductSku.*?/d\s+"([^"]+)"') {
+        if ($content -match '(?:ProductSku|SystemSKU).*?/d\s+"([^"]+)"') {
             $values.ProductSku = $Matches[1]
         }
         if ($content -match 'BaseBoardManufacturer.*?/d\s+"([^"]+)"') {
@@ -7040,13 +7437,13 @@ function Get-LegacyBiosValues {
         }
         
         # DWORD values (REG_DWORD) - can be with or without quotes
-        if ($content -match 'BIOSMajorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match 'BIOSMajorRelease.*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.BIOSMajorRelease = $Matches[1]
         }
-        if ($content -match 'BIOSMinorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match 'BIOSMinorRelease.*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.BIOSMinorRelease = $Matches[1]
         }
-        if ($content -match 'EnclosureKind.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match '(?:EnclosureKind|EnclosureType).*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.EnclosureKind = $Matches[1]
         }
         
@@ -7138,6 +7535,7 @@ function New-RegistrySpoofBatch {
     
     $batchContent = @"
 @echo off
+chcp 65001 >nul
 REM ============================================================================
 REM Galaxy Book Enabler - Registry Spoof Script
 REM Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -7187,6 +7585,18 @@ $(Format-SysInfoRegValue "SystemManufacturer" $values.SystemManufacturer)
 $(Format-SysInfoRegValue "SystemProductName" $values.SystemProductName)
 
 REM ============================================================================
+REM SECTION 4: HKLM\SOFTWARE\Samsung\SamsungSettings
+REM SSSE fills these from SMBIOS/WMI, which a registry-only spoof doesn't change.
+REM Only touched once SSSE has created the key.
+REM ============================================================================
+reg query "HKLM\SOFTWARE\Samsung\SamsungSettings" >nul 2>&1
+if not errorlevel 1 (
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v ModelType /t REG_SZ /d "NotePC" /f
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v Manufacturer /t REG_SZ /d "$($values.SystemManufacturer)" /f
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v BIOSVersion /t REG_SZ /d "$($values.BIOSVersion)" /f
+)
+
+REM ============================================================================
 REM Registry spoof complete!
 REM ============================================================================
 "@
@@ -7195,7 +7605,8 @@ REM ============================================================================
         Write-Host "    [TEST] Would write registry batch to: $OutputPath" -ForegroundColor Gray
     }
     else {
-        $batchContent | Set-Content $OutputPath -Encoding ASCII
+        # cmd.exe misparses a BOM, so write UTF-8 without one (paired with chcp 65001 above)
+        $batchContent | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
     }
 }
 
@@ -7367,7 +7778,7 @@ Write-Log "Script finished"
         Write-Host "    [TEST] Would write MultiControl script to: $OutputPath" -ForegroundColor Gray
     }
     else {
-        $scriptContent | Set-Content -Path $OutputPath -Encoding UTF8
+        $scriptContent | Set-Content -LiteralPath $OutputPath -Encoding utf8BOM
     }
 }
 
@@ -7461,7 +7872,7 @@ if ($requiresAdmin -and -not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-                $elevatedProcess = Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
+                $elevatedProcess = Start-Process -FilePath $script:PwshPath -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
                 exit $elevatedProcess.ExitCode
             }
             else {
@@ -8547,7 +8958,7 @@ else {
         IsIntelWiFi      = $wifiCheck.IsIntel
     }
 
-    $config | ConvertTo-Json | Set-Content $configPath
+    $config | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
     Write-Host "✓ Configuration saved" -ForegroundColor Green
 }
 
@@ -8580,7 +8991,10 @@ else {
     }
 
     $taskDescription = "Spoofs system as Samsung Galaxy Book to enable Samsung features"
-    $action = New-ScheduledTaskAction -Execute $batchScriptPath
+    # Run the batch through cmd.exe with the path quoted so spaces and non-ASCII
+    # characters in the user folder don't break the SYSTEM startup task (#127)
+    $cmdPath = Join-Path $env:SystemRoot "System32\cmd.exe"
+    $action = New-ScheduledTaskAction -Execute $cmdPath -Argument "/d /c `"`"$batchScriptPath`"`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $trigger.Delay = "PT10S"
     $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -8588,9 +9002,12 @@ else {
 
     Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 
-    $pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    # SYSTEM can't run the Store PowerShell app alias, so the task needs a regular install.
+    # Init-SamsungMultiControlOnLogin.ps1 is Windows PowerShell 5.1 compatible (UTF-8 BOM),
+    # so fall back to the built-in powershell.exe on Store-only systems.
+    $pwshPath = Get-ClassicPwshPath
     if (-not $pwshPath) {
-        $pwshPath = Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe"
+        $pwshPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     }
 
     $multiControlDescription = "Restarts Samsung services after startup to improve Multi Control stability (Discussion #76)"
@@ -8923,7 +9340,7 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
             Write-Host "  [TEST] Would create launcher script: $ps1LauncherPath" -ForegroundColor Gray
         }
         else {
-            $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
+            $ps1Content | Set-Content -LiteralPath $ps1LauncherPath -Encoding utf8BOM
         }
         
         $renderHeaderBlock = {
@@ -9035,7 +9452,7 @@ if ($TestMode) {
 }
 else {
     Write-Host "Applying Samsung Galaxy Book spoof..." -ForegroundColor Yellow
-    Start-Process -FilePath $batchScriptPath -Wait -NoNewWindow
+    Start-Process -FilePath (Join-Path $env:SystemRoot "System32\cmd.exe") -ArgumentList "/d /c `"`"$batchScriptPath`"`"" -Wait -NoNewWindow
     Write-Host "✓ Registry spoof applied!" -ForegroundColor Green
     if ($biosValuesToUse) {
         $fam = $biosValuesToUse.SystemFamily
@@ -9054,7 +9471,8 @@ else {
     Write-Host "`nCreating Samsung System Support Service (dummy)..." -ForegroundColor Yellow
     $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
     if (-not $dummyService) {
-        & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= disabled 2>&1 | Out-Null
+        # Same DisplayName as SFourSWComp15.inf (no spaces)
+        & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "SamsungSystemSupportService" start= disabled 2>&1 | Out-Null
         Write-Host "✓ Dummy service created (disabled)" -ForegroundColor Green
     }
     else {
@@ -9069,6 +9487,9 @@ else {
         }
     }
 }
+
+# Runs again after the spoof so Manufacturer/BIOSVersion match the applied BIOS key (#94, #51)
+Invoke-SamsungSettingsRegistration -TestMode $TestMode
 
 if ($TestMode) {
     Write-Host "  [TEST] Would stop Samsung processes" -ForegroundColor Gray

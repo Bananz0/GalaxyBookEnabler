@@ -22,58 +22,49 @@ jobs:
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
-          
+
           # Detect prerelease (e.g., v3.0.0-beta.1)
           [[ "$VERSION" == *-* ]] && PRERELEASE=true || PRERELEASE=false
-          
+
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
-      - name: Validate changelog
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          BASE=${VERSION%%-*}
-          grep -qE "## \[($VERSION|$BASE|Unreleased)\]" CHANGELOG.md || {
-            echo "❌ No changelog entry found"; exit 1
-          }
-
+      # Bumps $SCRIPT_VERSION, the .NOTES version, README badge, PACKAGES.md and
+      # CHANGELOG ([Unreleased] -> [version] - date, compare links) in the tagged code
       - name: Bump version in files
+        env:
+          RELEASE_DATE: ${{ steps.version.outputs.date }}
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          sed -i 's/$SCRIPT_VERSION = ".*"/$SCRIPT_VERSION = "'"$VERSION"'"/' Install-GalaxyBookEnabler.ps1
-          sed -i 's/version-[^-]*-blue/version-'"$VERSION"'-blue/' README.md
-
-      - name: Commit version bump
-        run: |
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add -A
-          git diff --staged --quiet || {
-            git commit -m "release: ${{ steps.version.outputs.version }}"
-            git push origin HEAD:main
-          }
+          bash .github/scripts/bump-version.sh "${{ steps.version.outputs.version }}"
+          git --no-pager diff --stat
 
       - name: Extract changelog
         id: changelog
         run: |
           VERSION=${{ steps.version.outputs.version }}
           BASE=${VERSION%%-*}
-          
+
           # Extract version section
           extract() {
             # Escape regex special characters in version string for awk
             local pattern=$(echo "$1" | sed 's/[.[\*^$]/\\&/g')
             awk "/^## \\[$pattern\\]/{f=1;next}/^## \\[/{f=0}f" CHANGELOG.md
           }
-          
+
           CONTENT=$(extract "$VERSION")
           [ -z "$CONTENT" ] && CONTENT=$(extract "$BASE")
           [ -z "$CONTENT" ] && [ "${{ steps.version.outputs.prerelease }}" = "true" ] && CONTENT=$(extract "Unreleased")
-          
+
           # Trim leading/trailing blank lines
           CONTENT=$(echo "$CONTENT" | sed '/./,$!d' | sed ':a;/^[[:space:]]*$/{ $d;N;ba;}')
-          
+
+          if [ -z "$CONTENT" ]; then
+            echo "❌ CHANGELOG.md has no notes for $VERSION. Add them under ## [Unreleased] before tagging."
+            exit 1
+          fi
+
           {
             echo "body<<EOF"
             echo "$CONTENT"
@@ -94,3 +85,27 @@ jobs:
             irm https://raw.githubusercontent.com/Bananz0/GalaxyBookEnabler/main/Install-GalaxyBookEnabler.ps1 | iex
             ```
           files: Install-GalaxyBookEnabler.ps1
+
+      # Apply the same bump on top of the latest main (not the tag commit), so the push
+      # is always a fast-forward even if main moved after the tag. Prereleases leave main alone.
+      - name: Push version bump to main
+        if: steps.version.outputs.prerelease == 'false'
+        env:
+          RELEASE_DATE: ${{ steps.version.outputs.date }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+          git fetch origin main
+          git worktree add -B release-bump "$RUNNER_TEMP/main" origin/main
+          bash .github/scripts/bump-version.sh "$VERSION" "$RUNNER_TEMP/main"
+
+          cd "$RUNNER_TEMP/main"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "main is already at $VERSION"
+            exit 0
+          fi
+          git commit -m "release: $VERSION"
+          git push origin HEAD:main
