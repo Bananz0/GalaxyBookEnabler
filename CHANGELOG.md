@@ -10,13 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Samsung Settings registration** - Writes the service `Parameters` (`Version`, `Interface`) and `SOFTWARE\Samsung\SamsungSettings` identity values that Samsung's own SSSE install and engine write, so Samsung Settings no longer says "the service is not working" on registry-only spoofs ([#94](https://github.com/Bananz0/GalaxyBookEnabler/issues/94), [#51](https://github.com/Bananz0/GalaxyBookEnabler/issues/51), [#99](https://github.com/Bananz0/GalaxyBookEnabler/issues/99), [#123](https://github.com/Bananz0/GalaxyBookEnabler/issues/123))
+  - Thanks [@Minpeach0501](https://github.com/Minpeach0501) for finding the registry workaround, [@kklim0618](https://github.com/kklim0618) for spotting the wrong `Manufacturer` value, and [@JosephSH2003](https://github.com/JosephSH2003) for confirming it on a Galaxy Book3 Pro spoof
+  - Reported by [@Inchgarvie](https://github.com/Inchgarvie), [@kklim0618](https://github.com/kklim0618), [@MaorSS](https://github.com/MaorSS) and [@zoko-fabiol](https://github.com/zoko-fabiol)
 - **Store install fallback** - Store apps install with `--source msstore` and retry once; apps that still fail are logged and opened in the browser on their Microsoft Store page ([#111](https://github.com/Bananz0/GalaxyBookEnabler/issues/111))
+  - Reported by [@leanne-purple](https://github.com/leanne-purple) and [@FoxxoOwO](https://github.com/FoxxoOwO), with winget output from [@tanay-kondapally](https://github.com/tanay-kondapally)
 - Release workflow bumps every version reference (script, `.NOTES`, README badge, PACKAGES.md, CHANGELOG) and pushes the bump on top of the latest `main`
 
 ### Fixed
 
 - Crashes when the Windows user folder has non-ASCII characters; generated scripts and logs are now UTF-8 and the startup task quotes the batch path ([#127](https://github.com/Bananz0/GalaxyBookEnabler/issues/127))
+  - Thanks [@dziugas1959](https://github.com/dziugas1959) for reporting it and suggesting the UTF-8 fix
 - Microsoft Store PowerShell: relaunches in a regular PowerShell 7 when one is installed and only stops when WMI/CIM actually fails ([#124](https://github.com/Bananz0/GalaxyBookEnabler/issues/124))
+  - Thanks [@weslleyrufinow](https://github.com/weslleyrufinow) for the detailed report and the fallback idea
 - Reinstalls kept the default SKU and enclosure type instead of the custom ones from the existing spoof batch
 - Installation health check looked for the config in the wrong folder
 - Nightly regression suite expected the old default model

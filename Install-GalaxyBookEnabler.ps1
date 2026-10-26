@@ -470,6 +470,7 @@ try {
 }
 catch {
     # No attached console (redirected/CI host); PowerShell's own file I/O is already UTF-8
+    Write-Debug "Console encoding not changed: $($_.Exception.Message)"
 }
 
 # Microsoft Store PowerShell can fail to load the CIM/MI native layer on some systems, which
