@@ -15,7 +15,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 | Samsung Settings Runtime | 9NL68DVFP841 | Required runtime for Settings |
 | Samsung Cloud | 9NFWHCHM52HQ | Cloud storage and sync |
 | Knox Matrix for Windows | 9NJRV1DT8N79 | Samsung Knox security synchronization |
-| Galaxy Connect | 9NGW9K44GQ5F | Cross-device continuity |
+| Galaxy Connect | 9NGW9K44GQ5F | Cross-device continuity. Officially supported on non-Samsung Windows 11 PCs |
 | Samsung Intelligence Service | 9NS0SHL4PQL9 | Galaxy AI features and AI Select support |
 | Samsung Bluetooth Sync | 9NJNNJTTFL45 | Bluetooth device synchronization |
 | Galaxy Book Experience | 9P7QF37HPMGX | Enhanced Galaxy Book features (shows available Samsung apps) |
@@ -30,11 +30,11 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 |---------|----------|---------------------|-------------|
 | Quick Share | 9PCTGDFXVZLJ | ✅ Yes | Fast file sharing between devices |
 | Camera Share | 9NPCS7FN6VB9 | ✅ Yes | Use phone camera with PC apps |
-| Storage Share | 9MVNW0XH7HS5 | ✅ Yes | Share storage between devices |
-| Multi Control | 9N3L4FZ03Q99 | ✅ Yes | Control devices with one keyboard/mouse. |
+| Storage Share | 9MVNW0XH7HS5 | ❌ No | Share storage between devices. Officially supported on non-Samsung PCs via Galaxy Connect |
+| Multi Control | 9N3L4FZ03Q99 | ❌ No | Control devices with one keyboard/mouse. Officially supported on non-Samsung PCs via Galaxy Connect |
 | Samsung Flow | 9NBLGGH5GB0M | ❌ No | Phone-PC integration |
 | Nearby Devices | 9PHL04NJNT67 | ❌ No | Manage and connect to nearby Samsung devices |
-| Second Screen | 9PLTXW5DX5KB | ✅ Yes | Use tablet as secondary display. Works on Wi-Fi 6/6E/7, not on Wi-Fi 5 |
+| Second Screen | 9PLTXW5DX5KB | ❌ No | Use tablet as secondary display. Officially supported on non-Samsung PCs via Galaxy Connect |
 
 > **Wi-Fi Compatibility Note:**
 >
@@ -42,7 +42,7 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 > - **Wi-Fi 7 (BE200, BE201, BE202)**: Full compatibility
 > - **Wi-Fi 6E (AX210, AX211, AX411)**: Full compatibility
 > - **Wi-Fi 6 (AX200, AX201)**: Full compatibility
-> - **Wi-Fi 5 / Wireless-AC 9000 Series (9260, 9560)**: Quick Share, Camera Share, Storage Share work. Multi Control and Second Screen do not work.
+> - **Wi-Fi 5 / Wireless-AC 9000 Series (9260, 9560)**: Quick Share and Camera Share work
 > - **Wi-Fi 5 / Wireless-AC 8000 Series (8265, 8260)**: Same as 9000 series
 >
 > **Not Tested / May Not Work:**
@@ -50,9 +50,9 @@ These packages are essential for Samsung ecosystem functionality and are auto-in
 > - **Wireless-AC 3000 Series (3168, 3165)**: Legacy adapters, untested
 > - These older adapters may not work with outdated drivers (e.g., Windows 8.1 drivers from 2020)
 >
-> **Multi Control Status**: Currently under investigation. Works intermittently on all Intel Wi-Fi generations but not reliably.
+> Quick Share and Camera Share also require **Intel Bluetooth**
 >
-> All wireless features also require **Intel Bluetooth**
+> **Officially supported:** Multi Control, Second Screen and Storage Share are officially supported on non-Samsung Windows 11 PCs through Galaxy Connect. Samsung requires Bluetooth 5.0+ with Extended BLE (built-in Intel, Realtek or MediaTek, or Intel/MediaTek USB/expansion-card adapters) and any Wi-Fi chipset. See the [README](README.md#officially-supported-features-galaxy-connect).
 
 ### Productivity
 | Package | Store ID | Description | Notes |
@@ -121,11 +121,12 @@ These packages install successfully but require additional configuration to func
 | Package | Store ID | Description | Notes |
 |---------|----------|-------------|-------|
 | Samsung Device Care | 9NBLGGH4XDV0 | Device optimization and diagnostics | Requires additional setup to function |
-| Samsung Phone | 9MWJXXLCHBGK | Phone app integration | Additional setup required |
 | Samsung Find | 9MWD59CZJ1RN | Find your devices | Additional setup required |
 | Quick Search | 9N092440192Z | System-wide search | Additional setup required |
 
 > **Note**: Configuration guides for these apps will be added in future updates.
+
+> **Samsung Phone** (9MWJXXLCHBGK) is officially supported on non-Samsung PCs from v1.1.19.0 and no longer needs extra steps. The installer still includes it in the Full Experience profile.
 
 ---
 
@@ -184,7 +185,7 @@ Recommended + additional working apps:
 ### Full Experience (31 packages)
 Recommended Plus + apps requiring extra setup:
 - Samsung Device Care
-- Samsung Phone
+- Samsung Phone (officially supported from v1.1.19.0)
 - Samsung Find
 - Quick Search
 
@@ -204,7 +205,7 @@ Pick individual packages by category with full control over what gets installed.
 - **Core (Required)**: 9
 - **Recommended (Essential)**: 11
 - **Recommended Plus (Additional)**: 8
-- **Requires Extra Steps**: 4
+- **Requires Extra Steps**: 3
 - **Non-Working**: 2
 - **Legacy**: 1
 
@@ -230,7 +231,7 @@ winget search "Samsung" --source msstore
 ## Tips
 
 - **Start with Recommended**: Best balance of features and compatibility
-- **Check Wi-Fi for Quick Share/Camera Share/Storage Share**: Requires Intel Wi-Fi (AC/AX/BE) + Intel Bluetooth
+- **Check Wi-Fi for Quick Share/Camera Share**: Requires Intel Wi-Fi (AC/AX/BE) + Intel Bluetooth
 - **Install Core First**: Test basic functionality before adding more
 - **Skip Non-Working**: No point installing Recovery or Update
 - **Custom for Power Users**: Pick exactly what you need

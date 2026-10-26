@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reported by [@leanne-purple](https://github.com/leanne-purple) and [@FoxxoOwO](https://github.com/FoxxoOwO), with winget output from [@tanay-kondapally](https://github.com/tanay-kondapally)
 - Release workflow bumps every version reference (script, `.NOTES`, README badge, PACKAGES.md, CHANGELOG) and pushes the bump on top of the latest `main`
 
+### Changed
+
+- Updated docs for Samsung's official support of non-Samsung Windows 11 PCs ([#100](https://github.com/Bananz0/GalaxyBookEnabler/issues/100))
+  - Multi Control, Second Screen, Storage Share, copy/paste, Continue on other devices and Auto switch Buds are officially supported through Galaxy Connect
+  - Samsung Phone is officially supported from v1.1.19.0
+  - Split Wi-Fi & Bluetooth compatibility into officially supported and enabler-only features
+  - Intel Wi-Fi + Intel Bluetooth requirement now only applies to Quick Share and Camera Share
+
 ### Fixed
 
 - Crashes when the Windows user folder has non-ASCII characters; generated scripts and logs are now UTF-8 and the startup task quotes the batch path ([#127](https://github.com/Bananz0/GalaxyBookEnabler/issues/127))
