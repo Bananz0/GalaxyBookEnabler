@@ -199,6 +199,30 @@ function ConvertTo-StartProcessArguments {
     return $quotedArguments
 }
 
+function Get-ClassicPwshPath {
+    <#
+    .SYNOPSIS
+        Returns a pwsh.exe that isn't the Microsoft Store (MSIX) build, or $null.
+    .DESCRIPTION
+        Store PowerShell lives under WindowsApps and can't load the CIM/MI native
+        layer (#124). Its app execution alias also isn't usable by SYSTEM tasks.
+    #>
+    param(
+        [string[]]$Candidates = @(
+            (Join-Path $PSHOME 'pwsh.exe'),
+            (Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe')
+        ) + @(Get-Command pwsh.exe -All -CommandType Application -ErrorAction SilentlyContinue | ForEach-Object Source)
+    )
+
+    foreach ($candidate in $Candidates) {
+        if ($candidate -and $candidate -notlike '*\WindowsApps\*' -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 function Start-GalaxyBookEnablerScript {
     param(
         [Parameter(Mandatory = $true)]
@@ -209,26 +233,28 @@ function Start-GalaxyBookEnablerScript {
 
     $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $ForwardedArguments
     $isAdminSession = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $pwshExe = Get-ClassicPwshPath
+    if (-not $pwshExe) { $pwshExe = "pwsh" }
 
     if ($isAdminSession) {
-        & pwsh @launchArgs
+        & $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
     if ($gsudoPath) {
-        & gsudo pwsh @launchArgs
+        & gsudo $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
     if ($sudoPath) {
-        & sudo pwsh @launchArgs
+        & sudo $pwshExe @launchArgs
         return $LASTEXITCODE
     }
 
     $quotedLaunchArgs = ConvertTo-StartProcessArguments -Arguments $launchArgs
-    $process = Start-Process -FilePath "pwsh" -ArgumentList $quotedLaunchArgs -Verb RunAs -Wait -PassThru
+    $process = Start-Process -FilePath $pwshExe -ArgumentList $quotedLaunchArgs -Verb RunAs -Wait -PassThru
     return $process.ExitCode
 }
 
@@ -446,11 +472,48 @@ catch {
     # No attached console (redirected/CI host); PowerShell's own file I/O is already UTF-8
 }
 
+# Microsoft Store PowerShell can't load the CIM/MI native layer, which breaks hardware
+# detection and scheduled task creation (#124). Relaunch in a regular install when there is one.
+$script:IsStorePowerShell = $PSHOME -like '*\WindowsApps\*'
+$script:PwshPath = Get-ClassicPwshPath
+$relaunchInClassicPwsh = $false
+
+if ($script:IsStorePowerShell -and -not $script:IsConfigurationOnly) {
+    if ($script:PwshPath) {
+        Write-Host "⚠ Microsoft Store PowerShell detected, relaunching in $($script:PwshPath)" -ForegroundColor Yellow
+        $relaunchInClassicPwsh = $true
+    }
+    else {
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host "  ERROR: Microsoft Store PowerShell is not supported" -ForegroundColor Red
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "You are running: $PSHOME" -ForegroundColor Yellow
+        Write-Host "The Store build can't create scheduled tasks or read hardware info (WMI/CIM)." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Install the regular PowerShell 7 build:" -ForegroundColor Cyan
+        Write-Host "   winget install --id Microsoft.PowerShell --source winget" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Or download the MSI from: https://aka.ms/powershell" -ForegroundColor Cyan
+        Write-Host "Then run this script again; it will pick up the new install automatically." -ForegroundColor Gray
+        Write-Host ""
+        Invoke-InteractivePause
+        exit 1
+    }
+}
+
+if (-not $script:PwshPath) {
+    $script:PwshPath = "pwsh"
+}
+
 # Self-elevation: Try gsudo first (preserves console), fallback to native UAC
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
-    Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+if ((-not $script:IsConfigurationOnly) -and ((-not $isAdmin) -or $relaunchInClassicPwsh)) {
+    if (-not $isAdmin) {
+        Write-Host "⚡ Requesting administrator privileges..." -ForegroundColor Yellow
+    }
 
     $forwardedArgs = @()
     foreach ($entry in $PSBoundParameters.GetEnumerator()) {
@@ -508,12 +571,20 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     if ($DebugOutput) {
         Write-Host "DEBUG: Elevation args: $($elevatedArgs -join ' ')" -ForegroundColor DarkGray
     }
-    
+
+    # Already elevated, only switching away from Store PowerShell
+    if ($isAdmin) {
+        & $script:PwshPath @elevatedArgs
+        $exitCode = $LASTEXITCODE
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        exit $exitCode
+    }
+
     # Try gsudo first (faster, preserves console context)
     $gsudoPath = Get-Command gsudo -ErrorAction SilentlyContinue
     if ($gsudoPath) {
         Write-Host "  Using gsudo for elevation..." -ForegroundColor Gray
-        & gsudo pwsh @elevatedArgs
+        & gsudo $script:PwshPath @elevatedArgs
         $exitCode = $LASTEXITCODE
         Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
         exit $exitCode
@@ -523,7 +594,7 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     $sudoPath = Get-Command sudo -ErrorAction SilentlyContinue
     if ($sudoPath) {
         Write-Host "  Using Windows sudo for elevation..." -ForegroundColor Gray
-        & sudo pwsh @elevatedArgs
+        & sudo $script:PwshPath @elevatedArgs
         $exitCode = $LASTEXITCODE
         Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
         exit $exitCode
@@ -532,7 +603,7 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     # Fallback to native UAC (Start-Process -Verb RunAs)
     Write-Host "  Using UAC elevation..." -ForegroundColor Gray
     $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-    $elevatedProcess = Start-Process pwsh -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
+    $elevatedProcess = Start-Process $script:PwshPath -Verb RunAs -ArgumentList $quotedElevatedArgs -Wait -PassThru
     Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
     exit $elevatedProcess.ExitCode
 }
@@ -2106,7 +2177,7 @@ function Test-InstallationHealth {
         Returns version info and component status for enhanced detection.
     #>
     param(
-        [string]$ConfigPath = "$env:USERPROFILE\GalaxyBookEnablerData\gbe-config.json",
+        [string]$ConfigPath = (Join-Path $env:USERPROFILE ".galaxy-book-enabler\gbe-config.json"),
         [string]$TaskName = "GalaxyBookEnabler",
         [string]$SssePath = "C:\GalaxyBook"
     )
@@ -7160,7 +7231,7 @@ function Get-LegacyBiosValues {
         if ($content -match 'SystemProductName.*?/d\s+"([^"]+)"') {
             $values.SystemProductName = $Matches[1]
         }
-        if ($content -match 'ProductSku.*?/d\s+"([^"]+)"') {
+        if ($content -match '(?:ProductSku|SystemSKU).*?/d\s+"([^"]+)"') {
             $values.ProductSku = $Matches[1]
         }
         if ($content -match 'BaseBoardManufacturer.*?/d\s+"([^"]+)"') {
@@ -7171,13 +7242,13 @@ function Get-LegacyBiosValues {
         }
         
         # DWORD values (REG_DWORD) - can be with or without quotes
-        if ($content -match 'BIOSMajorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match 'BIOSMajorRelease.*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.BIOSMajorRelease = $Matches[1]
         }
-        if ($content -match 'BIOSMinorRelease.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match 'BIOSMinorRelease.*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.BIOSMinorRelease = $Matches[1]
         }
-        if ($content -match 'EnclosureKind.*?/d\s+["]?([0-9x]+)["]?\s+/f') {
+        if ($content -match '(?:EnclosureKind|EnclosureType).*?/d\s+["]?([0-9a-fA-Fx]+)["]?\s+/f') {
             $values.EnclosureKind = $Matches[1]
         }
         
@@ -7594,7 +7665,7 @@ if ($requiresAdmin -and -not $isAdmin) {
             if ($scriptPath) {
                 $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $arguments
                 $quotedElevatedArgs = ConvertTo-StartProcessArguments -Arguments $elevatedArgs
-                $elevatedProcess = Start-Process -FilePath "pwsh" -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
+                $elevatedProcess = Start-Process -FilePath $script:PwshPath -ArgumentList $quotedElevatedArgs -Verb RunAs -Wait -PassThru
                 exit $elevatedProcess.ExitCode
             }
             else {
@@ -8724,7 +8795,8 @@ else {
 
     Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 
-    $pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    # SYSTEM can't run the Store PowerShell app alias, so the task needs a regular install
+    $pwshPath = Get-ClassicPwshPath
     if (-not $pwshPath) {
         $pwshPath = Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe"
     }

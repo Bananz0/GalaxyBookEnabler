@@ -472,6 +472,10 @@ Describe 'Install-GalaxyBookEnabler.ps1 non-ASCII user profile paths (#127)' {
         $legacy | Should Not BeNullOrEmpty
         $legacy.Values.SystemFamily | Should Be $customFamily
         $legacy.Values.SystemProductName | Should Be '960XGL'
+        # The generated batch names these SystemSKU/EnclosureType, unlike v1 QS.bat
+        $legacy.Values.ProductSku | Should Be 'SCAI-A5A5-ADLP-PSLP'
+        $legacy.Values.EnclosureKind | Should Be '0x1f'
+        $legacy.Values.BIOSMinorRelease | Should Be '0x11'
         $legacy.Values.BIOSVersion | Should Be 'P08ALX.400.250306.05'
     }
 
@@ -603,5 +607,45 @@ Describe 'Install-GalaxyBookEnabler.ps1 Store package install fallback' {
 
         $script:opened.Count | Should Be 2
         $script:opened[1] | Should Be 'https://apps.microsoft.com/detail/9P2TBWSHK6HJ'
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 PowerShell host selection (#124)' {
+    It 'skips Microsoft Store PowerShell when picking pwsh.exe' {
+        . (Get-InstallerFunctionScript -Name 'Get-ClassicPwshPath')
+
+        $storePwsh = Join-Path $TestDrive 'Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe'
+        $classicPwsh = Join-Path $TestDrive 'Program Files\PowerShell\7\pwsh.exe'
+        foreach ($path in @($storePwsh, $classicPwsh)) {
+            New-Item -Path (Split-Path $path -Parent) -ItemType Directory -Force | Out-Null
+            Set-Content -LiteralPath $path -Value '' -Encoding utf8
+        }
+
+        Get-ClassicPwshPath -Candidates @($storePwsh, $classicPwsh) | Should Be $classicPwsh
+    }
+
+    It 'returns nothing when only Microsoft Store PowerShell is installed' {
+        . (Get-InstallerFunctionScript -Name 'Get-ClassicPwshPath')
+
+        $storePwsh = Join-Path $TestDrive 'Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe'
+        $missingPwsh = Join-Path $TestDrive 'Program Files\PowerShell\7-missing\pwsh.exe'
+        New-Item -Path (Split-Path $storePwsh -Parent) -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath $storePwsh -Value '' -Encoding utf8
+
+        Get-ClassicPwshPath -Candidates @($storePwsh, $missingPwsh) | Should BeNullOrEmpty
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 installation health check' {
+    It 'looks for the config in the .galaxy-book-enabler folder by default' {
+        . (Get-InstallerFunctionScript -Name 'Test-InstallationHealth')
+
+        $command = Get-Command Test-InstallationHealth
+        $defaultValue = $command.ScriptBlock.Ast.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'ConfigPath' } |
+            ForEach-Object { $_.DefaultValue.Extent.Text }
+
+        $defaultValue | Should Not BeNullOrEmpty
+        $defaultValue.Contains('.galaxy-book-enabler\gbe-config.json') | Should Be $true
     }
 }
