@@ -752,7 +752,8 @@ Describe 'Install-GalaxyBookEnabler.ps1 Samsung Settings registration (#94, #51)
         Copy-Item -LiteralPath $sourceExe -Destination $fakeExe -Force
         New-FakeService -Name 'GBeSupportService_20260101' -ImagePath "`"$fakeExe`""
 
-        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be (Get-Item -LiteralPath $sourceExe).VersionInfo.FileVersion.Trim()
+        # Compare against the copy: system exes can report a different version once their .mui is left behind
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be (Get-Item -LiteralPath $fakeExe).VersionInfo.FileVersion.Trim()
     }
 
     It 're-applies the Samsung Settings identity from the startup batch' {
@@ -810,28 +811,32 @@ Describe 'Install-GalaxyBookEnabler.ps1 Samsung Settings registration (#94, #51)
     It 'takes the engine version from GBeSupportService over a disabled original service' {
         . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion')
 
-        # Two system executables with different file versions stand in for an old and a new SSSE build
-        $sources = Get-ChildItem -Path (Join-Path $env:SystemRoot 'System32') -Filter '*.exe' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.VersionInfo.FileVersion } |
-            Group-Object { $_.VersionInfo.FileVersion.Trim() } |
-            Select-Object -First 2 |
-            ForEach-Object { $_.Group[0] }
-        $sources.Count | Should Be 2
-
-        $exes = foreach ($index in 0, 1) {
-            $folder = Join-Path $TestDrive "build$index"
+        # Copy system executables until two copies report different file versions; they stand in for an
+        # old and a new SSSE build (versions are read from the copies, since a copy loses its .mui)
+        $exes = [System.Collections.Generic.List[string]]::new()
+        $versions = [System.Collections.Generic.List[string]]::new()
+        foreach ($source in Get-ChildItem -Path (Join-Path $env:SystemRoot 'System32') -Filter '*.exe' -File -ErrorAction SilentlyContinue) {
+            $folder = Join-Path $TestDrive "build$($exes.Count)"
             New-Item -Path $folder -ItemType Directory -Force | Out-Null
             $path = Join-Path $folder 'SamsungSystemSupportService.exe'
-            Copy-Item -LiteralPath $sources[$index].FullName -Destination $path -Force
-            $path
+            Copy-Item -LiteralPath $source.FullName -Destination $path -Force -ErrorAction SilentlyContinue
+            $version = if (Test-Path -LiteralPath $path) { (Get-Item -LiteralPath $path).VersionInfo.FileVersion } else { $null }
+            if (-not $version -or $versions.Contains($version.Trim())) {
+                Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+            $exes.Add($path)
+            $versions.Add($version.Trim())
+            if ($exes.Count -eq 2) { break }
         }
+        $exes.Count | Should Be 2
 
         # The disabled original sorts before GBeSupportService alphabetically
         New-FakeService -Name 'AAA_SamsungSystemSupportService' -ImagePath $exes[0]
         New-ItemProperty -LiteralPath (Join-Path $servicesRoot 'AAA_SamsungSystemSupportService') -Name 'Start' -PropertyType DWord -Value 4 -Force | Out-Null
         New-FakeService -Name 'GBeSupportService' -ImagePath "`"$($exes[1])`""
 
-        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be $sources[1].VersionInfo.FileVersion.Trim()
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be $versions[1]
     }
 }
 
