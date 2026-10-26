@@ -5,6 +5,22 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Samsung Settings registration** - Writes the service `Parameters` (`Version`, `Interface`) and `SOFTWARE\Samsung\SamsungSettings` identity values that Samsung's own SSSE install and engine write, so Samsung Settings no longer says "the service is not working" on registry-only spoofs ([#94](https://github.com/Bananz0/GalaxyBookEnabler/issues/94), [#51](https://github.com/Bananz0/GalaxyBookEnabler/issues/51), [#99](https://github.com/Bananz0/GalaxyBookEnabler/issues/99), [#123](https://github.com/Bananz0/GalaxyBookEnabler/issues/123))
+- **Store install fallback** - Store apps install with `--source msstore` and retry once; apps that still fail are logged and opened in the browser on their Microsoft Store page ([#111](https://github.com/Bananz0/GalaxyBookEnabler/issues/111))
+- Release workflow bumps every version reference (script, `.NOTES`, README badge, PACKAGES.md, CHANGELOG) and pushes the bump on top of the latest `main`
+
+### Fixed
+
+- Crashes when the Windows user folder has non-ASCII characters; generated scripts and logs are now UTF-8 and the startup task quotes the batch path ([#127](https://github.com/Bananz0/GalaxyBookEnabler/issues/127))
+- Microsoft Store PowerShell: relaunches in a regular PowerShell 7 when one is installed and only stops when WMI/CIM actually fails ([#124](https://github.com/Bananz0/GalaxyBookEnabler/issues/124))
+- Reinstalls kept the default SKU and enclosure type instead of the custom ones from the existing spoof batch
+- Installation health check looked for the config in the wrong folder
+- Nightly regression suite expected the old default model
+
 ## [3.1.5] - 2026-03-19
 
 ### Added
