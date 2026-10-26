@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-26
+
 ### Added
 
 - **Samsung Settings registration** - Writes the service `Parameters` (`Version`, `Interface`) and `SOFTWARE\Samsung\SamsungSettings` identity values that Samsung's own SSSE install and engine write, so Samsung Settings no longer says "the service is not working" on registry-only spoofs ([#94](https://github.com/Bananz0/GalaxyBookEnabler/issues/94), [#51](https://github.com/Bananz0/GalaxyBookEnabler/issues/51), [#99](https://github.com/Bananz0/GalaxyBookEnabler/issues/99), [#123](https://github.com/Bananz0/GalaxyBookEnabler/issues/123))
@@ -554,7 +556,8 @@ If you modified QS.bat with custom device names (e.g., different Galaxy Book mod
 
 **Last Updated:** 2026-03-12
 
-[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.5...HEAD
+[unreleased]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.5...v3.2.0
 [3.1.5]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.1.0...v3.1.5
 [3.1.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/Bananz0/GalaxyBookEnabler/compare/v2.5.0...v3.0.0
