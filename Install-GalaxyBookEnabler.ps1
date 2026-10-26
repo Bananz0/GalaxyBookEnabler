@@ -315,6 +315,12 @@ function Test-WingetInstallSucceeded {
         return $false
     }
 
+    # Exit codes work on localized Windows; the English text is only a fallback.
+    # 0x8A15002B = no applicable upgrade, 0x8A150061 = package already installed
+    if ($Result.ExitCode -in @(0, -1978335189, -1978335135)) {
+        return $true
+    }
+
     return ($Result.Output -match "Successfully installed|Installation completed successfully|already installed|No available upgrade found|No newer package versions")
 }
 
@@ -346,8 +352,10 @@ function Invoke-StorePackageInstall {
         $attemptsMade = $attempt
         $result = Invoke-WingetCommand -Arguments $installArgs -TimeoutSeconds $TimeoutSeconds
 
-        # Retrying won't help when the package doesn't exist in the Store source
-        if ((Test-WingetInstallSucceeded -Result $result) -or ($result.Output -match "No package found matching input criteria|No applicable update found")) {
+        # Retrying won't help when the package doesn't exist in the Store source (0x8A150014),
+        # or when winget hung: that's usually a first-run prompt, and another 15 minutes won't clear it
+        $notFound = ($result.ExitCode -eq -1978335212) -or ($result.Output -match "No package found matching input criteria")
+        if ((Test-WingetInstallSucceeded -Result $result) -or $notFound -or $result.TimedOut) {
             break
         }
 
@@ -371,11 +379,14 @@ function Open-StorePackagePages {
     .DESCRIPTION
         Uses the apps.microsoft.com web listing so each package gets its own browser tab
         (the Store app is single-window, so ms-windows-store:// links would replace each other).
-        Links are always printed and logged; tabs are only opened in interactive runs.
+        Links are always printed and logged; tabs are only opened in interactive runs,
+        and not at all with -LinksOnly (e.g. when winget itself is broken and every app failed).
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [object[]]$Packages
+        [object[]]$Packages,
+
+        [switch]$LinksOnly
     )
 
     if ($Packages.Count -eq 0) {
@@ -392,7 +403,7 @@ function Open-StorePackagePages {
         Write-GbeLog "Manual install: $($pkg.Name) (ID: $($pkg.Id)) $webUrl | $storeUrl" -Level WARNING
     }
 
-    if ($script:IsAutonomous) {
+    if ($script:IsAutonomous -or $LinksOnly) {
         return
     }
 
@@ -4437,20 +4448,30 @@ function Get-InstalledSsseEngineVersion {
     .DESCRIPTION
         Looks at every service whose ImagePath points at SamsungSystemSupportService.exe
         (GBeSupportService*, or a genuine INF-installed SamsungSystemSupportService).
+        Prefers the enabler's own GBeSupportService*, then services that aren't disabled, so a
+        leftover original service with an older exe doesn't decide the version.
     #>
     param(
         [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services"
     )
 
-    foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
-        $imagePath = (Get-ItemProperty -LiteralPath $serviceKey.PSPath -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
-        if (-not $imagePath) { continue }
+    $candidates = foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
+        $properties = Get-ItemProperty -LiteralPath $serviceKey.PSPath -ErrorAction SilentlyContinue
+        if (-not $properties.ImagePath) { continue }
 
-        $exePath = [Environment]::ExpandEnvironmentVariables($imagePath.Trim().Trim('"'))
+        $exePath = [Environment]::ExpandEnvironmentVariables(([string]$properties.ImagePath).Trim().Trim('"'))
         if ($exePath -notlike '*\SamsungSystemSupportService.exe') { continue }
         if (-not (Test-Path -LiteralPath $exePath)) { continue }
 
-        $fileVersion = (Get-Item -LiteralPath $exePath).VersionInfo.FileVersion
+        [pscustomobject]@{
+            ExePath  = $exePath
+            IsGbe    = $serviceKey.PSChildName -like 'GBeSupportService*'
+            Disabled = $properties.Start -eq 4
+        }
+    }
+
+    foreach ($candidate in @($candidates | Sort-Object -Property @{ Expression = 'IsGbe'; Descending = $true }, @{ Expression = 'Disabled'; Descending = $false })) {
+        $fileVersion = (Get-Item -LiteralPath $candidate.ExePath).VersionInfo.FileVersion
         if ($fileVersion) {
             return $fileVersion.Trim()
         }
@@ -4473,10 +4494,13 @@ function Set-SamsungSettingsRegistration {
                         EngineVersion (REG_SZ) and ModuleSystem Version (REG_SZ),
                         CheckSingleBom/SupportComputerInfo (REG_DWORD 1)
         Manufacturer and BIOSVersion come from the (spoofed) BIOS key, like the engine does on
-        genuine or firmware-spoofed hardware. Per-module feature flags are left to the engine.
+        genuine or firmware-spoofed hardware. When the spoof hasn't been applied yet (first
+        install, before STEP 8), -Identity supplies the chosen model's values instead.
+        Per-module feature flags are left to the engine.
     #>
     param(
         [string]$EngineVersion,
+        [hashtable]$Identity,
         [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services",
         [string]$SettingsKey = "HKLM:\SOFTWARE\Samsung\SamsungSettings",
         [string]$BiosKey = "HKLM:\HARDWARE\DESCRIPTION\System\BIOS",
@@ -4493,6 +4517,12 @@ function Set-SamsungSettingsRegistration {
     }
 
     $bios = Get-ItemProperty -LiteralPath $BiosKey -ErrorAction SilentlyContinue
+    $manufacturer = $bios.SystemManufacturer
+    $biosVersion = $bios.BIOSVersion
+    if ($Identity -and $Identity.SystemManufacturer -and ($manufacturer -notmatch 'Samsung')) {
+        $manufacturer = $Identity.SystemManufacturer
+        $biosVersion = $Identity.BIOSVersion
+    }
 
     if ($TestMode) {
         Write-Host "  [TEST] Would register SSSE $EngineVersion for Samsung Settings (service Parameters + $SettingsKey)" -ForegroundColor Gray
@@ -4529,11 +4559,11 @@ function Set-SamsungSettingsRegistration {
         New-Item -Path $SettingsKey -Force | Out-Null
     }
     New-ItemProperty -LiteralPath $SettingsKey -Name 'ModelType' -PropertyType String -Value 'NotePC' -Force | Out-Null
-    if ($bios.SystemManufacturer) {
-        New-ItemProperty -LiteralPath $SettingsKey -Name 'Manufacturer' -PropertyType String -Value $bios.SystemManufacturer -Force | Out-Null
+    if ($manufacturer) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'Manufacturer' -PropertyType String -Value $manufacturer -Force | Out-Null
     }
-    if ($bios.BIOSVersion) {
-        New-ItemProperty -LiteralPath $SettingsKey -Name 'BIOSVersion' -PropertyType String -Value $bios.BIOSVersion -Force | Out-Null
+    if ($biosVersion) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'BIOSVersion' -PropertyType String -Value $biosVersion -Force | Out-Null
     }
     New-ItemProperty -LiteralPath $SettingsKey -Name 'EngineVersion' -PropertyType String -Value $EngineVersion -Force | Out-Null
 
@@ -4545,8 +4575,26 @@ function Set-SamsungSettingsRegistration {
     New-ItemProperty -LiteralPath $moduleSystemKey -Name 'CheckSingleBom' -PropertyType DWord -Value 1 -Force | Out-Null
     New-ItemProperty -LiteralPath $moduleSystemKey -Name 'SupportComputerInfo' -PropertyType DWord -Value 1 -Force | Out-Null
 
-    Write-GbeLog "Seeded $SettingsKey (Manufacturer=$($bios.SystemManufacturer), BIOSVersion=$($bios.BIOSVersion), EngineVersion=$EngineVersion)"
+    Write-GbeLog "Seeded $SettingsKey (Manufacturer=$manufacturer, BIOSVersion=$biosVersion, EngineVersion=$EngineVersion)"
     return $true
+}
+
+function Invoke-SamsungSettingsRegistration {
+    # Runs Set-SamsungSettingsRegistration with the chosen model as fallback identity; never throws
+    param(
+        [bool]$TestMode = $false
+    )
+
+    try {
+        $identity = if ($script:biosValuesToUse) { $script:biosValuesToUse } else { Get-DefaultBiosValues }
+        if (Set-SamsungSettingsRegistration -Identity $identity -TestMode $TestMode) {
+            Write-Host "✓ Registered SSSE with Samsung Settings" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "⚠ Could not register SSSE with Samsung Settings: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
+    }
 }
 
 function Install-SystemSupportEngine {
@@ -4844,6 +4892,8 @@ function Install-SystemSupportEngine {
             }
             "2" {
                 Write-Host "`n✓ Keeping existing installation" -ForegroundColor Green
+                # Older installs never got these values, so add them even when SSSE is kept
+                Invoke-SamsungSettingsRegistration -TestMode $TestMode
                 return $true
             }
             "3" {
@@ -5603,6 +5653,7 @@ function Install-SystemSupportEngine {
                 
                 # 2. Launch Samsung Settings to trigger Store update
                 Write-Host "`n  [DUAL-VERSION] Launching Samsung Settings" -ForegroundColor Cyan
+                Invoke-SamsungSettingsRegistration -TestMode $TestMode
                 $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "dual-version SSSE install" -ShowBluetoothSyncInstructions $true
                 Write-Host "`n  IMPORTANT: Please sign in to Samsung Settings and confirm the UI is working." -ForegroundColor Yellow
                 Write-Host "  Once you have signed in and confirmed, press any key to install the latest version." -ForegroundColor White
@@ -5809,8 +5860,12 @@ function Install-SystemSupportEngine {
             catch {
                 Write-Host "    ⚠ Could not install $($settingsPackage.Name) automatically" -ForegroundColor Yellow
                 Write-Host "      Will install automatically after reboot, or install manually from Store" -ForegroundColor Gray
+                Open-StorePackagePages -Packages @([pscustomobject]$settingsPackage)
             }
         }
+
+        # Register before the first launch so Samsung Settings sees a working service (#94)
+        Invoke-SamsungSettingsRegistration -TestMode $TestMode
 
         $null = Start-SamsungSettingsAndVerify -TestMode $TestMode -AutoInstall $AutoInstall -Context "SSSE install and Samsung Settings reinstall" -ShowBluetoothSyncInstructions $true
         
@@ -5841,15 +5896,7 @@ function Install-SystemSupportEngine {
             Write-Host "`n✓ You are running the latest SSSE version ($finalVersion)" -ForegroundColor Green
         }
 
-        try {
-            if (Set-SamsungSettingsRegistration -TestMode $TestMode) {
-                Write-Host "✓ Registered SSSE with Samsung Settings" -ForegroundColor Green
-            }
-        }
-        catch {
-            Write-Host "⚠ Could not register SSSE with Samsung Settings: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
-        }
+        Invoke-SamsungSettingsRegistration -TestMode $TestMode
 
         if (-not $AutoInstall) {
             Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
@@ -6943,6 +6990,7 @@ function Install-SamsungPackages {
                 Write-Host "    This usually means winget is waiting on first-run setup or the Store source is stuck." -ForegroundColor Yellow
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
                 Write-GbeLog "ERROR: winget preflight timed out before Samsung package installation" -Level ERROR
+                Open-StorePackagePages -Packages $Packages -LinksOnly
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6960,6 +7008,7 @@ function Install-SamsungPackages {
                 Write-Host "    Run 'winget list' once in a terminal, accept any prompts, then retry." -ForegroundColor Cyan
                 Write-GbeLog "ERROR: winget preflight failed before Samsung package installation" -Level ERROR
                 Write-GbeLog "Output: $($wingetPreflight.Output)" -Level DEBUG
+                Open-StorePackagePages -Packages $Packages -LinksOnly
                 return @{
                     Installed = 0
                     Failed    = $Packages.Count
@@ -6973,6 +7022,7 @@ function Install-SamsungPackages {
             Write-Host "    Install or repair 'App Installer', then run 'winget list' once and retry." -ForegroundColor Cyan
             Write-Host "    Microsoft Store: ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1" -ForegroundColor Gray
             Write-GbeLog "ERROR: winget unavailable before Samsung package installation: $($_.Exception.Message)" -Level ERROR
+            Open-StorePackagePages -Packages $Packages -LinksOnly
             return @{
                 Installed = 0
                 Failed    = $Packages.Count
@@ -9438,16 +9488,8 @@ else {
     }
 }
 
-# Runs after the spoof so Manufacturer/BIOSVersion pick up the Samsung values (#94, #51)
-try {
-    if (Set-SamsungSettingsRegistration -TestMode $TestMode) {
-        Write-Host "✓ Samsung Settings registration matches the spoofed device" -ForegroundColor Green
-    }
-}
-catch {
-    Write-Host "⚠ Could not update Samsung Settings registration: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
-}
+# Runs again after the spoof so Manufacturer/BIOSVersion match the applied BIOS key (#94, #51)
+Invoke-SamsungSettingsRegistration -TestMode $TestMode
 
 if ($TestMode) {
     Write-Host "  [TEST] Would stop Samsung processes" -ForegroundColor Gray

@@ -781,4 +781,102 @@ Describe 'Install-GalaxyBookEnabler.ps1 Samsung Settings registration (#94, #51)
         $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v Manufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f'))
         $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v BIOSVersion /t REG_SZ /d "P05AMA.058.250810.01" /f'))
     }
+
+    It 'uses the chosen model when the BIOS spoof is not applied yet' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        New-ItemProperty -LiteralPath $biosKey -Name 'SystemManufacturer' -Value 'HP' -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'BIOSVersion' -Value 'W70 Ver. 01.07.01' -Force | Out-Null
+
+        $identity = @{ SystemManufacturer = 'Samsung'; BIOSVersion = 'PRHK.1.2.48.546' }
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -Identity $identity -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('Manufacturer') | Should Be 'Samsung'
+        $settings.GetValue('BIOSVersion') | Should Be 'PRHK.1.2.48.546'
+    }
+
+    It 'prefers the spoofed BIOS key over the fallback identity once it is applied' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        $identity = @{ SystemManufacturer = 'Samsung'; BIOSVersion = 'PRHK.1.2.48.546' }
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -Identity $identity -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        (Get-Item -LiteralPath $settingsKey).GetValue('BIOSVersion') | Should Be 'P05AMA.058.250810.01'
+    }
+
+    It 'takes the engine version from GBeSupportService over a disabled original service' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion')
+
+        # Two system executables with different file versions stand in for an old and a new SSSE build
+        $sources = Get-ChildItem -Path (Join-Path $env:SystemRoot 'System32') -Filter '*.exe' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.VersionInfo.FileVersion } |
+            Group-Object { $_.VersionInfo.FileVersion.Trim() } |
+            Select-Object -First 2 |
+            ForEach-Object { $_.Group[0] }
+        $sources.Count | Should Be 2
+
+        $exes = foreach ($index in 0, 1) {
+            $folder = Join-Path $TestDrive "build$index"
+            New-Item -Path $folder -ItemType Directory -Force | Out-Null
+            $path = Join-Path $folder 'SamsungSystemSupportService.exe'
+            Copy-Item -LiteralPath $sources[$index].FullName -Destination $path -Force
+            $path
+        }
+
+        # The disabled original sorts before GBeSupportService alphabetically
+        New-FakeService -Name 'AAA_SamsungSystemSupportService' -ImagePath $exes[0]
+        New-ItemProperty -LiteralPath (Join-Path $servicesRoot 'AAA_SamsungSystemSupportService') -Name 'Start' -PropertyType DWord -Value 4 -Force | Out-Null
+        New-FakeService -Name 'GBeSupportService' -ImagePath "`"$($exes[1])`""
+
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be $sources[1].VersionInfo.FileVersion.Trim()
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 winget result handling (Qodo review)' {
+    function Start-Sleep { }
+    function Write-GbeLog { }
+
+    It 'treats exit code 0 as success even when the output is not English' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded')
+
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = 0; Output = 'Erfolgreich installiert' } | Should Be $true
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = -1978335135; Output = 'Paket ist bereits installiert' } | Should Be $true
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = -2147009247; Output = 'Fehler' } | Should Be $false
+    }
+
+    It 'does not retry a successful install or a hung winget' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        foreach ($response in @(
+                @{ TimedOut = $false; ExitCode = 0; Output = 'Erfolgreich installiert' },
+                @{ TimedOut = $true; ExitCode = $null; Output = '' },
+                @{ TimedOut = $false; ExitCode = -1978335212; Output = 'Kein Paket gefunden' }
+            )) {
+            $script:wingetCalls = 0
+            $script:wingetResponse = $response
+            function Invoke-WingetCommand {
+                param([string[]]$Arguments, [int]$TimeoutSeconds)
+                $script:wingetCalls++
+                return $script:wingetResponse.Clone()
+            }
+
+            (Invoke-StorePackageInstall -PackageId '9P2TBWSHK6HJ').Attempts | Should Be 1
+            $script:wingetCalls | Should Be 1
+        }
+    }
+
+    It 'only prints links with -LinksOnly, even in interactive runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $false
+        Open-StorePackagePages -Packages @([pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' }) -LinksOnly
+
+        $script:opened.Count | Should Be 0
+    }
 }
