@@ -112,6 +112,14 @@ jobs:
           $legacyRoot = Join-Path $env:USERPROFILE 'GalaxyBookEnablerScript'
           $legacyBatchPath = Join-Path $legacyRoot 'QS.bat'
 
+          # Read the default spoof family from the installer so this doesn't go stale when the default model changes
+          $installerSource = Get-Content -LiteralPath '.\Install-GalaxyBookEnabler.ps1' -Raw -Encoding utf8
+          $defaultFamilyMatch = [regex]::Match($installerSource, '(?m)^\$DefaultBiosFamilyLabel\s*=\s*''([^'']+)''')
+          if (-not $defaultFamilyMatch.Success) {
+            throw 'Could not find $DefaultBiosFamilyLabel in Install-GalaxyBookEnabler.ps1'
+          }
+          $defaultFamilyLabel = $defaultFamilyMatch.Groups[1].Value
+
           function New-LegacyFixture {
             if (Test-Path $legacyRoot) {
               Remove-Item -Path $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -167,8 +175,8 @@ jobs:
               '-AutonomousPreserveLegacy:$false',
               '-DebugOutput'
             )
-            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Will use default Galaxy Book4 Ultra values' -Context 'Legacy non-preserve run'
-            Assert-Contains -Text $migrationDefault.Stdout -Expected 'Registry spoof script created (Galaxy Book4 Ultra)' -Context 'Legacy non-preserve run'
+            Assert-Contains -Text $migrationDefault.Stdout -Expected "Will use default $defaultFamilyLabel values" -Context 'Legacy non-preserve run'
+            Assert-Contains -Text $migrationDefault.Stdout -Expected "Registry spoof script created ($defaultFamilyLabel)" -Context 'Legacy non-preserve run'
             if (-not (Test-Path $legacyBatchPath)) {
               throw 'Legacy fixture should remain in place after TestMode run.'
             }

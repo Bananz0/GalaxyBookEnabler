@@ -402,3 +402,486 @@ Describe 'Install-GalaxyBookEnabler.ps1 autonomous package resolution' {
         ($result.Stdout + $result.Stderr) | Should Match 'Autonomous package .* was not found'
     }
 }
+
+function Get-InstallerFunctionScript {
+    param(
+        [string[]]$Name
+    )
+
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $scriptPath).Path, [ref]$null, [ref]$null)
+    $functions = $ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $Name -contains $node.Name
+        }, $false)
+
+    return [scriptblock]::Create(($functions | ForEach-Object { $_.Extent.Text }) -join [Environment]::NewLine)
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 non-ASCII user profile paths (#127)' {
+    # "Žemaitė Ąžuolė" - a Lithuanian-style user folder with a space and non-ASCII characters
+    $nonAsciiName = "$([char]0x17D)emait$([char]0x117) $([char]0x104)$([char]0x17E)uol$([char]0x117)"
+
+    function Get-DefaultBiosValues {
+        return @{
+            BIOSVendor            = 'Default Vendor'
+            BIOSVersion           = 'DEFAULT.100.000000.01'
+            BIOSMajorRelease      = '0x01'
+            BIOSMinorRelease      = '0x01'
+            SystemManufacturer    = 'Default Manufacturer'
+            SystemFamily          = 'Default Family'
+            SystemProductName     = 'DEFAULT'
+            ProductSku            = 'DEFAULT-SKU'
+            EnclosureKind         = '0x0a'
+            BaseBoardManufacturer = 'Default Manufacturer'
+            BaseBoardProduct      = 'DEFAULT'
+        }
+    }
+
+    It 'writes a UTF-8 spoof batch that round-trips from a non-ASCII folder' {
+        . (Get-InstallerFunctionScript -Name 'New-RegistrySpoofBatch', 'Get-LegacyBiosValues')
+
+        $installPath = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+        $batchPath = Join-Path $installPath 'GalaxyBookSpoof.bat'
+
+        $customFamily = "Galaxy Book4 Ultra $([char]0x17D)"
+        New-RegistrySpoofBatch -OutputPath $batchPath -BiosValues @{
+            BIOSVendor            = 'American Megatrends International, LLC.'
+            BIOSVersion           = 'P08ALX.400.250306.05'
+            BIOSMajorRelease      = '0x08'
+            BIOSMinorRelease      = '0x11'
+            SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+            SystemFamily          = $customFamily
+            SystemProductName     = '960XGL'
+            ProductSku            = 'SCAI-A5A5-ADLP-PSLP'
+            EnclosureKind         = '0x1f'
+            BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+            BaseBoardProduct      = '960XGL'
+        }
+
+        Test-Path -LiteralPath $batchPath | Should Be $true
+
+        $bytes = [System.IO.File]::ReadAllBytes($batchPath)
+        ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should Be $false
+
+        $lines = [System.IO.File]::ReadAllLines($batchPath, [System.Text.Encoding]::UTF8)
+        $lines[0] | Should Be '@echo off'
+        $lines[1] | Should Be 'chcp 65001 >nul'
+
+        $legacy = Get-LegacyBiosValues -OldBatchPath $batchPath
+        $legacy | Should Not BeNullOrEmpty
+        $legacy.Values.SystemFamily | Should Be $customFamily
+        $legacy.Values.SystemProductName | Should Be '960XGL'
+        # The generated batch names these SystemSKU/EnclosureType, unlike v1 QS.bat
+        $legacy.Values.ProductSku | Should Be 'SCAI-A5A5-ADLP-PSLP'
+        $legacy.Values.EnclosureKind | Should Be '0x1f'
+        $legacy.Values.BIOSMinorRelease | Should Be '0x11'
+        $legacy.Values.BIOSVersion | Should Be 'P08ALX.400.250306.05'
+    }
+
+    It 'runs a batch file from a non-ASCII folder with the scheduled task quoting' {
+        $batchDir = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $batchDir -ItemType Directory -Force | Out-Null
+        $batchPath = Join-Path $batchDir 'GalaxyBookSpoof.bat'
+        $markerPath = Join-Path $batchDir 'ran.txt'
+
+        $batchContent = "@echo off`r`nchcp 65001 >nul`r`necho ok> `"%~dp0ran.txt`"`r`n"
+        [System.IO.File]::WriteAllText($batchPath, $batchContent, [System.Text.UTF8Encoding]::new($false))
+
+        # Same command line the GalaxyBookEnabler scheduled task uses
+        $cmdPath = Join-Path $env:SystemRoot 'System32\cmd.exe'
+        $process = Start-Process -FilePath $cmdPath -ArgumentList "/d /c `"`"$batchPath`"`"" -Wait -PassThru -WindowStyle Hidden
+
+        $process.ExitCode | Should Be 0
+        Test-Path -LiteralPath $markerPath | Should Be $true
+    }
+
+    It 'writes a Multi Control init script that parses from a non-ASCII folder' {
+        . (Get-InstallerFunctionScript -Name 'New-MultiControlInitScript')
+
+        $installPath = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+        $initScriptPath = Join-Path $installPath 'Init-SamsungMultiControlOnLogin.ps1'
+
+        New-MultiControlInitScript -OutputPath $initScriptPath
+
+        Test-Path -LiteralPath $initScriptPath | Should Be $true
+
+        $parseErrors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseFile($initScriptPath, [ref]$null, [ref]$parseErrors)
+        $parseErrors.Count | Should Be 0
+    }
+
+    It 'updates config.plist inside a non-ASCII folder' {
+        $fixture = Join-Path $PSScriptRoot 'fixtures\config.plist'
+        $plistDir = Join-Path $TestDrive "$nonAsciiName\EFI\OC"
+        New-Item -Path $plistDir -ItemType Directory -Force | Out-Null
+        $plistPath = Join-Path $plistDir 'config.plist'
+        Copy-Item -LiteralPath $fixture -Destination $plistPath -Force
+
+        $result = & $scriptPath -Profile Book4Pro -CountryCode US -WriteConfigPlist -ConfigPath $plistPath
+
+        $result.ConfigurationUpdate | Should Not BeNullOrEmpty
+        Test-Path -LiteralPath $result.ConfigurationUpdate.BackupPath | Should Be $true
+
+        $updated = [xml](Get-Content -LiteralPath $plistPath -Raw -Encoding utf8)
+        $smbiosProduct = (Get-PlistValueByPath -Document $updated -Path @('PlatformInfo', 'SMBIOS') -Key 'SystemProductName').InnerText
+        $smbiosProduct | Should Be $result.SystemProductName
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 Store package install fallback' {
+    function Start-Sleep { }
+    function Write-GbeLog {
+        param([string]$Message, [string]$Level)
+        $script:gbeLog += "$Level $Message"
+    }
+
+    It 'pins the msstore source and retries a failed install once' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        $script:wingetCalls = @()
+        function Invoke-WingetCommand {
+            param([string[]]$Arguments, [int]$TimeoutSeconds)
+            $script:wingetCalls += , $Arguments
+            if ($script:wingetCalls.Count -eq 1) {
+                return @{ TimedOut = $false; ExitCode = -2147009247; Output = 'Agreements failed' }
+            }
+            return @{ TimedOut = $false; ExitCode = 0; Output = 'Successfully installed' }
+        }
+
+        $result = Invoke-StorePackageInstall -PackageId '9NFWHCHM52HQ' -PackageName 'Samsung Cloud'
+
+        $result.Attempts | Should Be 2
+        $script:wingetCalls.Count | Should Be 2
+        ($script:wingetCalls[0] -join ' ') | Should Match '--source msstore'
+        Test-WingetInstallSucceeded -Result $result | Should Be $true
+    }
+
+    It 'does not retry when the package is not in the Store source' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        $script:wingetCalls = @()
+        function Invoke-WingetCommand {
+            param([string[]]$Arguments, [int]$TimeoutSeconds)
+            $script:wingetCalls += , $Arguments
+            return @{ TimedOut = $false; ExitCode = 1; Output = 'No package found matching input criteria.' }
+        }
+
+        $result = Invoke-StorePackageInstall -PackageId '9ZZZZZZZZZZZ'
+
+        $result.Attempts | Should Be 1
+        Test-WingetInstallSucceeded -Result $result | Should Be $false
+    }
+
+    It 'logs a browser link per failed package and opens nothing in autonomous runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:gbeLog = @()
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $true
+        Open-StorePackagePages -Packages @(
+            [pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' },
+            [pscustomobject]@{ Name = 'Samsung Settings'; Id = '9P2TBWSHK6HJ' }
+        )
+
+        $script:opened.Count | Should Be 0
+        ($script:gbeLog -join "`n") | Should Match 'apps\.microsoft\.com/detail/9NFWHCHM52HQ'
+        ($script:gbeLog -join "`n") | Should Match 'apps\.microsoft\.com/detail/9P2TBWSHK6HJ'
+    }
+
+    It 'opens one browser tab per failed package in interactive runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:gbeLog = @()
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $false
+        Open-StorePackagePages -Packages @(
+            [pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' },
+            [pscustomobject]@{ Name = 'Samsung Settings'; Id = '9P2TBWSHK6HJ' }
+        )
+
+        $script:opened.Count | Should Be 2
+        $script:opened[1] | Should Be 'https://apps.microsoft.com/detail/9P2TBWSHK6HJ'
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 PowerShell host selection (#124)' {
+    It 'skips Microsoft Store PowerShell when picking pwsh.exe' {
+        . (Get-InstallerFunctionScript -Name 'Get-ClassicPwshPath')
+
+        $storePwsh = Join-Path $TestDrive 'Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe'
+        $classicPwsh = Join-Path $TestDrive 'Program Files\PowerShell\7\pwsh.exe'
+        foreach ($path in @($storePwsh, $classicPwsh)) {
+            New-Item -Path (Split-Path $path -Parent) -ItemType Directory -Force | Out-Null
+            Set-Content -LiteralPath $path -Value '' -Encoding utf8
+        }
+
+        Get-ClassicPwshPath -Candidates @($storePwsh, $classicPwsh) | Should Be $classicPwsh
+    }
+
+    It 'returns nothing when only Microsoft Store PowerShell is installed' {
+        . (Get-InstallerFunctionScript -Name 'Get-ClassicPwshPath')
+
+        $storePwsh = Join-Path $TestDrive 'Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe'
+        $missingPwsh = Join-Path $TestDrive 'Program Files\PowerShell\7-missing\pwsh.exe'
+        New-Item -Path (Split-Path $storePwsh -Parent) -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath $storePwsh -Value '' -Encoding utf8
+
+        Get-ClassicPwshPath -Candidates @($storePwsh, $missingPwsh) | Should BeNullOrEmpty
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 installation health check' {
+    It 'looks for the config in the .galaxy-book-enabler folder by default' {
+        . (Get-InstallerFunctionScript -Name 'Test-InstallationHealth')
+
+        $command = Get-Command Test-InstallationHealth
+        $defaultValue = $command.ScriptBlock.Ast.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'ConfigPath' } |
+            ForEach-Object { $_.DefaultValue.Extent.Text }
+
+        $defaultValue | Should Not BeNullOrEmpty
+        $defaultValue.Contains('.galaxy-book-enabler\gbe-config.json') | Should Be $true
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 Samsung Settings registration (#94, #51)' {
+    function Write-GbeLog { }
+
+    $testRoot = "HKCU:\Software\GalaxyBookEnablerTests\$([guid]::NewGuid().ToString('N'))"
+    $servicesRoot = Join-Path $testRoot 'Services'
+    $settingsKey = Join-Path $testRoot 'SamsungSettings'
+    $biosKey = Join-Path $testRoot 'BIOS'
+
+    function New-FakeService {
+        param([string]$Name, [string]$ImagePath)
+        $key = Join-Path $servicesRoot $Name
+        New-Item -Path $key -Force | Out-Null
+        New-ItemProperty -LiteralPath $key -Name 'ImagePath' -PropertyType ExpandString -Value $ImagePath -Force | Out-Null
+    }
+
+    BeforeEach {
+        if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+        New-Item -Path $servicesRoot -Force | Out-Null
+        New-Item -Path $biosKey -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'SystemManufacturer' -Value 'SAMSUNG ELECTRONICS CO., LTD.' -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'BIOSVersion' -Value 'P05AMA.058.250810.01' -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+        $testParent = Split-Path -Path $testRoot -Parent
+        if ((Test-Path -LiteralPath $testParent) -and -not (Get-ChildItem -LiteralPath $testParent)) {
+            Remove-Item -LiteralPath $testParent -Force
+        }
+    }
+
+    It 'writes the same service and Samsung Settings values as the original INF and engine' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'SamsungSystemSupportService' -ImagePath 'C:\Windows\System32\cmd.exe'
+        New-FakeService -Name 'GBeSupportService' -ImagePath '"C:\GalaxyBook\SamsungSystemSupportService.exe"'
+        New-FakeService -Name 'SomeOtherService' -ImagePath 'C:\Windows\System32\svchost.exe'
+
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Should Be $true
+
+        foreach ($serviceName in 'SamsungSystemSupportService', 'GBeSupportService') {
+            $serviceKey = Get-Item -LiteralPath (Join-Path $servicesRoot $serviceName)
+            $serviceKey.GetValue('Version') | Should Be '8.0.5.0'
+            $serviceKey.GetValueKind('Version') | Should Be 'String'
+
+            $parameters = Get-Item -LiteralPath (Join-Path $servicesRoot "$serviceName\Parameters")
+            $parameters.GetValue('Version') | Should Be '8.0.5.0'
+            $parameters.GetValue('Interface') | Should Be '6'
+            $parameters.GetValueKind('Interface') | Should Be 'String'
+        }
+
+        (Get-Item -LiteralPath (Join-Path $servicesRoot 'SamsungSystemSupportService')).GetValue('DisplayName') | Should Be 'SamsungSystemSupportService'
+        Test-Path -LiteralPath (Join-Path $servicesRoot 'SomeOtherService\Parameters') | Should Be $false
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('ModelType') | Should Be 'NotePC'
+        $settings.GetValue('Manufacturer') | Should Be 'SAMSUNG ELECTRONICS CO., LTD.'
+        $settings.GetValue('BIOSVersion') | Should Be 'P05AMA.058.250810.01'
+        $settings.GetValue('EngineVersion') | Should Be '8.0.5.0'
+
+        $moduleSystem = Get-Item -LiteralPath (Join-Path $settingsKey 'ModuleSystem')
+        $moduleSystem.GetValue('Version') | Should Be '8.0.5.0'
+        $moduleSystem.GetValue('CheckSingleBom') | Should Be 1
+        $moduleSystem.GetValueKind('CheckSingleBom') | Should Be 'DWord'
+        $moduleSystem.GetValue('SupportComputerInfo') | Should Be 1
+    }
+
+    It 'keeps values the engine already wrote in the Samsung Settings key' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        New-Item -Path (Join-Path $settingsKey 'ModuleEasyConnect') -Force | Out-Null
+        New-ItemProperty -LiteralPath $settingsKey -Name 'AppVersion' -Value '8.0.8.0' -Force | Out-Null
+        New-ItemProperty -LiteralPath $settingsKey -Name 'Manufacturer' -Value 'ASUSTeK COMPUTER INC.' -Force | Out-Null
+
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('Manufacturer') | Should Be 'SAMSUNG ELECTRONICS CO., LTD.'
+        $settings.GetValue('AppVersion') | Should Be '8.0.8.0'
+        Test-Path -LiteralPath (Join-Path $settingsKey 'ModuleEasyConnect') | Should Be $true
+    }
+
+    It 'does nothing when SSSE is not installed' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'SamsungSystemSupportService' -ImagePath 'C:\Windows\System32\cmd.exe'
+
+        Set-SamsungSettingsRegistration -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Should Be $false
+        Test-Path -LiteralPath $settingsKey | Should Be $false
+        Test-Path -LiteralPath (Join-Path $servicesRoot 'SamsungSystemSupportService\Parameters') | Should Be $false
+    }
+
+    It 'reads the engine version from the service executable' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion')
+
+        # Any versioned exe works; pwsh may be the Store app alias, which can't be copied
+        $sourceExe = Join-Path $env:SystemRoot 'System32\whoami.exe'
+        $fakeExe = Join-Path $TestDrive 'SamsungSystemSupportService.exe'
+        Copy-Item -LiteralPath $sourceExe -Destination $fakeExe -Force
+        New-FakeService -Name 'GBeSupportService_20260101' -ImagePath "`"$fakeExe`""
+
+        # Compare against the copy: system exes can report a different version once their .mui is left behind
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be (Get-Item -LiteralPath $fakeExe).VersionInfo.FileVersion.Trim()
+    }
+
+    It 're-applies the Samsung Settings identity from the startup batch' {
+        . (Get-InstallerFunctionScript -Name 'New-RegistrySpoofBatch')
+        function Get-DefaultBiosValues {
+            return @{
+                BIOSVendor            = 'Vendor'
+                BIOSVersion           = 'P05AMA.058.250810.01'
+                BIOSMajorRelease      = '0x05'
+                BIOSMinorRelease      = '0x01'
+                SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+                SystemFamily          = 'Galaxy Book3 Pro'
+                SystemProductName     = '960XFG'
+                ProductSku            = 'SCAI-A5A5-RPLP-PSLP'
+                EnclosureKind         = '0x0a'
+                BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+                BaseBoardProduct      = 'NP960XFG-KC1US'
+            }
+        }
+
+        $batchPath = Join-Path $TestDrive 'GalaxyBookSpoof.bat'
+        New-RegistrySpoofBatch -OutputPath $batchPath
+        $content = [System.IO.File]::ReadAllText($batchPath)
+
+        $content | Should Match ([regex]::Escape('reg query "HKLM\SOFTWARE\Samsung\SamsungSettings" >nul 2>&1'))
+        $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v Manufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f'))
+        $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v BIOSVersion /t REG_SZ /d "P05AMA.058.250810.01" /f'))
+    }
+
+    It 'uses the chosen model when the BIOS spoof is not applied yet' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        New-ItemProperty -LiteralPath $biosKey -Name 'SystemManufacturer' -Value 'HP' -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'BIOSVersion' -Value 'W70 Ver. 01.07.01' -Force | Out-Null
+
+        $identity = @{ SystemManufacturer = 'Samsung'; BIOSVersion = 'PRHK.1.2.48.546' }
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -Identity $identity -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('Manufacturer') | Should Be 'Samsung'
+        $settings.GetValue('BIOSVersion') | Should Be 'PRHK.1.2.48.546'
+    }
+
+    It 'prefers the spoofed BIOS key over the fallback identity once it is applied' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        $identity = @{ SystemManufacturer = 'Samsung'; BIOSVersion = 'PRHK.1.2.48.546' }
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -Identity $identity -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        (Get-Item -LiteralPath $settingsKey).GetValue('BIOSVersion') | Should Be 'P05AMA.058.250810.01'
+    }
+
+    It 'takes the engine version from GBeSupportService over a disabled original service' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion')
+
+        # Copy system executables until two copies report different file versions; they stand in for an
+        # old and a new SSSE build (versions are read from the copies, since a copy loses its .mui)
+        $exes = [System.Collections.Generic.List[string]]::new()
+        $versions = [System.Collections.Generic.List[string]]::new()
+        foreach ($source in Get-ChildItem -Path (Join-Path $env:SystemRoot 'System32') -Filter '*.exe' -File -ErrorAction SilentlyContinue) {
+            $folder = Join-Path $TestDrive "build$($exes.Count)"
+            New-Item -Path $folder -ItemType Directory -Force | Out-Null
+            $path = Join-Path $folder 'SamsungSystemSupportService.exe'
+            Copy-Item -LiteralPath $source.FullName -Destination $path -Force -ErrorAction SilentlyContinue
+            $version = if (Test-Path -LiteralPath $path) { (Get-Item -LiteralPath $path).VersionInfo.FileVersion } else { $null }
+            if (-not $version -or $versions.Contains($version.Trim())) {
+                Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+            $exes.Add($path)
+            $versions.Add($version.Trim())
+            if ($exes.Count -eq 2) { break }
+        }
+        $exes.Count | Should Be 2
+
+        # The disabled original sorts before GBeSupportService alphabetically
+        New-FakeService -Name 'AAA_SamsungSystemSupportService' -ImagePath $exes[0]
+        New-ItemProperty -LiteralPath (Join-Path $servicesRoot 'AAA_SamsungSystemSupportService') -Name 'Start' -PropertyType DWord -Value 4 -Force | Out-Null
+        New-FakeService -Name 'GBeSupportService' -ImagePath "`"$($exes[1])`""
+
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be $versions[1]
+    }
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 winget result handling (Qodo review)' {
+    function Start-Sleep { }
+    function Write-GbeLog { }
+
+    It 'treats exit code 0 as success even when the output is not English' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded')
+
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = 0; Output = 'Erfolgreich installiert' } | Should Be $true
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = -1978335135; Output = 'Paket ist bereits installiert' } | Should Be $true
+        Test-WingetInstallSucceeded -Result @{ TimedOut = $false; ExitCode = -2147009247; Output = 'Fehler' } | Should Be $false
+    }
+
+    It 'does not retry a successful install or a hung winget' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        foreach ($response in @(
+                @{ TimedOut = $false; ExitCode = 0; Output = 'Erfolgreich installiert' },
+                @{ TimedOut = $true; ExitCode = $null; Output = '' },
+                @{ TimedOut = $false; ExitCode = -1978335212; Output = 'Kein Paket gefunden' }
+            )) {
+            $script:wingetCalls = 0
+            $script:wingetResponse = $response
+            function Invoke-WingetCommand {
+                param([string[]]$Arguments, [int]$TimeoutSeconds)
+                $script:wingetCalls++
+                return $script:wingetResponse.Clone()
+            }
+
+            (Invoke-StorePackageInstall -PackageId '9P2TBWSHK6HJ').Attempts | Should Be 1
+            $script:wingetCalls | Should Be 1
+        }
+    }
+
+    It 'only prints links with -LinksOnly, even in interactive runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $false
+        Open-StorePackagePages -Packages @([pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' }) -LinksOnly
+
+        $script:opened.Count | Should Be 0
+    }
+}
