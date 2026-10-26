@@ -280,6 +280,109 @@ function Invoke-WingetCommand {
     }
 }
 
+function Test-WingetInstallSucceeded {
+    param(
+        [hashtable]$Result
+    )
+
+    if (-not $Result -or $Result.TimedOut) {
+        return $false
+    }
+
+    return ($Result.Output -match "Successfully installed|Installation completed successfully|already installed|No available upgrade found|No newer package versions")
+}
+
+function Invoke-StorePackageInstall {
+    <#
+    .SYNOPSIS
+        Installs a Microsoft Store package via winget, retrying once on failure.
+    .DESCRIPTION
+        Pins the msstore source so winget doesn't fall back to other sources, and
+        retries once because Store acquisition often fails transiently (#111, #91).
+        Returns the last Invoke-WingetCommand result plus the attempt count.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackageId,
+
+        [string]$PackageName = $PackageId,
+
+        [int]$TimeoutSeconds = 900
+    )
+
+    $installArgs = @('install', '--source', 'msstore', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $PackageId)
+    $maxAttempts = 2
+    $result = $null
+
+    $attemptsMade = 0
+
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $attemptsMade = $attempt
+        $result = Invoke-WingetCommand -Arguments $installArgs -TimeoutSeconds $TimeoutSeconds
+
+        # Retrying won't help when the package doesn't exist in the Store source
+        if ((Test-WingetInstallSucceeded -Result $result) -or ($result.Output -match "No package found matching input criteria|No applicable update found")) {
+            break
+        }
+
+        if ($attempt -lt $maxAttempts) {
+            $reason = if ($result.TimedOut) { "timed out" } else { "exit code $($result.ExitCode)" }
+            Write-Host "  Install attempt $attempt failed ($reason), retrying..." -ForegroundColor Yellow
+            Write-GbeLog "WARNING: winget install attempt $attempt for $PackageName (ID: $PackageId) failed ($reason), retrying" -Level WARNING
+            Write-GbeLog "Output: $($result.Output)" -Level DEBUG
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    $result.Attempts = $attemptsMade
+    return $result
+}
+
+function Open-StorePackagePages {
+    <#
+    .SYNOPSIS
+        Logs Store links for packages winget couldn't install and opens them in the browser.
+    .DESCRIPTION
+        Uses the apps.microsoft.com web listing so each package gets its own browser tab
+        (the Store app is single-window, so ms-windows-store:// links would replace each other).
+        Links are always printed and logged; tabs are only opened in interactive runs.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Packages
+    )
+
+    if ($Packages.Count -eq 0) {
+        return
+    }
+
+    Write-Host "`nThese apps couldn't be installed automatically. Install them from the Microsoft Store:" -ForegroundColor Yellow
+    Write-GbeLog "Packages needing manual Store install: $($Packages.Count)" -Level WARNING
+
+    foreach ($pkg in $Packages) {
+        $webUrl = "https://apps.microsoft.com/detail/$($pkg.Id)"
+        $storeUrl = "ms-windows-store://pdp/?ProductId=$($pkg.Id)"
+        Write-Host "  • $($pkg.Name): $webUrl" -ForegroundColor White
+        Write-GbeLog "Manual install: $($pkg.Name) (ID: $($pkg.Id)) $webUrl | $storeUrl" -Level WARNING
+    }
+
+    if ($script:IsAutonomous) {
+        return
+    }
+
+    Write-Host "`nOpening the Store pages in your browser..." -ForegroundColor Cyan
+    foreach ($pkg in $Packages) {
+        try {
+            # Launch through explorer.exe so the browser opens un-elevated in the user's session
+            Start-Process -FilePath "explorer.exe" -ArgumentList "https://apps.microsoft.com/detail/$($pkg.Id)"
+            Start-Sleep -Milliseconds 500
+        }
+        catch {
+            Write-GbeLog "Could not open Store page for $($pkg.Name): $($_.Exception.Message)" -Level WARNING
+        }
+    }
+}
+
 function Invoke-InteractivePause {
     if (-not $script:IsAutonomous) {
         Write-Host ""
@@ -5471,7 +5574,7 @@ function Install-SystemSupportEngine {
         }
         else {
             try {
-                $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $settingsPackage.Id) -TimeoutSeconds 900
+                $installResult = Invoke-StorePackageInstall -PackageId $settingsPackage.Id -PackageName $settingsPackage.Name -TimeoutSeconds 900
                 if ($installResult.TimedOut) {
                     Write-Host "    ✗ winget timed out while installing $($settingsPackage.Name)" -ForegroundColor Red
                     Write-Host "      Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
@@ -5491,6 +5594,10 @@ function Install-SystemSupportEngine {
                     else {
                         Write-Host "    ⚠ $($settingsPackage.Name) - may install automatically after reboot" -ForegroundColor Yellow
                     }
+                }
+
+                if (-not (Test-WingetInstallSucceeded -Result $installResult)) {
+                    Open-StorePackagePages -Packages @([pscustomobject]$settingsPackage)
                 }
             }
             catch {
@@ -6659,6 +6766,8 @@ function Install-SamsungPackages {
         }
     }
     
+    $failedPackages = [System.Collections.Generic.List[object]]::new()
+
     foreach ($pkg in $Packages) {
         Write-Host "[$($installed + $failed + $skipped + 1)/$($Packages.Count)] " -NoNewline -ForegroundColor Gray
         Write-Host "$($pkg.Name)" -ForegroundColor White
@@ -6733,6 +6842,7 @@ function Install-SamsungPackages {
                     Write-Host "    Run 'winget list' once manually, accept any prompts, then retry." -ForegroundColor Cyan
                     Write-GbeLog "ERROR: winget list timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                     $failed++
+                    [void]$failedPackages.Add($pkg)
                     continue
                 }
 
@@ -6747,13 +6857,14 @@ function Install-SamsungPackages {
                 else {
                     Write-Host "  Installing..." -ForegroundColor Gray
                     Write-GbeLog "Installing package: $($pkg.Name) (ID: $($pkg.Id))"
-                    $installResult = Invoke-WingetCommand -Arguments @('install', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity', '--id', $pkg.Id) -TimeoutSeconds 900
+                    $installResult = Invoke-StorePackageInstall -PackageId $pkg.Id -PackageName $pkg.Name -TimeoutSeconds 900
                     if ($installResult.TimedOut) {
                         Write-Host "  ✗ Installation timed out" -ForegroundColor Red
                         Write-Host "    winget stopped responding while installing this package." -ForegroundColor Yellow
                         Write-Host "    Try running 'winget list' manually first, then retry the installer." -ForegroundColor Cyan
                         Write-GbeLog "ERROR: winget install timed out for package $($pkg.Name) (ID: $($pkg.Id))" -Level ERROR
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                         continue
                     }
 
@@ -6778,6 +6889,7 @@ function Install-SamsungPackages {
                         Write-Host "    Store link: ms-windows-store://pdp/?ProductId=$($pkg.Id)" -ForegroundColor Gray
                         Write-Host "" -ForegroundColor Yellow
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     # Winget always returns 0 even when "already installed" or "no upgrade found"
                     # Parse output to determine actual result
@@ -6798,6 +6910,7 @@ function Install-SamsungPackages {
                         Write-GbeLog "ERROR: Package $($pkg.Name) not found in winget" -Level ERROR
                         Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     elseif ($installResult.ExitCode -ne 0) {
                         Write-Host "  ✗ Installation failed (Exit code: $($installResult.ExitCode))" -ForegroundColor Red
@@ -6805,6 +6918,7 @@ function Install-SamsungPackages {
                         Write-GbeLog "ERROR: Package $($pkg.Name) failed with exit code $($installResult.ExitCode)" -Level ERROR
                         Write-GbeLog "Output: $installOutput" -Level DEBUG
                         $failed++
+                        [void]$failedPackages.Add($pkg)
                     }
                     else {
                         # Exit code 0 but unclear message - assume already installed/up to date
@@ -6816,12 +6930,17 @@ function Install-SamsungPackages {
             catch {
                 Write-Host "  ✗ Error: $_" -ForegroundColor Red
                 $failed++
+                [void]$failedPackages.Add($pkg)
             }
         }
         
         Write-Host ""
     }
-    
+
+    if ($failedPackages.Count -gt 0) {
+        Open-StorePackagePages -Packages $failedPackages.ToArray()
+    }
+
     return @{
         Installed = $installed
         Failed    = $failed

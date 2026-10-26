@@ -525,3 +525,83 @@ Describe 'Install-GalaxyBookEnabler.ps1 non-ASCII user profile paths (#127)' {
         $smbiosProduct | Should Be $result.SystemProductName
     }
 }
+
+Describe 'Install-GalaxyBookEnabler.ps1 Store package install fallback' {
+    function Start-Sleep { }
+    function Write-GbeLog {
+        param([string]$Message, [string]$Level)
+        $script:gbeLog += "$Level $Message"
+    }
+
+    It 'pins the msstore source and retries a failed install once' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        $script:wingetCalls = @()
+        function Invoke-WingetCommand {
+            param([string[]]$Arguments, [int]$TimeoutSeconds)
+            $script:wingetCalls += , $Arguments
+            if ($script:wingetCalls.Count -eq 1) {
+                return @{ TimedOut = $false; ExitCode = -2147009247; Output = 'Agreements failed' }
+            }
+            return @{ TimedOut = $false; ExitCode = 0; Output = 'Successfully installed' }
+        }
+
+        $result = Invoke-StorePackageInstall -PackageId '9NFWHCHM52HQ' -PackageName 'Samsung Cloud'
+
+        $result.Attempts | Should Be 2
+        $script:wingetCalls.Count | Should Be 2
+        ($script:wingetCalls[0] -join ' ') | Should Match '--source msstore'
+        Test-WingetInstallSucceeded -Result $result | Should Be $true
+    }
+
+    It 'does not retry when the package is not in the Store source' {
+        . (Get-InstallerFunctionScript -Name 'Test-WingetInstallSucceeded', 'Invoke-StorePackageInstall')
+
+        $script:wingetCalls = @()
+        function Invoke-WingetCommand {
+            param([string[]]$Arguments, [int]$TimeoutSeconds)
+            $script:wingetCalls += , $Arguments
+            return @{ TimedOut = $false; ExitCode = 1; Output = 'No package found matching input criteria.' }
+        }
+
+        $result = Invoke-StorePackageInstall -PackageId '9ZZZZZZZZZZZ'
+
+        $result.Attempts | Should Be 1
+        Test-WingetInstallSucceeded -Result $result | Should Be $false
+    }
+
+    It 'logs a browser link per failed package and opens nothing in autonomous runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:gbeLog = @()
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $true
+        Open-StorePackagePages -Packages @(
+            [pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' },
+            [pscustomobject]@{ Name = 'Samsung Settings'; Id = '9P2TBWSHK6HJ' }
+        )
+
+        $script:opened.Count | Should Be 0
+        ($script:gbeLog -join "`n") | Should Match 'apps\.microsoft\.com/detail/9NFWHCHM52HQ'
+        ($script:gbeLog -join "`n") | Should Match 'apps\.microsoft\.com/detail/9P2TBWSHK6HJ'
+    }
+
+    It 'opens one browser tab per failed package in interactive runs' {
+        . (Get-InstallerFunctionScript -Name 'Open-StorePackagePages')
+
+        $script:gbeLog = @()
+        $script:opened = @()
+        function Start-Process { param($FilePath, $ArgumentList) $script:opened += $ArgumentList }
+
+        $script:IsAutonomous = $false
+        Open-StorePackagePages -Packages @(
+            [pscustomobject]@{ Name = 'Samsung Cloud'; Id = '9NFWHCHM52HQ' },
+            [pscustomobject]@{ Name = 'Samsung Settings'; Id = '9P2TBWSHK6HJ' }
+        )
+
+        $script:opened.Count | Should Be 2
+        $script:opened[1] | Should Be 'https://apps.microsoft.com/detail/9P2TBWSHK6HJ'
+    }
+}
