@@ -5,6 +5,16 @@ All notable changes to Galaxy Book Enabler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Updated docs for Samsung's official support of non-Samsung Windows 11 PCs ([#100](https://github.com/Bananz0/GalaxyBookEnabler/issues/100))
+  - Multi Control, Second Screen, Storage Share, copy/paste, Continue on other devices and Auto switch Buds are officially supported through Galaxy Connect
+  - Samsung Phone is officially supported from v1.1.19.0
+  - Split Wi-Fi & Bluetooth compatibility into officially supported and enabler-only features
+  - Intel Wi-Fi + Intel Bluetooth requirement now only applies to Quick Share and Camera Share
+
 ## [3.1.5] - 2026-03-19
 
 ### Added

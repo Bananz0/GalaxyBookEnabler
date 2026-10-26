@@ -17,6 +17,8 @@
 
 Galaxy Book Enabler spoofs your Windows PC as a Samsung Galaxy Book, unlocking access to Samsung's ecosystem apps like Quick Share, Multi Control, Samsung Notes, and more. The tool provides an intelligent installer with package filtering, Wi-Fi compatibility detection, and automated startup configuration.
 
+> **Samsung now officially supports some features on non-Samsung PCs.** Multi Control, Second Screen, Storage Share, copy/paste, Continue on other devices and Auto switch Buds work on any Windows 11 x64 PC through Galaxy Connect, and Samsung Phone v1.1.19.0+ supports non-Samsung PCs too. You don't need this tool for those. It's still needed for Quick Share, Camera Share, Samsung Notes, Samsung Settings and the rest. See [Wi-Fi & Bluetooth Compatibility](#wi-fi--bluetooth-compatibility).
+
 > **See what's new:** [Changelog](CHANGELOG.md) | [Explainer](Explainer.md) | [Releases](https://github.com/Bananz0/GalaxyBookEnabler/releases)
 
 ## Features
@@ -184,7 +186,7 @@ Core packages + all fully working Samsung apps:
 
 Recommended + apps requiring extra configuration:
 
-- Samsung Phone (needs additional setup)
+- Samsung Phone (officially supported on non-Samsung PCs from v1.1.19.0)
 - Samsung Find (needs additional setup)
 - Quick Search (needs additional setup)
 
@@ -207,14 +209,14 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Settings | ✅ Working | No | Required |
 | Samsung Settings Runtime | ✅ Working | No | Required |
 | Samsung Cloud Assistant | ✅ Working | No | Required |
-| Galaxy Connect | ✅ Working | No | Required |
+| Galaxy Connect | ✅ Official | No | Required. Officially supported on non-Samsung PCs |
 | Samsung Intelligence Service | ✅ Working | No | Required (AI features) |
 | Samsung Bluetooth Sync | ✅ Working | No | Required |
 | Galaxy Book Experience | ✅ Working | No | Core (app catalog) |
 | Quick Share | ✅ Working | **Yes** | Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Camera Share | ✅ Working |**Yes**| Requires Intel Wi-Fi AX + Intel Bluetooth |
 | Samsung Notes | ✅ Working | No | - |
-| Multi Control | 🔍 Investigating | **Yes** | Under investigation - works intermittently, not reliable on any Wi-Fi |
+| Multi Control | ✅ Official | No | Officially supported via Galaxy Connect, see Samsung's Bluetooth requirements |
 | Samsung Gallery | ✅ Working | No | - |
 | Samsung Studio | ✅ Working | No | - |
 | Samsung Studio for Gallery | ✅ Working | No | - |
@@ -225,13 +227,13 @@ Pick individual packages by category with detailed descriptions and warnings.
 | Samsung Parental Controls | ✅ Working | No | - |
 | AI Select | ✅ Working | No | - |
 | Nearby Devices | ✅ Working | No | - |
-| Storage Share | ✅ Working | No | - |
-| Second Screen | ⚠️ Limited | **Yes** | Works on Wi-Fi 6/6E/7 (AX/BE), not on Wi-Fi 5 (AC) |
+| Storage Share | ✅ Official | No | Officially supported via Galaxy Connect |
+| Second Screen | ✅ Official | No | Officially supported via Galaxy Connect |
 | Live Wallpaper | ✅ Working | No | - |
 | Galaxy Book Smart Switch | ✅ Working | No | - |
 | Samsung Pass | ✅ Working | No | - |
 | Samsung Device Care | ⚠️ Extra Steps | No | May not function properly |
-| Samsung Phone | ⚠️ Extra Steps | No | Configuration required |
+| Samsung Phone | ✅ Official | No | Officially supported on non-Samsung PCs from v1.1.19.0 |
 | Samsung Find | ⚠️ Extra Steps | No | Configuration required |
 | Quick Search | ⚠️ Extra Steps | No | Configuration required |
 | Samsung Recovery | ❌ Not Working | No | Requires genuine hardware |
@@ -261,18 +263,46 @@ Pick individual packages by category with detailed descriptions and warnings.
 
 ## Wi-Fi & Bluetooth Compatibility
 
-Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full wireless features. Compatibility varies by Wi-Fi generation:
+Wireless requirements now depend on whether Samsung officially supports a feature on non-Samsung PCs.
+
+### Officially Supported Features (Galaxy Connect)
+
+As of October 2026, Samsung officially supports these features on any Windows 11 x64 PC (Intel or AMD) through [Galaxy Connect](https://apps.microsoft.com/detail/9ngw9k44gq5f), no spoof needed:
+
+- Multi Control
+- Second Screen
+- Storage Share
+- Copy/paste between devices
+- Continue on other devices (requires Samsung Internet on both devices)
+- Auto switch Buds
+
+[Samsung Phone](https://apps.microsoft.com/detail/9mwjxxlchbgk) v1.1.19.0+ also supports non-Samsung PCs.
+
+Samsung's requirements for these:
+
+- Bluetooth 5.0 or later with Extended BLE support
+  - Built-in Intel, Realtek or MediaTek adapters
+  - Intel or MediaTek USB or expansion-card adapters
+- Any Wi-Fi chipset
+- All devices signed in to the same Samsung account
+- Bluetooth and Wi-Fi on, and all devices on the same Wi-Fi AP
+
+If one of these features isn't working, update Galaxy Connect and the feature's app from the Microsoft Store first. See [#100](https://github.com/Bananz0/GalaxyBookEnabler/issues/100).
+
+### Enabler-Only Features (Quick Share, Camera Share)
+
+Features Samsung hasn't opened up still require the spoof, and still need **Intel Wi-Fi** and **Intel Bluetooth**. Compatibility varies by Wi-Fi generation:
 
 ### Wi-Fi Compatibility by Generation
 
-| Generation | Adapters | Quick Share | Multi Control | Second Screen | Camera Share | Storage Share |
-|------------|----------|-------------|---------------|---------------|--------------|---------------|
-| **Wi-Fi 7 (BE)** | BE200, BE201, BE202 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
-| **Wi-Fi 6E (AX)** | AX210, AX211, AX411 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
-| **Wi-Fi 6 (AX)** | AX201, AX200 | ✅ Full | 🔍 Investigating | ✅ Full | ✅ Full | ✅ Full |
-| **Wi-Fi 5 (AC)** | 9260, 9560, 8265, 8260 | ✅ Works | ❌ Not Working | ❌ Not Working | ✅ Works | ✅ Works |
-| **Wireless-AC (Legacy)** | 7265, 7260, 3168, 3165 | ❓ Not Tested | ❌ Not Working | ❌ Not Working | ❓ Not Tested | ❓ Not Tested |
-| **Non-Intel** | Realtek, MediaTek, Qualcomm | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Generation | Adapters | Quick Share | Camera Share |
+|------------|----------|-------------|--------------|
+| **Wi-Fi 7 (BE)** | BE200, BE201, BE202 | ✅ Full | ✅ Full |
+| **Wi-Fi 6E (AX)** | AX210, AX211, AX411 | ✅ Full | ✅ Full |
+| **Wi-Fi 6 (AX)** | AX201, AX200 | ✅ Full | ✅ Full |
+| **Wi-Fi 5 (AC)** | 9260, 9560, 8265, 8260 | ✅ Works | ✅ Works |
+| **Wireless-AC (Legacy)** | 7265, 7260, 3168, 3165 | ❓ Not Tested | ❓ Not Tested |
+| **Non-Intel** | Realtek, MediaTek, Qualcomm | ❌ | ❌ |
 
 ### Intel Wi-Fi Product Families
 
@@ -299,14 +329,12 @@ Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full w
 
 #### Wi-Fi 5 / Wireless-AC - Limited Compatibility ⚠️
 
-| Product Family | Quick Share | Multi Control | Second Screen |
-|----------------|-------------|---------------|---------------|
-| Intel Wireless-AC 9000 Series (9260, 9560) | ✅ Works | ❌ No | ❌ No |
-| Intel Wireless-AC 8000 Series (8265, 8260) | ✅ Works | ❌ No | ❌ No |
+| Product Family | Quick Share |
+|----------------|-------------|
+| Intel Wireless-AC 9000 Series (9260, 9560) | ✅ Works |
+| Intel Wireless-AC 8000 Series (8265, 8260) | ✅ Works |
 
 **AC Limitations:**
-- Multi Control does not work
-- Second Screen does not work (WiFi Direct uses 802.11n - Samsung limitation)
 - May show "A software or driver update is required" error in Quick Share
 
 #### Legacy Wireless-AC - Not Tested ❓
@@ -321,27 +349,22 @@ Samsung apps require **Intel Wi-Fi** and **Intel Bluetooth** adapters for full w
 > - Product is discontinued without Windows 10/11 driver support
 > - Adapter doesn't support modern Wi-Fi Direct features
 
-### Multi Control Status: Under Investigation 🔍
-
-Multi Control is currently **not working reliably** on any Intel Wi-Fi generation:
-- Works intermittently on Wi-Fi 6/6E/7
-- Completely non-functional on Wi-Fi 5 (AC)
-- Investigation ongoing - may be Samsung server-side issue
-
-### Non-Intel Wi-Fi (Not Working) ❌
+### Non-Intel Wi-Fi (Quick Share / Camera Share Not Working) ❌
 
 - Realtek adapters
 - MediaTek adapters
 - Qualcomm adapters
 - Broadcom adapters
 
-### Intel Bluetooth (Required) ✅
+These adapters can still use the officially supported Galaxy Connect features above if the Bluetooth adapter is on Samsung's list.
 
-All wireless features also require an **Intel Bluetooth radio** (not just Wi-Fi). Third-party Bluetooth adapters (USB dongles, etc.) will cause features to fail with unhelpful errors.
+### Intel Bluetooth (Required for Quick Share / Camera Share) ✅
+
+Quick Share and Camera Share also require an **Intel Bluetooth radio** (not just Wi-Fi). Third-party Bluetooth adapters (USB dongles, etc.) will cause these to fail with unhelpful errors.
 
 ### Alternative for Non-Intel Users
 
-If you don't have Intel Wi-Fi **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative:
+If you don't have Intel Wi-Fi **and** Intel Bluetooth, consider **Google Nearby Share** as an alternative for Quick Share:
 
 - Works with any Wi-Fi adapter
 - Similar file-sharing functionality
@@ -630,6 +653,9 @@ A: This doesn't modify hardware or firmware. It only changes registry values.
 
 **Q: Can I use this on a real Samsung Galaxy Book?**
 A: There's no need - these features already work on genuine Galaxy Books.
+
+**Q: Do I still need this now that Samsung supports non-Samsung PCs?**
+A: Not for Multi Control, Second Screen, Storage Share, copy/paste, Continue on other devices, Auto switch Buds or Samsung Phone. Those are officially supported through Galaxy Connect. You still need it for Quick Share, Camera Share, Samsung Notes, Samsung Settings and the other apps.
 
 **Q: Why does Quick Share need Intel Wi-Fi?**
 A: Samsung designed Quick Share to work specifically with Intel's Wi-Fi Direct implementation. You need both **Intel Wi-Fi AX** (not AC) and **Intel Bluetooth** radios. Third-party Bluetooth adapters or Intel AC cards won't work.
