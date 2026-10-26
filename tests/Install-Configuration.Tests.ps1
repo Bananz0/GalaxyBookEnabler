@@ -402,3 +402,126 @@ Describe 'Install-GalaxyBookEnabler.ps1 autonomous package resolution' {
         ($result.Stdout + $result.Stderr) | Should Match 'Autonomous package .* was not found'
     }
 }
+
+function Get-InstallerFunctionScript {
+    param(
+        [string[]]$Name
+    )
+
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $scriptPath).Path, [ref]$null, [ref]$null)
+    $functions = $ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $Name -contains $node.Name
+        }, $false)
+
+    return [scriptblock]::Create(($functions | ForEach-Object { $_.Extent.Text }) -join [Environment]::NewLine)
+}
+
+Describe 'Install-GalaxyBookEnabler.ps1 non-ASCII user profile paths (#127)' {
+    # "Žemaitė Ąžuolė" - a Lithuanian-style user folder with a space and non-ASCII characters
+    $nonAsciiName = "$([char]0x17D)emait$([char]0x117) $([char]0x104)$([char]0x17E)uol$([char]0x117)"
+
+    function Get-DefaultBiosValues {
+        return @{
+            BIOSVendor            = 'Default Vendor'
+            BIOSVersion           = 'DEFAULT.100.000000.01'
+            BIOSMajorRelease      = '0x01'
+            BIOSMinorRelease      = '0x01'
+            SystemManufacturer    = 'Default Manufacturer'
+            SystemFamily          = 'Default Family'
+            SystemProductName     = 'DEFAULT'
+            ProductSku            = 'DEFAULT-SKU'
+            EnclosureKind         = '0x0a'
+            BaseBoardManufacturer = 'Default Manufacturer'
+            BaseBoardProduct      = 'DEFAULT'
+        }
+    }
+
+    It 'writes a UTF-8 spoof batch that round-trips from a non-ASCII folder' {
+        . (Get-InstallerFunctionScript -Name 'New-RegistrySpoofBatch', 'Get-LegacyBiosValues')
+
+        $installPath = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+        $batchPath = Join-Path $installPath 'GalaxyBookSpoof.bat'
+
+        $customFamily = "Galaxy Book4 Ultra $([char]0x17D)"
+        New-RegistrySpoofBatch -OutputPath $batchPath -BiosValues @{
+            BIOSVendor            = 'American Megatrends International, LLC.'
+            BIOSVersion           = 'P08ALX.400.250306.05'
+            BIOSMajorRelease      = '0x08'
+            BIOSMinorRelease      = '0x11'
+            SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+            SystemFamily          = $customFamily
+            SystemProductName     = '960XGL'
+            ProductSku            = 'SCAI-A5A5-ADLP-PSLP'
+            EnclosureKind         = '0x1f'
+            BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+            BaseBoardProduct      = '960XGL'
+        }
+
+        Test-Path -LiteralPath $batchPath | Should Be $true
+
+        $bytes = [System.IO.File]::ReadAllBytes($batchPath)
+        ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should Be $false
+
+        $lines = [System.IO.File]::ReadAllLines($batchPath, [System.Text.Encoding]::UTF8)
+        $lines[0] | Should Be '@echo off'
+        $lines[1] | Should Be 'chcp 65001 >nul'
+
+        $legacy = Get-LegacyBiosValues -OldBatchPath $batchPath
+        $legacy | Should Not BeNullOrEmpty
+        $legacy.Values.SystemFamily | Should Be $customFamily
+        $legacy.Values.SystemProductName | Should Be '960XGL'
+        $legacy.Values.BIOSVersion | Should Be 'P08ALX.400.250306.05'
+    }
+
+    It 'runs a batch file from a non-ASCII folder with the scheduled task quoting' {
+        $batchDir = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $batchDir -ItemType Directory -Force | Out-Null
+        $batchPath = Join-Path $batchDir 'GalaxyBookSpoof.bat'
+        $markerPath = Join-Path $batchDir 'ran.txt'
+
+        $batchContent = "@echo off`r`nchcp 65001 >nul`r`necho ok> `"%~dp0ran.txt`"`r`n"
+        [System.IO.File]::WriteAllText($batchPath, $batchContent, [System.Text.UTF8Encoding]::new($false))
+
+        # Same command line the GalaxyBookEnabler scheduled task uses
+        $cmdPath = Join-Path $env:SystemRoot 'System32\cmd.exe'
+        $process = Start-Process -FilePath $cmdPath -ArgumentList "/d /c `"`"$batchPath`"`"" -Wait -PassThru -WindowStyle Hidden
+
+        $process.ExitCode | Should Be 0
+        Test-Path -LiteralPath $markerPath | Should Be $true
+    }
+
+    It 'writes a Multi Control init script that parses from a non-ASCII folder' {
+        . (Get-InstallerFunctionScript -Name 'New-MultiControlInitScript')
+
+        $installPath = Join-Path $TestDrive "$nonAsciiName\.galaxy-book-enabler"
+        New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+        $initScriptPath = Join-Path $installPath 'Init-SamsungMultiControlOnLogin.ps1'
+
+        New-MultiControlInitScript -OutputPath $initScriptPath
+
+        Test-Path -LiteralPath $initScriptPath | Should Be $true
+
+        $parseErrors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseFile($initScriptPath, [ref]$null, [ref]$parseErrors)
+        $parseErrors.Count | Should Be 0
+    }
+
+    It 'updates config.plist inside a non-ASCII folder' {
+        $fixture = Join-Path $PSScriptRoot 'fixtures\config.plist'
+        $plistDir = Join-Path $TestDrive "$nonAsciiName\EFI\OC"
+        New-Item -Path $plistDir -ItemType Directory -Force | Out-Null
+        $plistPath = Join-Path $plistDir 'config.plist'
+        Copy-Item -LiteralPath $fixture -Destination $plistPath -Force
+
+        $result = & $scriptPath -Profile Book4Pro -CountryCode US -WriteConfigPlist -ConfigPath $plistPath
+
+        $result.ConfigurationUpdate | Should Not BeNullOrEmpty
+        Test-Path -LiteralPath $result.ConfigurationUpdate.BackupPath | Should Be $true
+
+        $updated = [xml](Get-Content -LiteralPath $plistPath -Raw -Encoding utf8)
+        $smbiosProduct = (Get-PlistValueByPath -Document $updated -Path @('PlatformInfo', 'SMBIOS') -Key 'SystemProductName').InnerText
+        $smbiosProduct | Should Be $result.SystemProductName
+    }
+}

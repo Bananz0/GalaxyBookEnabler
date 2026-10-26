@@ -261,11 +261,11 @@ function Invoke-WingetCommand {
         }
 
         $output = @()
-        if (Test-Path $stdoutPath) {
-            $output += Get-Content $stdoutPath -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stdoutPath) {
+            $output += Get-Content -LiteralPath $stdoutPath -Encoding utf8 -ErrorAction SilentlyContinue
         }
-        if (Test-Path $stderrPath) {
-            $output += Get-Content $stderrPath -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stderrPath) {
+            $output += Get-Content -LiteralPath $stderrPath -Encoding utf8 -ErrorAction SilentlyContinue
         }
 
         $process.Refresh()
@@ -331,6 +331,18 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     exit 1
 }
 
+# Use UTF-8 for console and native command I/O so non-ASCII user folders
+# (e.g. C:\Users\Žygimantas) survive cmd/winget/pnputil round-trips (#127)
+try {
+    $script:Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [Console]::OutputEncoding = $script:Utf8NoBom
+    [Console]::InputEncoding = $script:Utf8NoBom
+    $OutputEncoding = $script:Utf8NoBom
+}
+catch {
+    # No attached console (redirected/CI host); PowerShell's own file I/O is already UTF-8
+}
+
 # Self-elevation: Try gsudo first (preserves console), fallback to native UAC
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -382,11 +394,11 @@ if ((-not $script:IsConfigurationOnly) -and (-not $isAdmin)) {
     
     # Save script to temp file for secure elevation (avoids re-download RCE and command-line length limits)
     $tempScript = Join-Path $env:TEMP "GBE_Elevated_$([System.IO.Path]::GetRandomFileName()).ps1"
-    if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+    if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
         Copy-Item -LiteralPath $PSCommandPath -Destination $tempScript -Force
     }
     else {
-        $MyInvocation.MyCommand.Definition | Out-File -FilePath $tempScript -Encoding UTF8 -Force
+        $MyInvocation.MyCommand.Definition | Out-File -LiteralPath $tempScript -Encoding utf8BOM -Force
     }
     $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript) + $forwardedArgs
 
@@ -464,7 +476,7 @@ function Write-GbeLog {
     $logEntry = "[$timestamp] [$Level] $Message"
     
     try {
-        Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
+        Add-Content -LiteralPath $script:LogFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
     }
     catch {
             Write-Debug "Failed to write log entry: $($_.Exception.Message)"
@@ -2012,11 +2024,11 @@ function Test-InstallationHealth {
     }
     
     # Check 1: Config file
-    if (Test-Path $ConfigPath) {
+    if (Test-Path -LiteralPath $ConfigPath) {
         $health.Components.Config = $true
         $health.ComponentCount++
         try {
-            $config = Get-Content $ConfigPath | ConvertFrom-Json
+            $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding utf8 | ConvertFrom-Json
             if ($config.InstalledVersion) {
                 $health.GbeVersion = $config.InstalledVersion
             }
@@ -6869,8 +6881,8 @@ function Install-SSSEDriverToStore {
             $pnputilProc.Refresh()
             if ($pnputilProc.ExitCode -ne 0) {
                 $pnputilOutput = @()
-                if (Test-Path $pnputilOut) { $pnputilOutput += Get-Content $pnputilOut -ErrorAction SilentlyContinue }
-                if (Test-Path $pnputilErr) { $pnputilOutput += Get-Content $pnputilErr -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $pnputilOut) { $pnputilOutput += Get-Content -LiteralPath $pnputilOut -Encoding utf8 -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $pnputilErr) { $pnputilOutput += Get-Content -LiteralPath $pnputilErr -Encoding utf8 -ErrorAction SilentlyContinue }
                 Write-Host "    ✗ Failed to add INF to store" -ForegroundColor Red
                 Write-Host "      Error: $($pnputilOutput -join ' ')" -ForegroundColor Red
                 return $false
@@ -7000,12 +7012,12 @@ function Get-LegacyBiosValues {
         [string]$OldBatchPath
     )
     
-    if (-not (Test-Path $OldBatchPath)) {
+    if (-not (Test-Path -LiteralPath $OldBatchPath)) {
         return $null
     }
-    
+
     try {
-        $content = Get-Content $OldBatchPath -Raw
+        $content = Get-Content -LiteralPath $OldBatchPath -Raw -Encoding utf8
         
         # Default values for comparison
         $defaults = Get-DefaultBiosValues
@@ -7138,6 +7150,7 @@ function New-RegistrySpoofBatch {
     
     $batchContent = @"
 @echo off
+chcp 65001 >nul
 REM ============================================================================
 REM Galaxy Book Enabler - Registry Spoof Script
 REM Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -7195,7 +7208,8 @@ REM ============================================================================
         Write-Host "    [TEST] Would write registry batch to: $OutputPath" -ForegroundColor Gray
     }
     else {
-        $batchContent | Set-Content $OutputPath -Encoding ASCII
+        # cmd.exe misparses a BOM, so write UTF-8 without one (paired with chcp 65001 above)
+        $batchContent | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
     }
 }
 
@@ -7367,7 +7381,7 @@ Write-Log "Script finished"
         Write-Host "    [TEST] Would write MultiControl script to: $OutputPath" -ForegroundColor Gray
     }
     else {
-        $scriptContent | Set-Content -Path $OutputPath -Encoding UTF8
+        $scriptContent | Set-Content -LiteralPath $OutputPath -Encoding utf8BOM
     }
 }
 
@@ -8547,7 +8561,7 @@ else {
         IsIntelWiFi      = $wifiCheck.IsIntel
     }
 
-    $config | ConvertTo-Json | Set-Content $configPath
+    $config | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
     Write-Host "✓ Configuration saved" -ForegroundColor Green
 }
 
@@ -8580,7 +8594,10 @@ else {
     }
 
     $taskDescription = "Spoofs system as Samsung Galaxy Book to enable Samsung features"
-    $action = New-ScheduledTaskAction -Execute $batchScriptPath
+    # Run the batch through cmd.exe with the path quoted so spaces and non-ASCII
+    # characters in the user folder don't break the SYSTEM startup task (#127)
+    $cmdPath = Join-Path $env:SystemRoot "System32\cmd.exe"
+    $action = New-ScheduledTaskAction -Execute $cmdPath -Argument "/d /c `"`"$batchScriptPath`"`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $trigger.Delay = "PT10S"
     $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -8923,7 +8940,7 @@ Start-Process "shell:AppsFolder\SAMSUNGELECTRONICSCO.LTD.SmartSelect_3c1yjt4zspk
             Write-Host "  [TEST] Would create launcher script: $ps1LauncherPath" -ForegroundColor Gray
         }
         else {
-            $ps1Content | Set-Content -Path $ps1LauncherPath -Encoding UTF8
+            $ps1Content | Set-Content -LiteralPath $ps1LauncherPath -Encoding utf8BOM
         }
         
         $renderHeaderBlock = {
@@ -9035,7 +9052,7 @@ if ($TestMode) {
 }
 else {
     Write-Host "Applying Samsung Galaxy Book spoof..." -ForegroundColor Yellow
-    Start-Process -FilePath $batchScriptPath -Wait -NoNewWindow
+    Start-Process -FilePath (Join-Path $env:SystemRoot "System32\cmd.exe") -ArgumentList "/d /c `"`"$batchScriptPath`"`"" -Wait -NoNewWindow
     Write-Host "✓ Registry spoof applied!" -ForegroundColor Green
     if ($biosValuesToUse) {
         $fam = $biosValuesToUse.SystemFamily
