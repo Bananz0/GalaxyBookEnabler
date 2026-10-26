@@ -649,3 +649,136 @@ Describe 'Install-GalaxyBookEnabler.ps1 installation health check' {
         $defaultValue.Contains('.galaxy-book-enabler\gbe-config.json') | Should Be $true
     }
 }
+
+Describe 'Install-GalaxyBookEnabler.ps1 Samsung Settings registration (#94, #51)' {
+    function Write-GbeLog { }
+
+    $testRoot = "HKCU:\Software\GalaxyBookEnablerTests\$([guid]::NewGuid().ToString('N'))"
+    $servicesRoot = Join-Path $testRoot 'Services'
+    $settingsKey = Join-Path $testRoot 'SamsungSettings'
+    $biosKey = Join-Path $testRoot 'BIOS'
+
+    function New-FakeService {
+        param([string]$Name, [string]$ImagePath)
+        $key = Join-Path $servicesRoot $Name
+        New-Item -Path $key -Force | Out-Null
+        New-ItemProperty -LiteralPath $key -Name 'ImagePath' -PropertyType ExpandString -Value $ImagePath -Force | Out-Null
+    }
+
+    BeforeEach {
+        if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+        New-Item -Path $servicesRoot -Force | Out-Null
+        New-Item -Path $biosKey -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'SystemManufacturer' -Value 'SAMSUNG ELECTRONICS CO., LTD.' -Force | Out-Null
+        New-ItemProperty -LiteralPath $biosKey -Name 'BIOSVersion' -Value 'P05AMA.058.250810.01' -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+        $testParent = Split-Path -Path $testRoot -Parent
+        if ((Test-Path -LiteralPath $testParent) -and -not (Get-ChildItem -LiteralPath $testParent)) {
+            Remove-Item -LiteralPath $testParent -Force
+        }
+    }
+
+    It 'writes the same service and Samsung Settings values as the original INF and engine' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'SamsungSystemSupportService' -ImagePath 'C:\Windows\System32\cmd.exe'
+        New-FakeService -Name 'GBeSupportService' -ImagePath '"C:\GalaxyBook\SamsungSystemSupportService.exe"'
+        New-FakeService -Name 'SomeOtherService' -ImagePath 'C:\Windows\System32\svchost.exe'
+
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Should Be $true
+
+        foreach ($serviceName in 'SamsungSystemSupportService', 'GBeSupportService') {
+            $serviceKey = Get-Item -LiteralPath (Join-Path $servicesRoot $serviceName)
+            $serviceKey.GetValue('Version') | Should Be '8.0.5.0'
+            $serviceKey.GetValueKind('Version') | Should Be 'String'
+
+            $parameters = Get-Item -LiteralPath (Join-Path $servicesRoot "$serviceName\Parameters")
+            $parameters.GetValue('Version') | Should Be '8.0.5.0'
+            $parameters.GetValue('Interface') | Should Be '6'
+            $parameters.GetValueKind('Interface') | Should Be 'String'
+        }
+
+        (Get-Item -LiteralPath (Join-Path $servicesRoot 'SamsungSystemSupportService')).GetValue('DisplayName') | Should Be 'SamsungSystemSupportService'
+        Test-Path -LiteralPath (Join-Path $servicesRoot 'SomeOtherService\Parameters') | Should Be $false
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('ModelType') | Should Be 'NotePC'
+        $settings.GetValue('Manufacturer') | Should Be 'SAMSUNG ELECTRONICS CO., LTD.'
+        $settings.GetValue('BIOSVersion') | Should Be 'P05AMA.058.250810.01'
+        $settings.GetValue('EngineVersion') | Should Be '8.0.5.0'
+
+        $moduleSystem = Get-Item -LiteralPath (Join-Path $settingsKey 'ModuleSystem')
+        $moduleSystem.GetValue('Version') | Should Be '8.0.5.0'
+        $moduleSystem.GetValue('CheckSingleBom') | Should Be 1
+        $moduleSystem.GetValueKind('CheckSingleBom') | Should Be 'DWord'
+        $moduleSystem.GetValue('SupportComputerInfo') | Should Be 1
+    }
+
+    It 'keeps values the engine already wrote in the Samsung Settings key' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'GBeSupportService' -ImagePath 'C:\GalaxyBook\SamsungSystemSupportService.exe'
+        New-Item -Path (Join-Path $settingsKey 'ModuleEasyConnect') -Force | Out-Null
+        New-ItemProperty -LiteralPath $settingsKey -Name 'AppVersion' -Value '8.0.8.0' -Force | Out-Null
+        New-ItemProperty -LiteralPath $settingsKey -Name 'Manufacturer' -Value 'ASUSTeK COMPUTER INC.' -Force | Out-Null
+
+        Set-SamsungSettingsRegistration -EngineVersion '8.0.5.0' -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Out-Null
+
+        $settings = Get-Item -LiteralPath $settingsKey
+        $settings.GetValue('Manufacturer') | Should Be 'SAMSUNG ELECTRONICS CO., LTD.'
+        $settings.GetValue('AppVersion') | Should Be '8.0.8.0'
+        Test-Path -LiteralPath (Join-Path $settingsKey 'ModuleEasyConnect') | Should Be $true
+    }
+
+    It 'does nothing when SSSE is not installed' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion', 'Set-SamsungSettingsRegistration')
+
+        New-FakeService -Name 'SamsungSystemSupportService' -ImagePath 'C:\Windows\System32\cmd.exe'
+
+        Set-SamsungSettingsRegistration -ServicesRoot $servicesRoot -SettingsKey $settingsKey -BiosKey $biosKey | Should Be $false
+        Test-Path -LiteralPath $settingsKey | Should Be $false
+        Test-Path -LiteralPath (Join-Path $servicesRoot 'SamsungSystemSupportService\Parameters') | Should Be $false
+    }
+
+    It 'reads the engine version from the service executable' {
+        . (Get-InstallerFunctionScript -Name 'Get-InstalledSsseEngineVersion')
+
+        # Any versioned exe works; pwsh may be the Store app alias, which can't be copied
+        $sourceExe = Join-Path $env:SystemRoot 'System32\whoami.exe'
+        $fakeExe = Join-Path $TestDrive 'SamsungSystemSupportService.exe'
+        Copy-Item -LiteralPath $sourceExe -Destination $fakeExe -Force
+        New-FakeService -Name 'GBeSupportService_20260101' -ImagePath "`"$fakeExe`""
+
+        Get-InstalledSsseEngineVersion -ServicesRoot $servicesRoot | Should Be (Get-Item -LiteralPath $sourceExe).VersionInfo.FileVersion.Trim()
+    }
+
+    It 're-applies the Samsung Settings identity from the startup batch' {
+        . (Get-InstallerFunctionScript -Name 'New-RegistrySpoofBatch')
+        function Get-DefaultBiosValues {
+            return @{
+                BIOSVendor            = 'Vendor'
+                BIOSVersion           = 'P05AMA.058.250810.01'
+                BIOSMajorRelease      = '0x05'
+                BIOSMinorRelease      = '0x01'
+                SystemManufacturer    = 'SAMSUNG ELECTRONICS CO., LTD.'
+                SystemFamily          = 'Galaxy Book3 Pro'
+                SystemProductName     = '960XFG'
+                ProductSku            = 'SCAI-A5A5-RPLP-PSLP'
+                EnclosureKind         = '0x0a'
+                BaseBoardManufacturer = 'SAMSUNG ELECTRONICS CO., LTD.'
+                BaseBoardProduct      = 'NP960XFG-KC1US'
+            }
+        }
+
+        $batchPath = Join-Path $TestDrive 'GalaxyBookSpoof.bat'
+        New-RegistrySpoofBatch -OutputPath $batchPath
+        $content = [System.IO.File]::ReadAllText($batchPath)
+
+        $content | Should Match ([regex]::Escape('reg query "HKLM\SOFTWARE\Samsung\SamsungSettings" >nul 2>&1'))
+        $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v Manufacturer /t REG_SZ /d "SAMSUNG ELECTRONICS CO., LTD." /f'))
+        $content | Should Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v BIOSVersion /t REG_SZ /d "P05AMA.058.250810.01" /f'))
+    }
+}

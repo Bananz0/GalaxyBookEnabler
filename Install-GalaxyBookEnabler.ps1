@@ -472,16 +472,31 @@ catch {
     # No attached console (redirected/CI host); PowerShell's own file I/O is already UTF-8
 }
 
-# Microsoft Store PowerShell can't load the CIM/MI native layer, which breaks hardware
-# detection and scheduled task creation (#124). Relaunch in a regular install when there is one.
+# Microsoft Store PowerShell can fail to load the CIM/MI native layer on some systems, which
+# breaks hardware detection and scheduled task creation (#124). Relaunch in a regular install
+# when there is one; otherwise only stop if CIM is actually broken in this session.
 $script:IsStorePowerShell = $PSHOME -like '*\WindowsApps\*'
 $script:PwshPath = Get-ClassicPwshPath
 $relaunchInClassicPwsh = $false
 
 if ($script:IsStorePowerShell -and -not $script:IsConfigurationOnly) {
+    $cimWorks = $true
+    if (-not $script:PwshPath) {
+        try {
+            $null = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        }
+        catch {
+            $cimWorks = $false
+        }
+    }
+
     if ($script:PwshPath) {
         Write-Host "⚠ Microsoft Store PowerShell detected, relaunching in $($script:PwshPath)" -ForegroundColor Yellow
         $relaunchInClassicPwsh = $true
+    }
+    elseif ($cimWorks) {
+        Write-Host "⚠ Running in Microsoft Store PowerShell. It works here, but the regular build is more reliable:" -ForegroundColor Yellow
+        Write-Host "   winget install --id Microsoft.PowerShell --source winget" -ForegroundColor Gray
     }
     else {
         Write-Host ""
@@ -4414,6 +4429,125 @@ function Start-GalaxyBookScheduledTasks {
     return ($startedCount -gt 0)
 }
 
+function Get-InstalledSsseEngineVersion {
+    <#
+    .SYNOPSIS
+        Returns the FileVersion of the installed SamsungSystemSupportService.exe, or $null.
+    .DESCRIPTION
+        Looks at every service whose ImagePath points at SamsungSystemSupportService.exe
+        (GBeSupportService*, or a genuine INF-installed SamsungSystemSupportService).
+    #>
+    param(
+        [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services"
+    )
+
+    foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
+        $imagePath = (Get-ItemProperty -LiteralPath $serviceKey.PSPath -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
+        if (-not $imagePath) { continue }
+
+        $exePath = [Environment]::ExpandEnvironmentVariables($imagePath.Trim().Trim('"'))
+        if ($exePath -notlike '*\SamsungSystemSupportService.exe') { continue }
+        if (-not (Test-Path -LiteralPath $exePath)) { continue }
+
+        $fileVersion = (Get-Item -LiteralPath $exePath).VersionInfo.FileVersion
+        if ($fileVersion) {
+            return $fileVersion.Trim()
+        }
+    }
+
+    return $null
+}
+
+function Set-SamsungSettingsRegistration {
+    <#
+    .SYNOPSIS
+        Writes the registry values Samsung's own SSSE install and engine would have written.
+    .DESCRIPTION
+        GalaxyBookEnabler installs SSSE with sc.exe instead of SFourSWComp15.inf, and on a
+        registry-only spoof the engine reads the real manufacturer from WMI. Samsung Settings
+        then reports "the service is not working" (#94, #51). This mirrors the original flow:
+          - INF AddReg: Services\<svc>\Parameters  Version=<DriverVersion>, Interface=6 (REG_SZ)
+          - Engine:     Services\<svc>             Version=<engine version>         (REG_SZ)
+          - Engine:     SOFTWARE\Samsung\SamsungSettings ModelType/Manufacturer/BIOSVersion/
+                        EngineVersion (REG_SZ) and ModuleSystem Version (REG_SZ),
+                        CheckSingleBom/SupportComputerInfo (REG_DWORD 1)
+        Manufacturer and BIOSVersion come from the (spoofed) BIOS key, like the engine does on
+        genuine or firmware-spoofed hardware. Per-module feature flags are left to the engine.
+    #>
+    param(
+        [string]$EngineVersion,
+        [string]$ServicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services",
+        [string]$SettingsKey = "HKLM:\SOFTWARE\Samsung\SamsungSettings",
+        [string]$BiosKey = "HKLM:\HARDWARE\DESCRIPTION\System\BIOS",
+        [bool]$TestMode = $false
+    )
+
+    if (-not $EngineVersion) {
+        $EngineVersion = Get-InstalledSsseEngineVersion -ServicesRoot $ServicesRoot
+    }
+
+    if (-not $EngineVersion) {
+        Write-Verbose "SSSE not installed; skipping Samsung Settings registration"
+        return $false
+    }
+
+    $bios = Get-ItemProperty -LiteralPath $BiosKey -ErrorAction SilentlyContinue
+
+    if ($TestMode) {
+        Write-Host "  [TEST] Would register SSSE $EngineVersion for Samsung Settings (service Parameters + $SettingsKey)" -ForegroundColor Gray
+        return $true
+    }
+
+    # Every SSSE service plus the original service name Samsung Settings knows about
+    $serviceNames = [System.Collections.Generic.List[string]]::new()
+    foreach ($serviceKey in Get-ChildItem -LiteralPath $ServicesRoot -ErrorAction SilentlyContinue) {
+        $imagePath = (Get-ItemProperty -LiteralPath $serviceKey.PSPath -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
+        if (($serviceKey.PSChildName -eq 'SamsungSystemSupportService') -or ($imagePath -like '*\SamsungSystemSupportService.exe*')) {
+            $serviceNames.Add($serviceKey.PSChildName)
+        }
+    }
+
+    foreach ($serviceName in $serviceNames) {
+        $serviceKeyPath = Join-Path $ServicesRoot $serviceName
+        $parametersPath = Join-Path $serviceKeyPath 'Parameters'
+
+        New-ItemProperty -LiteralPath $serviceKeyPath -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+        if ($serviceName -eq 'SamsungSystemSupportService') {
+            New-ItemProperty -LiteralPath $serviceKeyPath -Name 'DisplayName' -PropertyType String -Value 'SamsungSystemSupportService' -Force | Out-Null
+        }
+
+        if (-not (Test-Path -LiteralPath $parametersPath)) {
+            New-Item -Path $parametersPath | Out-Null
+        }
+        New-ItemProperty -LiteralPath $parametersPath -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+        New-ItemProperty -LiteralPath $parametersPath -Name 'Interface' -PropertyType String -Value '6' -Force | Out-Null
+        Write-GbeLog "Registered SSSE $EngineVersion on service $serviceName (Parameters Version/Interface)"
+    }
+
+    if (-not (Test-Path -LiteralPath $SettingsKey)) {
+        New-Item -Path $SettingsKey -Force | Out-Null
+    }
+    New-ItemProperty -LiteralPath $SettingsKey -Name 'ModelType' -PropertyType String -Value 'NotePC' -Force | Out-Null
+    if ($bios.SystemManufacturer) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'Manufacturer' -PropertyType String -Value $bios.SystemManufacturer -Force | Out-Null
+    }
+    if ($bios.BIOSVersion) {
+        New-ItemProperty -LiteralPath $SettingsKey -Name 'BIOSVersion' -PropertyType String -Value $bios.BIOSVersion -Force | Out-Null
+    }
+    New-ItemProperty -LiteralPath $SettingsKey -Name 'EngineVersion' -PropertyType String -Value $EngineVersion -Force | Out-Null
+
+    $moduleSystemKey = Join-Path $SettingsKey 'ModuleSystem'
+    if (-not (Test-Path -LiteralPath $moduleSystemKey)) {
+        New-Item -Path $moduleSystemKey | Out-Null
+    }
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'Version' -PropertyType String -Value $EngineVersion -Force | Out-Null
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'CheckSingleBom' -PropertyType DWord -Value 1 -Force | Out-Null
+    New-ItemProperty -LiteralPath $moduleSystemKey -Name 'SupportComputerInfo' -PropertyType DWord -Value 1 -Force | Out-Null
+
+    Write-GbeLog "Seeded $SettingsKey (Manufacturer=$($bios.SystemManufacturer), BIOSVersion=$($bios.BIOSVersion), EngineVersion=$EngineVersion)"
+    return $true
+}
+
 function Install-SystemSupportEngine {
     <#
     .SYNOPSIS
@@ -5705,7 +5839,17 @@ function Install-SystemSupportEngine {
         elseif ($finalVersion) {
             Write-Host "`n✓ You are running the latest SSSE version ($finalVersion)" -ForegroundColor Green
         }
-        
+
+        try {
+            if (Set-SamsungSettingsRegistration -TestMode $TestMode) {
+                Write-Host "✓ Registered SSSE with Samsung Settings" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "⚠ Could not register SSSE with Samsung Settings: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
+        }
+
         if (-not $AutoInstall) {
             Write-Host "`nPress any key to continue..." -ForegroundColor Yellow
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
@@ -7390,6 +7534,18 @@ $(Format-SysInfoRegValue "SystemManufacturer" $values.SystemManufacturer)
 $(Format-SysInfoRegValue "SystemProductName" $values.SystemProductName)
 
 REM ============================================================================
+REM SECTION 4: HKLM\SOFTWARE\Samsung\SamsungSettings
+REM SSSE fills these from SMBIOS/WMI, which a registry-only spoof doesn't change.
+REM Only touched once SSSE has created the key.
+REM ============================================================================
+reg query "HKLM\SOFTWARE\Samsung\SamsungSettings" >nul 2>&1
+if not errorlevel 1 (
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v ModelType /t REG_SZ /d "NotePC" /f
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v Manufacturer /t REG_SZ /d "$($values.SystemManufacturer)" /f
+reg add "HKLM\SOFTWARE\Samsung\SamsungSettings" /v BIOSVersion /t REG_SZ /d "$($values.BIOSVersion)" /f
+)
+
+REM ============================================================================
 REM Registry spoof complete!
 REM ============================================================================
 "@
@@ -8795,10 +8951,12 @@ else {
 
     Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 
-    # SYSTEM can't run the Store PowerShell app alias, so the task needs a regular install
+    # SYSTEM can't run the Store PowerShell app alias, so the task needs a regular install.
+    # Init-SamsungMultiControlOnLogin.ps1 is Windows PowerShell 5.1 compatible (UTF-8 BOM),
+    # so fall back to the built-in powershell.exe on Store-only systems.
     $pwshPath = Get-ClassicPwshPath
     if (-not $pwshPath) {
-        $pwshPath = Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe"
+        $pwshPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     }
 
     $multiControlDescription = "Restarts Samsung services after startup to improve Multi Control stability (Discussion #76)"
@@ -9262,7 +9420,8 @@ else {
     Write-Host "`nCreating Samsung System Support Service (dummy)..." -ForegroundColor Yellow
     $dummyService = Get-Service -Name "SamsungSystemSupportService" -ErrorAction SilentlyContinue
     if (-not $dummyService) {
-        & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "Samsung System Support Service" start= disabled 2>&1 | Out-Null
+        # Same DisplayName as SFourSWComp15.inf (no spaces)
+        & sc.exe create SamsungSystemSupportService binPath= "C:\Windows\System32\cmd.exe" DisplayName= "SamsungSystemSupportService" start= disabled 2>&1 | Out-Null
         Write-Host "✓ Dummy service created (disabled)" -ForegroundColor Green
     }
     else {
@@ -9276,6 +9435,17 @@ else {
             Write-Host "✓ Service already exists (disabled)" -ForegroundColor Green
         }
     }
+}
+
+# Runs after the spoof so Manufacturer/BIOSVersion pick up the Samsung values (#94, #51)
+try {
+    if (Set-SamsungSettingsRegistration -TestMode $TestMode) {
+        Write-Host "✓ Samsung Settings registration matches the spoofed device" -ForegroundColor Green
+    }
+}
+catch {
+    Write-Host "⚠ Could not update Samsung Settings registration: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-GbeLog "WARNING: Samsung Settings registration failed: $($_.Exception.Message)" -Level WARNING
 }
 
 if ($TestMode) {
