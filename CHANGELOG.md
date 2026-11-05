@@ -1,9 +1,23 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to Galaxy Book Enabler will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.4.0] - 2026-11-05
+
+### Added & Fixed
+- **Universal Wi-Fi & Bluetooth Support for Samsung Continuity (Desktop Enclosure Mode)**:
+  - Reverse-engineered `Commons.dll` (`MCFCommons.Helpers.DriverHelper.DeviceSupportHelper.HasSupportedWiFi`) in Samsung Continuity Service (`WindowsMCFCore`). Discovered that Samsung restricts non-Intel Wi-Fi only on Samsung Laptops (`EnclosureType = 10 / 31`). On Desktop PCs (`EnclosureType = 3`), Samsung explicitly whitelists **all** Wi-Fi adapters (`"All WiFi Drivers are supported for Non-Samsung PC || Desktop PC"`).
+  - Automatically overrides `EnclosureKind = "0x03"` when non-Intel Wi-Fi (MediaTek, Realtek, Qualcomm, AMD RZ-series) is detected. This allows `SystemManufacturer` to remain `"SAMSUNG ELECTRONICS CO., LTD."` permanently without causing Wi-Fi whitelist rejection.
+- **Multi Control Cross-Device P2P Fix (`FamilyMDE`)**:
+  - Automatically writes `FamilyMDE\Settings = 1` in `HKLM\Software\SAMSUNG\SamsungContinuityService\FamilyMDE`.
+  - Fixes Multi Control and Nearby Devices disconnecting or failing device discovery across Galaxy tablets and phones.
+- **Windows Capability & Location Permission Enforcement**:
+  - Grants `Allow` in `CapabilityAccessManager\ConsentStore\location`, `bluetoothSync`, and `radios` for all installed Samsung packages to prevent background proximity discovery blockage.
+
+---
 
 ## [3.3.1] - 2026-03-12
 

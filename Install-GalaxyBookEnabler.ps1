@@ -1,4 +1,4 @@
-﻿# Galaxy Book Enabler Installer/Uninstaller
+# Galaxy Book Enabler Installer/Uninstaller
 # Enables Samsung Galaxy Book features on non-Galaxy Book devices
 
 <#
@@ -228,7 +228,7 @@ if (-not $isAdmin) {
 }
 
 # VERSION CONSTANT
-$SCRIPT_VERSION = "3.3.0"
+$SCRIPT_VERSION = "3.4.0"
 $GITHUB_REPO = "Chiragsd13/GalaxyBookEnabler"
 $UPDATE_CHECK_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
@@ -5537,6 +5537,15 @@ function New-RegistrySpoofBatch {
         }
     }
     
+    # If Wi-Fi is non-Intel (MediaTek, Realtek, Qualcomm, etc.), override EnclosureKind to 0x03 (Desktop mode).
+    # Samsung Continuity (Commons.dll DeviceSupportHelper.HasSupportedWiFi) enforces an
+    # Intel/Qualcomm-only whitelist for laptops (EnclosureType 10/31), but whitelists ALL Wi-Fi
+    # chipsets when EnclosureType is 0x03 (Desktop), allowing SystemManufacturer to remain genuine
+    # Samsung without triggering whitelist rejection.
+    if ($script:DetectedWifi -and -not $script:DetectedWifi.IsIntel) {
+        $values.EnclosureKind = "0x03"
+    }
+    
     # Extract SystemVersion from BIOSVersion (e.g., "P08ALX.400.250306.05" -> "P08ALX")
     $systemVersion = if ($values.BIOSVersion -match '^([A-Z0-9]+)\.') { $Matches[1] } else { $values.BIOSVersion }
     
@@ -5627,6 +5636,11 @@ $(Format-SysInfoRegValue "BIOSVersion" $values.BIOSVersion)
 $(Format-SysInfoRegValue "BIOSReleaseDate" $biosReleaseDate)
 $(Format-SysInfoRegValue "SystemManufacturer" $values.SystemManufacturer)
 $(Format-SysInfoRegValue "SystemProductName" $values.SystemProductName)
+
+REM ============================================================================
+REM SECTION 4: Samsung Continuity & Multi Control Cross-Device Support (FamilyMDE)
+REM ============================================================================
+reg add "HKLM\Software\SAMSUNG\SamsungContinuityService\FamilyMDE" /v Settings /t REG_DWORD /d 1 /f
 
 REM ============================================================================
 REM Registry spoof complete!
